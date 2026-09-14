@@ -1,8 +1,11 @@
 import Fastify from "fastify";
+import { configurarRealtime } from "./realtime/configurar-realtime.js";
 
 const servidor = Fastify({
   logger: true,
 });
+
+configurarRealtime(servidor);
 
 servidor.get("/saude", async () => {
   return {
