@@ -1,0 +1,28 @@
+# Infraestrutura LOCAL de desenvolvimento do Jaa. Não usar em produção.
+name: jaa
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: jaa-postgres-local
+    restart: unless-stopped
+    environment:
+      # Credenciais exclusivas do banco local de desenvolvimento, sem valor fora desta máquina.
+      POSTGRES_USER: jaa
+      POSTGRES_PASSWORD: jaa_dev_local
+      POSTGRES_DB: jaa
+    ports:
+      # Somente localhost. 55433 evita conflito com outros PostgreSQL locais.
+      - "127.0.0.1:55433:5432"
+    volumes:
+      # A partir do PostgreSQL 18 a imagem oficial guarda os dados em /var/lib/postgresql/<versão>/docker.
+      - jaa-postgres-local-dados:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jaa -d jaa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  jaa-postgres-local-dados:
+    name: jaa-postgres-local-dados

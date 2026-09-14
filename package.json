@@ -6,5 +6,13 @@
     "apps/*",
     "packages/*"
   ],
-  "scripts": {}
+  "scripts": {
+    "banco:subir": "docker compose up -d --wait postgres",
+    "banco:parar": "docker compose stop postgres",
+    "banco:status": "docker compose ps postgres",
+    "banco:verificar": "npm run verificar-conexao -w @jaa/banco",
+    "banco:gerar-migration": "npm run gerar-migration -w @jaa/banco",
+    "banco:migrar": "npm run migrar -w @jaa/banco",
+    "banco:verificar-migrations": "npm run verificar-migrations -w @jaa/banco"
+  }
 }
