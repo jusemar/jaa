@@ -1,0 +1,26 @@
+# Dependências
+node_modules/
+
+# Variáveis de ambiente
+.env
+.env.*
+!.env.example
+
+# Builds
+.next/
+dist/
+build/
+coverage/
+
+# Expo
+.expo/
+.expo-shared/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Logs
+*.log
+npm-debug.log*
