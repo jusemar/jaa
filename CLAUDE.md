@@ -151,6 +151,8 @@ O aplicativo deve continuar sendo um aplicativo React Native real. Expo é a inf
 
 O web atenderá usuários pessoais e, principalmente no futuro, operações empresariais em desktop.
 
+Antes de implementar ou alterar código específico do Next.js, consultar quando necessário a documentação versionada do pacote instalado em `node_modules/next/dist/docs/`, especialmente em caso de dúvida sobre APIs, convenções ou comportamento da versão atual. A geração automática de `AGENTS.md`/`CLAUDE.md` pelo Next.js fica desativada (`agentRules: false`) para manter este arquivo como única fonte de regras.
+
 ## API
 
 - Node.js;
