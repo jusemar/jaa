@@ -2,6 +2,7 @@
 
 import type { ContaAtual } from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
+import { useConexaoRealtime } from "@/lib/realtime/use-realtime-conectado";
 import { buscarContaAtual, criarIdentidadePessoal, testarRotaProtegida } from "../lib/api-conta";
 import { clienteAutenticacao } from "../lib/cliente-autenticacao";
 import { formatarCelularDigitado } from "../lib/formatar-celular";
@@ -21,6 +22,9 @@ export function FluxoAutenticacao() {
   const [etapa, setEtapa] = useState<Etapa>({ nome: "carregando" });
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+
+  // Realtime só com sessão válida e identidade pessoal; logout (etapa volta ao telefone) desconecta.
+  useConexaoRealtime(etapa.nome === "autenticado");
 
   function aplicarConta(conta: Awaited<ReturnType<typeof buscarContaAtual>>) {
     if (!conta.ok) {

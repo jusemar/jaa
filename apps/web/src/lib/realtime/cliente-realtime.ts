@@ -9,6 +9,8 @@ export function obterClienteRealtime(): Socket {
   if (!cliente) {
     cliente = io(URL_API, {
       autoConnect: false,
+      // Envia o cookie HttpOnly de sessão no handshake; a API identifica a conta a partir dele.
+      withCredentials: true,
     });
   }
 
@@ -22,4 +24,8 @@ export function conectarRealtime(): void {
   if (!socket.active) {
     socket.connect();
   }
+}
+
+export function desconectarRealtime(): void {
+  obterClienteRealtime().disconnect();
 }

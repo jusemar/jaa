@@ -2,16 +2,19 @@ import { criarConexaoBanco } from "@jaa/banco";
 import { criarAplicacao } from "./aplicacao.js";
 import { criarAutenticacao } from "./features/autenticacao/autenticacao.js";
 import { criarEntregadorOtp } from "./features/autenticacao/entrega-otp/entregador-otp.js";
+import { criarAvisoSessoesEncerradas } from "./features/autenticacao/lib/sessoes-encerradas.js";
 import { carregarAmbiente } from "./lib/ambiente.js";
 import { configurarRealtime } from "./realtime/configurar-realtime.js";
 
 const ambiente = carregarAmbiente();
 const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
+const sessoesEncerradas = criarAvisoSessoesEncerradas();
 
 const autenticacao = criarAutenticacao({
   banco: conexao.banco,
   ambiente,
   entregadorOtp: criarEntregadorOtp(ambiente),
+  sessoesEncerradas,
 });
 
 const servidor = await criarAplicacao({
@@ -21,7 +24,12 @@ const servidor = await criarAplicacao({
   logger: true,
 });
 
-configurarRealtime(servidor);
+configurarRealtime(servidor, {
+  autenticacao,
+  banco: conexao.banco,
+  sessoesEncerradas,
+  origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS,
+});
 
 servidor.addHook("onClose", async () => {
   await conexao.encerrar();

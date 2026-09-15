@@ -7,6 +7,7 @@ import { phoneNumber } from "better-auth/plugins";
 import type { Ambiente } from "../../lib/ambiente.js";
 import type { EntregadorOtp } from "./entrega-otp/entregador-otp.js";
 import { derivarEmailTecnico, NOME_TECNICO_CONTA } from "./lib/conta-tecnica.js";
+import type { AvisoSessoesEncerradas } from "./lib/sessoes-encerradas.js";
 import { ehCelularBrasileiroNormalizado, normalizarCelularBrasileiro } from "./lib/telefone.js";
 
 export const CAMINHO_BASE_AUTENTICACAO = "/api/auth";
@@ -24,9 +25,15 @@ interface DependenciasAutenticacao {
   banco: Banco;
   ambiente: Ambiente;
   entregadorOtp: EntregadorOtp;
+  sessoesEncerradas: AvisoSessoesEncerradas;
 }
 
-export function criarOpcoesAutenticacao({ banco, ambiente, entregadorOtp }: DependenciasAutenticacao) {
+export function criarOpcoesAutenticacao({
+  banco,
+  ambiente,
+  entregadorOtp,
+  sessoesEncerradas,
+}: DependenciasAutenticacao) {
   return {
     appName: "Jaa",
     baseURL: ambiente.BETTER_AUTH_URL,
@@ -62,6 +69,17 @@ export function criarOpcoesAutenticacao({ banco, ambiente, entregadorOtp }: Depe
       ipAddress: { ipAddressHeaders: [CABECALHO_IP_CLIENTE] },
     },
     telemetry: { enabled: false },
+    databaseHooks: {
+      session: {
+        delete: {
+          // Hook oficial executado para CADA sessão apagada (logout, revogação, sessão expirada).
+          // Avisa com o id da sessão, nunca o token, para encerrar só as conexões dela.
+          after: async (sessao) => {
+            sessoesEncerradas.notificar(sessao.id);
+          },
+        },
+      },
+    },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         if (!ROTAS_COM_TELEFONE.has(ctx.path)) {

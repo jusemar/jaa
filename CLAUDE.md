@@ -17,6 +17,7 @@ O produto deve permitir, no futuro:
 - empresas conversarem com pessoas;
 - uma mesma conta operar uma identidade pessoal e também identidades empresariais autorizadas;
 - empresas possuírem catálogo e receberem pedidos dentro da conversa;
+- empresas possuírem uma loja pública Web, servida pela mesma plataforma e compartilhável por link;
 - pedidos serem criados por catálogo, conversa natural ou combinação dos dois;
 - acompanhamento de pedidos e entregas dentro da conversa;
 - rastreamento de entregadores em tempo real;
@@ -57,6 +58,7 @@ Critério principal de sucesso da primeira fase:
 Enquanto a fase atual for Mensageria, é proibido antecipar implementação de:
 
 - catálogo;
+- loja pública e domínio personalizado;
 - carrinho;
 - pedidos;
 - pagamentos;
@@ -81,7 +83,7 @@ A evolução prevista é:
 
 1. Mensageria;
 2. Empresas e identidades empresariais;
-3. Catálogo e pedidos dentro da conversa;
+3. Catálogo e pedidos na loja pública e dentro da conversa;
 4. Pagamentos;
 5. Entregas e rastreamento;
 6. Feed e publicações;
@@ -149,7 +151,7 @@ O aplicativo deve continuar sendo um aplicativo React Native real. Expo é a inf
 - React;
 - TypeScript.
 
-O web atenderá usuários pessoais e, principalmente no futuro, operações empresariais em desktop.
+O web atenderá usuários pessoais e, principalmente no futuro, operações empresariais em desktop e lojas públicas das empresas.
 
 Antes de implementar ou alterar código específico do Next.js, consultar quando necessário a documentação versionada do pacote instalado em `node_modules/next/dist/docs/`, especialmente em caso de dúvida sobre APIs, convenções ou comportamento da versão atual. A geração automática de `AGENTS.md`/`CLAUDE.md` pelo Next.js fica desativada (`agentRules: false`) para manter este arquivo como única fonte de regras.
 
@@ -178,7 +180,26 @@ O transporte realtime deve ficar encapsulado para que a regra de negócio não d
 
 A escolha inicial preferencial é **Socket.IO**, desde que validada no momento da instalação.
 
-Estado atual: Socket.IO integrado à API e funcionando no web, com reconexão. **A conexão Socket.IO ainda NÃO é autenticada**: nenhuma mensagem de usuário deve trafegar por ela antes da implementação de autenticação/autorização do realtime.
+### Estado atual: conexão autenticada
+
+Socket.IO integrado à API e ao web, **autenticado no handshake pela sessão Better Auth**:
+
+- o servidor valida a sessão e deriva `usuarioId`, `identidadeId` e `sessaoId`; o cliente nunca determina esses IDs;
+- sem sessão válida → `NAO_AUTENTICADO`; sessão válida sem identidade pessoal → `CADASTRO_INCOMPLETO`;
+- cada socket fica associado à sessão específica que o autenticou;
+- logout ou revogação da sessão desconecta imediatamente os sockets daquela sessão, sem derrubar outras sessões do mesmo usuário;
+- cada reconexão passa novamente pela autenticação;
+- o web envia o cookie da sessão Better Auth com `withCredentials`;
+- o realtime do Expo deverá enviar a mesma sessão oficial do Better Auth, sem token paralelo.
+
+Ainda **não existem** mensagens, rooms de conversa, presença, digitando, entregue/lido ou outros eventos funcionais.
+
+Pendências do realtime:
+
+- tratar a expiração natural da sessão com socket aberto quando surgirem eventos sensíveis;
+- múltiplas instâncias da API exigirão adapter compartilhado do Socket.IO (seção 22);
+- avaliar rate limit/proteção específica do handshake conforme a escala;
+- validar o envio da sessão no Socket.IO do React Native/Expo quando o realtime mobile for implementado.
 
 ## Banco
 
@@ -331,7 +352,15 @@ Usuários pessoais pertencem à plataforma Jaa e não a um tenant empresarial.
 
 Empresas/organizações funcionarão como tenants lógicos.
 
-Dados empresariais futuros deverão ter isolamento e autorização por organização quando aplicável.
+Conta autenticável, identidade pessoal, empresa e permissões empresariais são conceitos separados. Uma mesma conta poderá futuramente operar uma ou mais empresas quando possuir autorização, sem transformar a identidade pessoal em identidade empresarial. Pertencer à equipe de uma empresa nunca concede acesso às conversas ou aos dados pessoais do proprietário.
+
+Cada empresa será uma unidade de isolamento comercial. Quando esse domínio for implementado, dados empresariais deverão carregar uma referência interna confiável à empresa correspondente, conceitualmente `empresaId`/`empresa_id` quando aplicável. Isso inclui, no futuro, produtos, categorias, pedidos, configurações comerciais, identidade visual, logística própria, catálogo, funcionários, permissões empresariais e demais dados privados da operação.
+
+Toda consulta ou mutação empresarial deverá validar o escopo da empresa no servidor. Nunca confiar apenas em um `empresaId` enviado pelo cliente: o servidor deve confirmar que a conta/identidade autenticada possui autorização para operar aquela empresa.
+
+## Banco compartilhado
+
+A arquitetura inicial será multiempresa em PostgreSQL compartilhado. O isolamento deverá existir no domínio, banco, repositórios, casos de uso e autorização, permitindo que a evolução do núcleo beneficie todas as empresas.
 
 Não criar:
 
@@ -339,9 +368,51 @@ Não criar:
 - uma aplicação por empresa;
 - duplicação de tabelas por empresa.
 
-Usar PostgreSQL compartilhado com isolamento lógico, autorização obrigatória e índices adequados.
+Autorização obrigatória e índices adequados fazem parte do isolamento. Não antecipar Row Level Security nem outra estratégia específica apenas por esta decisão; a estratégia concreta será definida quando o domínio empresarial for implementado.
 
-Funcionários de uma empresa nunca devem ganhar acesso às conversas pessoais do dono apenas por pertencerem à empresa.
+## Loja pública por empresa
+
+Cada empresa poderá futuramente possuir uma loja pública dentro da mesma aplicação Web do Jaa. O formato inicial aprovado é:
+
+```text
+jaa.com.br/loja/<slug-da-empresa>
+```
+
+Exemplo: `jaa.com.br/loja/pizzaria-oasis`.
+
+O slug identifica publicamente a loja, mas não substitui o identificador interno da empresa e nunca deve ser usado sozinho como mecanismo de autorização. A mesma aplicação Web deverá resolver o slug, localizar a empresa e renderizar o catálogo, as configurações e a identidade visual correspondentes. Não haverá site, base de código, aplicação ou catálogo separado para cada empresa.
+
+A URL poderá ser aberta no navegador sem o aplicativo Jaa instalado e compartilhada por WhatsApp, Instagram, Google, redes sociais, QR Code e outros canais. A política sobre quais ações comerciais exigirão conta ou login será definida quando essa etapa for implementada.
+
+## WhatsApp como canal de aquisição
+
+O Jaa não dependerá de a empresa abandonar o WhatsApp. A empresa poderá manter seu atendimento atual e compartilhar, inclusive em resposta automática, o link público da loja:
+
+```text
+WhatsApp → link público /loja/<slug> → loja Web Jaa → catálogo/pedido
+```
+
+O link público funcionará como porta de entrada externa para o ecossistema Jaa.
+
+## Mesmo domínio comercial na Web e no Chat
+
+A loja Web e o chat Jaa deverão futuramente consumir o mesmo domínio comercial, sem duplicar catálogo ou pedido:
+
+```text
+WhatsApp/Instagram/Google → URL pública → Loja Jaa ─┐
+                                                     ├─→ mesmo Catálogo/Pedido
+Chat Jaa → Empresa → Ver loja/produtos ─────────────┘
+```
+
+Pedidos iniciados por linguagem natural dentro da conversa poderão existir posteriormente, mas não devem ser implementados agora. A visão futura permanece:
+
+```text
+POST → INTERESSE → CHAT → PRODUTO → PEDIDO → PAGAMENTO
+```
+
+## Domínio próprio futuro
+
+A arquitetura deverá permitir que uma empresa utilize futuramente domínio próprio, como `pizzariaoasis.com.br`, resolvendo para a mesma empresa, catálogo e infraestrutura do Jaa. Isso não deverá duplicar banco, aplicação ou catálogo. Domínios personalizados não devem ser implementados agora.
 
 ---
 

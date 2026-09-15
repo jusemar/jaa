@@ -9,6 +9,7 @@ import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { criarAplicacao } from "../src/aplicacao.js";
 import { criarOpcoesAutenticacao } from "../src/features/autenticacao/autenticacao.js";
 import { derivarEmailTecnico, NOME_TECNICO_CONTA } from "../src/features/autenticacao/lib/conta-tecnica.js";
+import { criarAvisoSessoesEncerradas } from "../src/features/autenticacao/lib/sessoes-encerradas.js";
 import { carregarAmbiente } from "../src/lib/ambiente.js";
 
 /*
@@ -33,6 +34,7 @@ const opcoes = criarOpcoesAutenticacao({
   banco,
   ambiente,
   entregadorOtp: { enviar: async () => {} },
+  sessoesEncerradas: criarAvisoSessoesEncerradas(),
 });
 const autenticacao = betterAuth({
   ...opcoes,
