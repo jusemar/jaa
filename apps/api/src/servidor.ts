@@ -3,12 +3,14 @@ import { criarAplicacao } from "./aplicacao.js";
 import { criarAutenticacao } from "./features/autenticacao/autenticacao.js";
 import { criarEntregadorOtp } from "./features/autenticacao/entrega-otp/entregador-otp.js";
 import { criarAvisoSessoesEncerradas } from "./features/autenticacao/lib/sessoes-encerradas.js";
+import { criarCanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
 import { carregarAmbiente } from "./lib/ambiente.js";
 import { configurarRealtime } from "./realtime/configurar-realtime.js";
 
 const ambiente = carregarAmbiente();
 const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
 const sessoesEncerradas = criarAvisoSessoesEncerradas();
+const eventosMensagens = criarCanalEventosMensagens();
 
 const autenticacao = criarAutenticacao({
   banco: conexao.banco,
@@ -21,6 +23,7 @@ const servidor = await criarAplicacao({
   ambiente,
   banco: conexao.banco,
   autenticacao,
+  eventosMensagens,
   logger: true,
 });
 
@@ -28,6 +31,7 @@ configurarRealtime(servidor, {
   autenticacao,
   banco: conexao.banco,
   sessoesEncerradas,
+  eventosMensagens,
   origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS,
 });
 

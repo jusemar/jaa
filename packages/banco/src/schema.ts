@@ -8,3 +8,10 @@ export * from "./tabelas/autenticacao/better-auth.js";
 
 export * from "./tabelas/identidades/identidades.js";
 export * from "./tabelas/identidades/relacoes.js";
+
+export * from "./tabelas/conversas/conversas.js";
+export * from "./tabelas/conversas/participantes-conversa.js";
+export * from "./tabelas/conversas/relacoes.js";
+
+export * from "./tabelas/mensagens/mensagens.js";
+export * from "./tabelas/mensagens/relacoes.js";

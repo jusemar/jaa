@@ -10,6 +10,7 @@ import { criarAplicacao } from "../src/aplicacao.js";
 import { criarOpcoesAutenticacao } from "../src/features/autenticacao/autenticacao.js";
 import { derivarEmailTecnico, NOME_TECNICO_CONTA } from "../src/features/autenticacao/lib/conta-tecnica.js";
 import { criarAvisoSessoesEncerradas } from "../src/features/autenticacao/lib/sessoes-encerradas.js";
+import { criarCanalEventosMensagens } from "../src/features/mensagens/lib/eventos-mensagens.js";
 import { carregarAmbiente } from "../src/lib/ambiente.js";
 
 /*
@@ -115,7 +116,7 @@ async function limparDadosDeTeste() {
 
 before(async () => {
   await limparDadosDeTeste();
-  app = await criarAplicacao({ ambiente, banco, autenticacao, logger: false });
+  app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens: criarCanalEventosMensagens(), logger: false });
   await app.ready();
 });
 

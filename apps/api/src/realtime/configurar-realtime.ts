@@ -1,16 +1,19 @@
 import type { Banco } from "@jaa/banco";
-import type { CodigoErroConexaoRealtime, ErroConexaoRealtime } from "@jaa/contratos";
+import { EVENTO_MENSAGEM_NOVA, type CodigoErroConexaoRealtime, type ErroConexaoRealtime } from "@jaa/contratos";
 import type { FastifyInstance } from "fastify";
 import { Server } from "socket.io";
 import type { Autenticacao } from "../features/autenticacao/autenticacao.js";
-import { autenticarConexaoRealtime } from "../features/autenticacao/casos-de-uso/autenticar-conexao-realtime.js";
+import { autenticarIdentidade } from "../features/autenticacao/casos-de-uso/autenticar-identidade.js";
 import type { AvisoSessoesEncerradas } from "../features/autenticacao/lib/sessoes-encerradas.js";
+import type { CanalEventosMensagens } from "../features/mensagens/lib/eventos-mensagens.js";
+import { serializarMensagem } from "../features/mensagens/lib/serializar-mensagem.js";
 import type { ServidorRealtime } from "./tipos.js";
 
 interface DependenciasRealtime {
   autenticacao: Autenticacao;
   banco: Banco;
   sessoesEncerradas: AvisoSessoesEncerradas;
+  eventosMensagens: CanalEventosMensagens;
   origensPermitidas: string[];
 }
 
@@ -20,9 +23,12 @@ const MENSAGENS_ERRO_CONEXAO: Record<CodigoErroConexaoRealtime, string> = {
   ERRO_INTERNO: "Não foi possível autenticar a conexão.",
 };
 
-// Sala técnica interna por sessão, usada apenas para encerrar as conexões daquela sessão.
-// Não é sala de conversa.
+// Salas TÉCNICAS internas, sempre definidas pelo servidor (o cliente não entra em salas).
+// Não são salas de conversa nem substituem a autorização de domínio, feita na API/banco.
+// sessao:<id>     → encerrar só as conexões de uma sessão (logout/revogação).
+// identidade:<id> → entregar eventos a todas as conexões de uma identidade (abas e dispositivos).
 const salaDaSessao = (sessaoId: string) => `sessao:${sessaoId}`;
+const salaDaIdentidade = (identidadeId: string) => `identidade:${identidadeId}`;
 
 function erroDeConexao(codigo: CodigoErroConexaoRealtime) {
   const dados: ErroConexaoRealtime = { codigo, mensagem: MENSAGENS_ERRO_CONEXAO[codigo] };
@@ -52,7 +58,7 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
   // usuarioId/identidadeId/sessaoId vêm só do servidor; dados enviados pelo cliente são ignorados.
   realtime.use(async (socket, next) => {
     try {
-      const resultado = await autenticarConexaoRealtime(dependencias, socket.handshake.headers);
+      const resultado = await autenticarIdentidade(dependencias, socket.handshake.headers);
 
       if (!resultado.ok) {
         servidor.log.info({ motivo: resultado.codigo }, "Conexão realtime recusada");
@@ -71,7 +77,7 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
 
   realtime.on("connection", (socket) => {
     const { usuarioId, identidadeId, sessaoId } = socket.data.contexto;
-    void socket.join(salaDaSessao(sessaoId));
+    void socket.join([salaDaSessao(sessaoId), salaDaIdentidade(identidadeId)]);
 
     servidor.log.info({ socketId: socket.id, usuarioId, identidadeId }, "Cliente conectado ao realtime");
 
@@ -87,12 +93,20 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
 
   // Ao desligar a API, fecha só o transporte (sem pacote de "desconexão pelo servidor"):
   // assim os clientes tratam como queda, reconectam sozinhos e passam de novo pelo handshake.
+  // Mensagem já persistida → entrega a todas as conexões das identidades participantes.
+  const cancelarEntregaMensagens = dependencias.eventosMensagens.inscrever(({ mensagem, destinatariosIdentidadeIds }) => {
+    realtime.to(destinatariosIdentidadeIds.map(salaDaIdentidade)).emit(EVENTO_MENSAGEM_NOVA, {
+      mensagem: serializarMensagem(mensagem),
+    });
+  });
+
   servidor.addHook("preClose", async () => {
     realtime.engine.close();
   });
 
   servidor.addHook("onClose", async () => {
     cancelarInscricao();
+    cancelarEntregaMensagens();
     // O servidor HTTP já foi fechado pelo Fastify; aqui só são liberados os recursos do Socket.IO.
     await new Promise<void>((resolver) => {
       void realtime.close(() => resolver());

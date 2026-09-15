@@ -2,6 +2,7 @@
 
 import type { ContaAtual } from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
+import { MensageiroTecnico } from "@/features/conversas/components/mensageiro-tecnico";
 import { useConexaoRealtime } from "@/lib/realtime/use-realtime-conectado";
 import { buscarContaAtual, criarIdentidadePessoal, testarRotaProtegida } from "../lib/api-conta";
 import { clienteAutenticacao } from "../lib/cliente-autenticacao";
@@ -192,6 +193,7 @@ function PainelAutenticado({ conta, aoSair, saindo }: { conta: ContaAtual; aoSai
       <Botao desabilitado={saindo} aoClicar={aoSair} tipo="button">
         Sair
       </Botao>
+      {conta.identidadePessoal && <MensageiroTecnico identidadeId={conta.identidadePessoal.id} />}
     </div>
   );
 }

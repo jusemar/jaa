@@ -5,6 +5,11 @@ export const codigoErroApiSchema = z.enum([
   "DADOS_INVALIDOS",
   "NOME_USUARIO_INDISPONIVEL",
   "IDENTIDADE_PESSOAL_JA_EXISTE",
+  "CADASTRO_INCOMPLETO",
+  "IDENTIDADE_NAO_ENCONTRADA",
+  "CONVERSA_CONSIGO_MESMO",
+  "CONVERSA_NAO_ENCONTRADA",
+  "ID_CLIENTE_REUTILIZADO",
 ]);
 
 export type CodigoErroApi = z.infer<typeof codigoErroApiSchema>;

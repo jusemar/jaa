@@ -192,7 +192,9 @@ Socket.IO integrado à API e ao web, **autenticado no handshake pela sessão Bet
 - o web envia o cookie da sessão Better Auth com `withCredentials`;
 - o realtime do Expo deverá enviar a mesma sessão oficial do Better Auth, sem token paralelo.
 
-Ainda **não existem** mensagens, rooms de conversa, presença, digitando, entregue/lido ou outros eventos funcionais.
+Salas técnicas definidas somente pelo servidor (o cliente não entra em salas): `sessao:<id>` para encerrar conexões de uma sessão e `identidade:<id>` para entregar eventos a todas as conexões de uma identidade. Não são salas de conversa nem substituem a autorização de domínio.
+
+Único evento funcional: `mensagem:nova` (servidor → cliente), emitido após a persistência (seção 14). Ainda **não existem** rooms de conversa, presença, digitando, entregue/lido ou outros eventos.
 
 Pendências do realtime:
 
@@ -651,8 +653,8 @@ As tabelas pertencentes ao Better Auth (`users`, `sessions`, `accounts`, `verifi
 ## IDs
 
 - IDs internos do Better Auth permanecem no formato gerado e esperado pela biblioteca;
-- entidades próprias atuais do Jaa (ex.: `identidades`) usam `uuid` gerado pelo banco;
-- a estratégia de IDs de mensagens ainda está em aberto (seção 32).
+- entidades próprias do Jaa (ex.: `identidades`, `conversas`) usam `uuid` gerado pelo banco;
+- mensagens usam **UUIDv7 gerado pelo PostgreSQL** (`uuidv7()`): identidade global e também chave de ordenação e de paginação por cursor, com o relógio do banco como autoridade (nunca o do cliente). Consequência: **PostgreSQL 18+ é requisito**, inclusive em produção.
 
 ---
 
@@ -689,6 +691,29 @@ Para mensagens, preferir paginação por cursor. Evitar paginação por offset e
 ## Idempotência
 
 Repetir uma tentativa de envio após perda de conexão não pode criar várias cópias da mesma mensagem.
+
+## Implementação atual (Fase 1)
+
+Núcleo de mensagens de texto 1:1 entre identidades pessoais:
+
+- modelo `conversas` → `participantes_conversa` (identidades, nunca contas) → `mensagens`;
+- conversa direta: exatamente duas identidades; chave canônica única do par (A↔B = B↔A), resistente a criação concorrente; aberta pelo `@usuario` do destino;
+- o banco garante que o remetente participa da conversa (FK composta com participantes);
+- **enviar é comando HTTP autenticado** (`POST /conversas/:id/mensagens`); o Socket.IO só entrega o evento `mensagem:nova` depois do commit no PostgreSQL. Não há segunda forma de enviar;
+- remetente e leitor são sempre a identidade da sessão; quem não participa recebe 404, sem revelar se a conversa existe;
+- idempotência: `idCliente` gerado pelo cliente por tentativa, único por remetente; retry devolve a mensagem existente, sem nova cópia nem novo evento;
+- histórico por cursor (`antesDe` = id da mensagem mais antiga recebida), em ordem determinística por id;
+- texto de 1 a 4000 caracteres, sem conteúdo só com espaços, validado em `@jaa/contratos` e no banco.
+
+## Lista de conversas (Fase 1)
+
+- `GET /conversas?antesDe&limite`: somente conversas da identidade **da sessão**; nenhum parâmetro escolhe outra identidade;
+- item = conversa + dados públicos da outra identidade (`identidadeId`, `nomeExibicao`, `nomeUsuario`) + última mensagem; nunca telefone, e-mail, conta ou sessão;
+- atividade = última mensagem; ordem e cursor = id (UUIDv7) da última mensagem, único entre conversas, logo determinístico mesmo com horários iguais; conversa sem mensagens não aparece;
+- limite padrão 20, máximo 50;
+- consulta única sem N+1 e **sem dado duplicado em `conversas`**: índice `participantes_conversa (identidade_id, conversa_id)` + busca `LATERAL ... LIMIT 1` no índice `(conversa_id, id)` de mensagens; só as linhas da página leem conteúdo e identidades. O custo cresce com o número de conversas da identidade (≈14 ms para 5.000 conversas localmente), não com o de mensagens;
+- se identidades com dezenas de milhares de conversas (ex.: empresariais) exigirem, introduzir estado por participante (ex.: última atividade em `participantes_conversa`) mantido na mesma transação do envio, sem mudar o contrato;
+- realtime: reutiliza `mensagem:nova`, sem evento novo. O cliente reconcilia por id da conversa, nunca regride para mensagem mais antiga; conversa ainda não carregada ou (re)conexão → recarrega a 1ª página.
 
 ---
 
@@ -1125,8 +1150,7 @@ Não inventar decisão para os itens abaixo. Eles serão definidos quando necess
 - biblioteca de styling mobile;
 - infraestrutura final de rastreamento;
 - estratégia de criptografia ponta a ponta, caso seja adotada;
-- provedor de SMS comercial para entrega de OTP;
-- estratégia de IDs de mensagens (ex.: UUIDv7), a decidir quando o domínio de mensagens for iniciado.
+- provedor de SMS comercial para entrega de OTP.
 
 Quando uma dessas decisões se tornar necessária, comparar opções de acordo com os requisitos reais do Jaa antes de adicionar tecnologia.
 

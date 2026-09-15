@@ -1,11 +1,14 @@
+import type { EventosRealtimeServidorParaCliente } from "@jaa/contratos";
 import { io, type Socket } from "socket.io-client";
 import { URL_API } from "@/lib/configuracao";
 
-let cliente: Socket | null = null;
+export type ClienteRealtime = Socket<EventosRealtimeServidorParaCliente>;
+
+let cliente: ClienteRealtime | null = null;
 
 // Uma única conexão por aba: todas as partes do Web compartilham o mesmo socket.
 // Criado sob demanda para nunca ser instanciado durante a renderização no servidor.
-export function obterClienteRealtime(): Socket {
+export function obterClienteRealtime(): ClienteRealtime {
   if (!cliente) {
     cliente = io(URL_API, {
       autoConnect: false,

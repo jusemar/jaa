@@ -11,6 +11,7 @@ import { io, type Socket } from "socket.io-client";
 import { criarAplicacao } from "../src/aplicacao.js";
 import { criarOpcoesAutenticacao } from "../src/features/autenticacao/autenticacao.js";
 import { criarAvisoSessoesEncerradas } from "../src/features/autenticacao/lib/sessoes-encerradas.js";
+import { criarCanalEventosMensagens } from "../src/features/mensagens/lib/eventos-mensagens.js";
 import { carregarAmbiente } from "../src/lib/ambiente.js";
 import { configurarRealtime } from "../src/realtime/configurar-realtime.js";
 import type { ServidorRealtime } from "../src/realtime/tipos.js";
@@ -33,6 +34,7 @@ const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
 const { banco } = conexao;
 
 const sessoesEncerradas = criarAvisoSessoesEncerradas();
+const eventosMensagens = criarCanalEventosMensagens();
 const opcoes = criarOpcoesAutenticacao({
   banco,
   ambiente,
@@ -58,12 +60,14 @@ async function iniciarServidor() {
     ambiente,
     banco,
     autenticacao,
+    eventosMensagens,
     logger: { level: "info", stream: { write: (linha: string) => void logs.push(linha) } },
   });
   realtime = configurarRealtime(app, {
     autenticacao,
     banco,
     sessoesEncerradas,
+    eventosMensagens,
     origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS,
   });
   await app.listen({ port: porta, host: "127.0.0.1" });

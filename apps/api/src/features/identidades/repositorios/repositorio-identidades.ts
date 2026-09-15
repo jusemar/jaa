@@ -74,3 +74,17 @@ function identificarViolacaoUnica(erro: unknown): ViolacaoUnicaIdentidade | null
 
   return null;
 }
+
+// `nomeUsuario` já deve estar na forma canônica (ver normalizarNomeUsuario em @jaa/contratos).
+export async function buscarIdentidadePessoalPorNomeUsuario(
+  banco: Banco,
+  nomeUsuario: string,
+): Promise<IdentidadeRegistro | null> {
+  const [identidade] = await banco
+    .select()
+    .from(identidades)
+    .where(and(eq(identidades.nomeUsuario, nomeUsuario), eq(identidades.tipo, "pessoal")))
+    .limit(1);
+
+  return identidade ?? null;
+}

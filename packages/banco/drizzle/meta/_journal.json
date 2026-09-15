@@ -8,6 +8,20 @@
       "when": 1789375263667,
       "tag": "0000_autenticacao_e_identidades",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789450712676,
+      "tag": "0001_conversas_e_mensagens",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789453615869,
+      "tag": "0002_indice_conversas_por_identidade",
+      "breakpoints": true
     }
   ]
 }
