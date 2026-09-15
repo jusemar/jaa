@@ -1,17 +1,30 @@
-import Fastify from "fastify";
+import { criarConexaoBanco } from "@jaa/banco";
+import { criarAplicacao } from "./aplicacao.js";
+import { criarAutenticacao } from "./features/autenticacao/autenticacao.js";
+import { criarEntregadorOtp } from "./features/autenticacao/entrega-otp/entregador-otp.js";
+import { carregarAmbiente } from "./lib/ambiente.js";
 import { configurarRealtime } from "./realtime/configurar-realtime.js";
 
-const servidor = Fastify({
+const ambiente = carregarAmbiente();
+const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
+
+const autenticacao = criarAutenticacao({
+  banco: conexao.banco,
+  ambiente,
+  entregadorOtp: criarEntregadorOtp(ambiente),
+});
+
+const servidor = await criarAplicacao({
+  ambiente,
+  banco: conexao.banco,
+  autenticacao,
   logger: true,
 });
 
 configurarRealtime(servidor);
 
-servidor.get("/saude", async () => {
-  return {
-    status: "ok",
-    servico: "jaa-api",
-  };
+servidor.addHook("onClose", async () => {
+  await conexao.encerrar();
 });
 
 const iniciar = async () => {

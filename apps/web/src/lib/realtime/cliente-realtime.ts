@@ -1,6 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-
-const URL_REALTIME = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3333";
+import { URL_API } from "@/lib/configuracao";
 
 let cliente: Socket | null = null;
 
@@ -8,7 +7,7 @@ let cliente: Socket | null = null;
 // Criado sob demanda para nunca ser instanciado durante a renderização no servidor.
 export function obterClienteRealtime(): Socket {
   if (!cliente) {
-    cliente = io(URL_REALTIME, {
+    cliente = io(URL_API, {
       autoConnect: false,
     });
   }

@@ -4,12 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/servidor.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "tsx watch --env-file-if-exists=.env src/servidor.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --env-file-if-exists=.env --test \"testes/**/*.test.ts\"",
+    "autenticacao:gerar-schema": "npx --yes auth@1.7.4 generate --config ./scripts/better-auth-schema.ts --output ../../packages/banco/src/tabelas/autenticacao/better-auth.ts --yes"
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@jaa/banco": "^0.1.0",
+    "@jaa/contratos": "^0.1.0",
+    "better-auth": "^1.7.4",
+    "drizzle-orm": "^0.45.2",
     "fastify": "^5.12.4",
-    "socket.io": "^4.8.3"
+    "libphonenumber-js": "^1.13.13",
+    "socket.io": "^4.8.3",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

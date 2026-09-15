@@ -178,6 +178,8 @@ O transporte realtime deve ficar encapsulado para que a regra de negócio não d
 
 A escolha inicial preferencial é **Socket.IO**, desde que validada no momento da instalação.
 
+Estado atual: Socket.IO integrado à API e funcionando no web, com reconexão. **A conexão Socket.IO ainda NÃO é autenticada**: nenhuma mensagem de usuário deve trafegar por ela antes da implementação de autenticação/autorização do realtime.
+
 ## Banco
 
 - PostgreSQL;
@@ -190,11 +192,35 @@ Nenhum provedor de PostgreSQL em nuvem é obrigatório neste momento. A escolha 
 
 ## Autenticação
 
-Preferência inicial:
-
-- Better Auth, desde que a integração atual com Expo/React Native e com a API dedicada seja validada antes da instalação.
+Adotado: **Better Auth**, integrado à API dedicada. A integração com Expo/React Native deve seguir o suporte oficial do Better Auth quando o mobile for autenticado.
 
 Não duplicar sistemas de autenticação entre web e mobile.
+
+Decisões da Fase 1:
+
+- autenticação principal: **celular + OTP**; não há senha;
+- Better Auth é responsável por conta, sessão e OTP (geração, expiração, tentativas e validação);
+- a entrega do OTP fica atrás de `EntregadorOtp`: trocar o mecanismo de entrega não pode exigir reescrever a autenticação;
+- entrega atual: somente local/desenvolvimento, proibida em produção;
+- provedor de SMS comercial ainda não definido (seção 32).
+
+### Telefone — somente celulares brasileiros nesta fase
+
+- usuário informa somente DDD + celular, ex.: `(31) 98765-4321`;
+- usuário não precisa digitar nem visualizar `+55`; não existe seletor de país/DDI;
+- o servidor normaliza para E.164 com +55, ex.: `+5531987654321`;
+- somente celulares brasileiros válidos são aceitos;
+- internacionalização de telefone não deve ser implementada sem nova decisão de produto.
+
+### Antes de ativar SMS comercial
+
+Revisão obrigatória de:
+
+- rate limiting considerando CGNAT;
+- limite diário por telefone;
+- proteção contra SMS pumping;
+- monitoramento de custos e abuso;
+- `trustProxy` conforme a infraestrutura real.
 
 ## Validação
 
@@ -276,7 +302,20 @@ Membros da organização
 
 Uma mensagem deve possuir um remetente/identidade claramente determinado. Não construir o sistema supondo que toda mensagem será eternamente enviada apenas por `usuarioId`.
 
-Na Fase 1, a identidade pode ser somente pessoal, mas a modelagem não deve impedir a posterior identidade empresarial.
+Responsabilidades:
+
+- conta autenticável e sessão: Better Auth (seção 5);
+- identidade: domínio Jaa; a tabela de conta do Better Auth não é a identidade pública/social do produto.
+
+Na Fase 1, cada conta possui **exatamente uma identidade pessoal**. Futuramente, uma conta poderá operar identidades empresariais autorizadas, sem misturar conversas pessoais e empresariais (seção 8); a modelagem atual não deve impedir essa evolução.
+
+## @usuario
+
+- identificador público da identidade, separado do telefone;
+- telefone não deve ser usado como identidade pública;
+- normalizado em minúsculas e único;
+- 3–30 caracteres;
+- nomes institucionais reservados ficam centralizados em `@jaa/contratos`; a lista pode evoluir.
 
 ---
 
@@ -454,6 +493,14 @@ Não colocar em `contratos`:
 
 Sempre que possível, definir o schema Zod como fonte e inferir o tipo TypeScript dele, evitando duplicação manual.
 
+## Imports de `@jaa/contratos`
+
+O pacote é consumido como código-fonte TypeScript, sem etapa de build (`exports` aponta para `src/index.ts`).
+
+- imports relativos internos usam extensão `.ts` explícita (ex.: `./erros.ts`);
+- o próprio pacote e seus consumidores (API e web) usam `allowImportingTsExtensions` com `noEmit`;
+- motivo: é a forma resolvida por tsx (API), Turbopack (web) e `tsc`; imports `.js` apontando para arquivos `.ts` não são resolvidos pelo Turbopack.
+
 ---
 
 # 13. Banco de Dados
@@ -521,6 +568,20 @@ São exceções válidas:
 - integrações de terceiros.
 
 Não traduzir nomes oficiais de APIs/bibliotecas de maneira artificial.
+
+## Tabelas do Better Auth
+
+As tabelas pertencentes ao Better Auth (`users`, `sessions`, `accounts`, `verifications`, `rate_limits`) são exceção às convenções próprias do Jaa quando necessário para manter compatibilidade oficial com a biblioteca. Por isso a conta autenticável fica em `users`, e não em uma tabela `usuarios` própria.
+
+- são geradas pela CLI oficial (`npm run autenticacao:gerar-schema -w @jaa/api`) e aplicadas por migration versionada;
+- não renomear nem modificar manualmente essas estruturas apenas para adequá-las às convenções internas do Jaa;
+- tabelas próprias do Jaa continuam seguindo normalmente as convenções deste arquivo.
+
+## IDs
+
+- IDs internos do Better Auth permanecem no formato gerado e esperado pela biblioteca;
+- entidades próprias atuais do Jaa (ex.: `identidades`) usam `uuid` gerado pelo banco;
+- a estratégia de IDs de mensagens ainda está em aberto (seção 32).
 
 ---
 
@@ -992,7 +1053,9 @@ Não inventar decisão para os itens abaixo. Eles serão definidos quando necess
 - pagamentos;
 - biblioteca de styling mobile;
 - infraestrutura final de rastreamento;
-- estratégia de criptografia ponta a ponta, caso seja adotada.
+- estratégia de criptografia ponta a ponta, caso seja adotada;
+- provedor de SMS comercial para entrega de OTP;
+- estratégia de IDs de mensagens (ex.: UUIDv7), a decidir quando o domínio de mensagens for iniciado.
 
 Quando uma dessas decisões se tornar necessária, comparar opções de acordo com os requisitos reais do Jaa antes de adicionar tecnologia.
 
