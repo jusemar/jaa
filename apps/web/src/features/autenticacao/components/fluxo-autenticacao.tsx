@@ -3,6 +3,9 @@
 import type { ContaAtual } from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
 import { MensageiroTecnico } from "@/features/conversas/components/mensageiro-tecnico";
+import { AreaEmpresas } from "@/features/empresas/components/area-empresas";
+import { SeletorIdentidade } from "@/features/identidades/components/seletor-identidade";
+import { useIdentidadeAtiva } from "@/features/identidades/hooks/use-identidade-ativa";
 import { useConexaoRealtime } from "@/lib/realtime/use-realtime-conectado";
 import { buscarContaAtual, criarIdentidadePessoal, testarRotaProtegida } from "../lib/api-conta";
 import { clienteAutenticacao } from "../lib/cliente-autenticacao";
@@ -119,7 +122,10 @@ export function FluxoAutenticacao() {
   }
 
   return (
-    <section aria-label="Autenticação" className="flex w-full max-w-sm flex-col gap-4">
+    <section
+      aria-label="Autenticação"
+      className={`flex w-full flex-col gap-4 ${etapa.nome === "autenticado" ? "max-w-4xl" : "max-w-sm"}`}
+    >
       <p className="text-xs uppercase tracking-wide text-amber-700">Interface técnica temporária</p>
 
       {etapa.nome === "carregando" && <p>Carregando…</p>}
@@ -193,7 +199,7 @@ function PainelAutenticado({ conta, aoSair, saindo }: { conta: ContaAtual; aoSai
       <Botao desabilitado={saindo} aoClicar={aoSair} tipo="button">
         Sair
       </Botao>
-      {conta.identidadePessoal && <MensageiroTecnico identidadeId={conta.identidadePessoal.id} />}
+      {conta.identidadePessoal && <AreaIdentidadesEEmpresas identidadePessoalId={conta.identidadePessoal.id} />}
     </div>
   );
 }
@@ -261,5 +267,26 @@ function Botao(props: {
     >
       {props.desabilitado ? "Aguarde…" : props.children}
     </button>
+  );
+}
+
+function AreaIdentidadesEEmpresas({ identidadePessoalId }: { identidadePessoalId: string }) {
+  const identidades = useIdentidadeAtiva(identidadePessoalId);
+
+  return (
+    <>
+      <SeletorIdentidade
+        operaveis={identidades.operaveis}
+        ativa={identidades.ativa}
+        erro={identidades.erro}
+        aoSelecionar={(identidadeId) => void identidades.selecionar(identidadeId)}
+      />
+      <AreaEmpresas aoEmpresaCriada={() => void identidades.recarregar()} />
+      {identidades.ativa && (
+        // O mensageiro opera como a identidade ATIVA (autorizada pela API em cada chamada).
+        // `key`: trocar de identidade recomeça inbox, conversa aberta, confirmações e avisos do zero.
+        <MensageiroTecnico key={identidades.ativa.identidadeId} identidadeId={identidades.ativa.identidadeId} tipoIdentidade={identidades.ativa.tipo} />
+      )}
+    </>
   );
 }

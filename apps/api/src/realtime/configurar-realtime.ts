@@ -1,12 +1,30 @@
 import type { Banco } from "@jaa/banco";
-import { EVENTO_MENSAGEM_NOVA, type CodigoErroConexaoRealtime, type ErroConexaoRealtime } from "@jaa/contratos";
+import {
+  EVENTO_CONVERSA_NAO_LIDAS,
+  EVENTO_DIGITANDO_ATUALIZADO,
+  EVENTO_MENSAGEM_ATUALIZADA,
+  EVENTO_MENSAGEM_EXCLUIDA_PARA_MIM,
+  EVENTO_MENSAGEM_NOVA,
+  EVENTO_MENSAGENS_ENTREGUES,
+  EVENTO_MENSAGENS_LIDAS,
+  EVENTO_NOTIFICACAO_NOVA_MENSAGEM,
+  EVENTO_PRESENCA_ATUALIZADA,
+  type CodigoErroConexaoRealtime,
+  type ErroConexaoRealtime,
+} from "@jaa/contratos";
 import type { FastifyInstance } from "fastify";
 import { Server } from "socket.io";
 import type { Autenticacao } from "../features/autenticacao/autenticacao.js";
 import { autenticarIdentidade } from "../features/autenticacao/casos-de-uso/autenticar-identidade.js";
 import type { AvisoSessoesEncerradas } from "../features/autenticacao/lib/sessoes-encerradas.js";
+import { registrarEventosAtividadeConversa } from "../features/conversas/eventos/eventos-atividade-conversa.js";
+import { criarAtualizadorNaoLidas } from "../features/conversas/lib/atualizador-nao-lidas.js";
+import { criarRegistroDigitandoEmMemoria, type RegistroDigitando } from "../features/conversas/lib/registro-digitando.js";
 import type { CanalEventosMensagens } from "../features/mensagens/lib/eventos-mensagens.js";
 import { serializarMensagem } from "../features/mensagens/lib/serializar-mensagem.js";
+import { criarNotificadorNovasMensagens } from "../features/notificacoes/lib/notificador-novas-mensagens.js";
+import { criarRegistroPresencaEmMemoria, type RegistroPresenca } from "../features/presenca/lib/registro-presenca.js";
+import { salaDaConversa, salaDaIdentidade, salaDaSessao, salaDePresenca } from "./salas.js";
 import type { ServidorRealtime } from "./tipos.js";
 
 interface DependenciasRealtime {
@@ -15,20 +33,17 @@ interface DependenciasRealtime {
   sessoesEncerradas: AvisoSessoesEncerradas;
   eventosMensagens: CanalEventosMensagens;
   origensPermitidas: string[];
+  // Opcionais: por padrão, implementações em memória (uma instância da API).
+  presenca?: RegistroPresenca;
+  digitando?: RegistroDigitando;
 }
 
 const MENSAGENS_ERRO_CONEXAO: Record<CodigoErroConexaoRealtime, string> = {
   NAO_AUTENTICADO: "Sessão ausente ou expirada.",
   CADASTRO_INCOMPLETO: "Conclua o cadastro para usar o realtime.",
+  IDENTIDADE_NAO_AUTORIZADA: "Você não pode agir como esta identidade.",
   ERRO_INTERNO: "Não foi possível autenticar a conexão.",
 };
-
-// Salas TÉCNICAS internas, sempre definidas pelo servidor (o cliente não entra em salas).
-// Não são salas de conversa nem substituem a autorização de domínio, feita na API/banco.
-// sessao:<id>     → encerrar só as conexões de uma sessão (logout/revogação).
-// identidade:<id> → entregar eventos a todas as conexões de uma identidade (abas e dispositivos).
-const salaDaSessao = (sessaoId: string) => `sessao:${sessaoId}`;
-const salaDaIdentidade = (identidadeId: string) => `identidade:${identidadeId}`;
 
 function erroDeConexao(codigo: CodigoErroConexaoRealtime) {
   const dados: ErroConexaoRealtime = { codigo, mensagem: MENSAGENS_ERRO_CONEXAO[codigo] };
@@ -38,6 +53,19 @@ function erroDeConexao(codigo: CodigoErroConexaoRealtime) {
 
 export function configurarRealtime(servidor: FastifyInstance, dependencias: DependenciasRealtime): ServidorRealtime {
   const origens = new Set(dependencias.origensPermitidas);
+  const presenca = dependencias.presenca ?? criarRegistroPresencaEmMemoria();
+  const digitando = dependencias.digitando ?? criarRegistroDigitandoEmMemoria();
+  const atualizadorNaoLidas = criarAtualizadorNaoLidas({
+    banco: dependencias.banco,
+    eventosMensagens: dependencias.eventosMensagens,
+    aoFalhar: (erro) => servidor.log.error({ erro: erro instanceof Error ? erro.message : "desconhecido" }, "Falha ao recalcular não lidas"),
+  });
+  // Serviços de domínio que reagem a fatos já persistidos; vivem com o canal/realtime desta instância.
+  const notificador = criarNotificadorNovasMensagens({
+    banco: dependencias.banco,
+    eventosMensagens: dependencias.eventosMensagens,
+    aoFalhar: (erro) => servidor.log.error({ erro: erro instanceof Error ? erro.message : "desconhecido" }, "Falha ao notificar nova mensagem"),
+  });
 
   const realtime: ServidorRealtime = new Server(servidor.server, {
     cors: {
@@ -55,10 +83,14 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
   });
 
   // Middleware oficial de handshake: nenhuma conexão é aceita sem sessão válida e identidade pessoal.
-  // usuarioId/identidadeId/sessaoId vêm só do servidor; dados enviados pelo cliente são ignorados.
+  // usuarioId/sessaoId vêm só do servidor. A identidade ATUANTE da conexão é a pessoal, ou a pedida em
+  // `auth.identidadeId` SE a conta puder operá-la (senão a conexão é recusada). Cada conexão age como
+  // UMA identidade: trocar de identidade no cliente = nova conexão, com nova autorização.
   realtime.use(async (socket, next) => {
     try {
-      const resultado = await autenticarIdentidade(dependencias, socket.handshake.headers);
+      const auth: unknown = socket.handshake.auth;
+      const identidadeSolicitada = typeof auth === "object" && auth !== null && "identidadeId" in auth ? auth.identidadeId : undefined;
+      const resultado = await autenticarIdentidade(dependencias, socket.handshake.headers, identidadeSolicitada);
 
       if (!resultado.ok) {
         servidor.log.info({ motivo: resultado.codigo }, "Conexão realtime recusada");
@@ -76,14 +108,35 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
   });
 
   realtime.on("connection", (socket) => {
+    // `identidadeId` = identidade atuante autorizada: salas, presença e digitando são dela.
+    // Presença de identidade empresarial agrega as conexões de todos os seus operadores.
     const { usuarioId, identidadeId, sessaoId } = socket.data.contexto;
+    socket.data.observacoes = new Map();
     void socket.join([salaDaSessao(sessaoId), salaDaIdentidade(identidadeId)]);
+    presenca.conectar(identidadeId, socket.id);
+    registrarEventosAtividadeConversa(socket, { banco: dependencias.banco, presenca, digitando, log: servidor.log });
 
     servidor.log.info({ socketId: socket.id, usuarioId, identidadeId }, "Cliente conectado ao realtime");
 
     socket.on("disconnect", (motivo) => {
+      // Queda da conexão encerra imediatamente o "digitando" dela; presença respeita a tolerância.
+      digitando.encerrarConexao(socket.id);
+      presenca.desconectar(identidadeId, socket.id);
       servidor.log.info({ socketId: socket.id, usuarioId, motivo }, "Cliente desconectado do realtime");
     });
+  });
+
+  // Presença: só para quem observa uma conversa com a identidade. Nunca broadcast global.
+  const cancelarPresenca = presenca.inscrever(({ identidadeId, online }) => {
+    realtime.to(salaDePresenca(identidadeId)).emit(EVENTO_PRESENCA_ATUALIZADA, { identidadeId, online });
+  });
+
+  // Digitando: para quem observa a conversa, exceto as conexões da própria identidade.
+  const cancelarDigitando = digitando.inscrever(({ conversaId, identidadeId, digitando: estaDigitando }) => {
+    realtime
+      .to(salaDaConversa(conversaId))
+      .except(salaDaIdentidade(identidadeId))
+      .emit(EVENTO_DIGITANDO_ATUALIZADO, { conversaId, identidadeId, digitando: estaDigitando });
   });
 
   // Sessão encerrada (ex.: logout) → derruba imediatamente só as conexões daquela sessão.
@@ -91,15 +144,59 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
     realtime.in(salaDaSessao(sessaoId)).disconnectSockets(true);
   });
 
-  // Ao desligar a API, fecha só o transporte (sem pacote de "desconexão pelo servidor"):
-  // assim os clientes tratam como queda, reconectam sozinhos e passam de novo pelo handshake.
-  // Mensagem já persistida → entrega a todas as conexões das identidades participantes.
-  const cancelarEntregaMensagens = dependencias.eventosMensagens.inscrever(({ mensagem, destinatariosIdentidadeIds }) => {
-    realtime.to(destinatariosIdentidadeIds.map(salaDaIdentidade)).emit(EVENTO_MENSAGEM_NOVA, {
-      mensagem: serializarMensagem(mensagem),
-    });
+  // Fato já persistido → entrega a todas as conexões das identidades participantes.
+  // Emitir NÃO altera estado: "entregue" só existe após a confirmação do cliente destinatário.
+  const cancelarEntregaMensagens = dependencias.eventosMensagens.inscrever((evento) => {
+    const salas = evento.destinatariosIdentidadeIds.map(salaDaIdentidade);
+
+    switch (evento.tipo) {
+      case "mensagem-criada":
+        // Quem enviou parou de digitar: o indicador some antes de a mensagem aparecer.
+        digitando.pararIdentidade(evento.mensagem.conversaId, evento.mensagem.remetenteIdentidadeId);
+        realtime.to(salas).emit(EVENTO_MENSAGEM_NOVA, { mensagem: serializarMensagem(evento.mensagem) });
+        return;
+      case "mensagem-atualizada":
+        realtime.to(salas).emit(EVENTO_MENSAGEM_ATUALIZADA, { mensagem: serializarMensagem(evento.mensagem) });
+        return;
+      case "mensagem-excluida-para-mim":
+        realtime.to(salas).emit(EVENTO_MENSAGEM_EXCLUIDA_PARA_MIM, {
+          conversaId: evento.conversaId,
+          mensagemId: evento.mensagemId,
+          ultimaMensagem: evento.ultimaMensagem && serializarMensagem(evento.ultimaMensagem),
+        });
+        return;
+      case "nao-lidas-atualizadas":
+        realtime.to(salas).emit(EVENTO_CONVERSA_NAO_LIDAS, { conversaId: evento.conversaId, naoLidas: evento.naoLidas });
+        return;
+      case "notificacao-nova-mensagem":
+        realtime.to(salas).emit(EVENTO_NOTIFICACAO_NOVA_MENSAGEM, {
+          conversaId: evento.conversaId,
+          mensagemId: evento.mensagemId,
+          remetente: evento.remetente,
+          previaConteudo: evento.previaConteudo,
+          conteudoTruncado: evento.conteudoTruncado,
+          criadoEm: evento.criadoEm.toISOString(),
+        });
+        return;
+      case "mensagens-entregues":
+        realtime.to(salas).emit(EVENTO_MENSAGENS_ENTREGUES, {
+          conversaId: evento.conversaId,
+          destinatarioIdentidadeId: evento.destinatarioIdentidadeId,
+          mensagemIds: evento.mensagemIds,
+        });
+        return;
+      case "mensagens-lidas":
+        realtime.to(salas).emit(EVENTO_MENSAGENS_LIDAS, {
+          conversaId: evento.conversaId,
+          leitorIdentidadeId: evento.leitorIdentidadeId,
+          ateMensagemId: evento.ateMensagemId,
+        });
+        return;
+    }
   });
 
+  // Ao desligar a API, fecha só o transporte (sem pacote de "desconexão pelo servidor"):
+  // assim os clientes tratam como queda, reconectam sozinhos e passam de novo pelo handshake.
   servidor.addHook("preClose", async () => {
     realtime.engine.close();
   });
@@ -107,6 +204,12 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
   servidor.addHook("onClose", async () => {
     cancelarInscricao();
     cancelarEntregaMensagens();
+    cancelarPresenca();
+    cancelarDigitando();
+    await atualizadorNaoLidas.encerrar();
+    await notificador.encerrar();
+    presenca.encerrar();
+    digitando.encerrar();
     // O servidor HTTP já foi fechado pelo Fastify; aqui só são liberados os recursos do Socket.IO.
     await new Promise<void>((resolver) => {
       void realtime.close(() => resolver());

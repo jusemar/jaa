@@ -12,6 +12,11 @@ export const participantesConversa = pgTable(
     identidadeId: uuid()
       .notNull()
       .references(() => identidades.id, { onDelete: "restrict" }),
+    // Cursor de LEITURA desta identidade na conversa: leu todas as mensagens dos OUTROS participantes
+    // com id (UUIDv7) <= este valor. Só avança (UPDATE condicional), nunca regride. Null = nada lido.
+    // Sem FK para mensagens de propósito: evitaria ciclo participantes ↔ mensagens; o servidor valida,
+    // na mesma instrução do UPDATE, que o id é de mensagem desta conversa enviada por outra identidade.
+    lidaAteMensagemId: uuid(),
     criadoEm: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (tabela) => [

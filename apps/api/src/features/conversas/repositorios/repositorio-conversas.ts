@@ -1,11 +1,13 @@
 import type { Banco } from "@jaa/banco";
 import { conversas, identidades, mensagens, participantesConversa } from "@jaa/banco/schema";
-import { and, asc, desc, eq, getTableColumns, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import type { MensagemRegistro } from "../../mensagens/repositorios/repositorio-mensagens.js";
+import { colunasMensagemCompleta, visivelPara, type MensagemRegistro } from "../../mensagens/repositorios/repositorio-mensagens.js";
+import { naoLidasSql } from "./nao-lidas-sql.js";
 
 export interface ParticipanteRegistro {
   identidadeId: string;
+  tipo: "pessoal" | "empresarial";
   nomeExibicao: string;
   nomeUsuario: string;
 }
@@ -68,6 +70,7 @@ export async function listarParticipantesDaConversa(banco: Banco, conversaId: st
   return banco
     .select({
       identidadeId: participantesConversa.identidadeId,
+      tipo: identidades.tipo,
       nomeExibicao: identidades.nomeExibicao,
       nomeUsuario: identidades.nomeUsuario,
     })
@@ -82,6 +85,7 @@ export interface ItemListaConversasRegistro {
   tipo: "direta";
   outraIdentidade: ParticipanteRegistro;
   ultimaMensagem: MensagemRegistro;
+  naoLidas: number;
 }
 
 /**
@@ -108,13 +112,18 @@ export async function listarConversasDaIdentidade(
   const ultimaMensagem = banco
     .select({ ultimaMensagemId: sql<string>`${mensagens.id}`.as("ultima_mensagem_id") })
     .from(mensagens)
-    .where(eq(mensagens.conversaId, participacao.conversaId))
+    // Última mensagem que ESTA identidade vê: as excluídas "para mim" são puladas.
+    .where(and(eq(mensagens.conversaId, participacao.conversaId), visivelPara(identidadeId)))
     .orderBy(desc(mensagens.id))
     .limit(1)
     .as("ultima_mensagem");
 
   const pagina = banco
-    .select({ conversaId: participacao.conversaId, ultimaMensagemId: ultimaMensagem.ultimaMensagemId })
+    .select({
+      conversaId: participacao.conversaId,
+      lidaAteMensagemId: participacao.lidaAteMensagemId,
+      ultimaMensagemId: ultimaMensagem.ultimaMensagemId,
+    })
     .from(participacao)
     .crossJoinLateral(ultimaMensagem)
     .where(
@@ -133,10 +142,14 @@ export async function listarConversasDaIdentidade(
       tipo: conversas.tipo,
       outraIdentidade: {
         identidadeId: identidades.id,
+        tipo: identidades.tipo,
         nomeExibicao: identidades.nomeExibicao,
         nomeUsuario: identidades.nomeUsuario,
       },
-      ultimaMensagem: getTableColumns(mensagens),
+      // Estado e referência de resposta calculados só para as linhas da página.
+      ultimaMensagem: colunasMensagemCompleta,
+      // Contagem limitada, calculada só para as linhas da página.
+      naoLidas: naoLidasSql(sql`${pagina.conversaId}`, sql`${pagina.lidaAteMensagemId}`, identidadeId),
     })
     .from(pagina)
     .innerJoin(conversas, eq(conversas.id, pagina.conversaId))
@@ -158,4 +171,29 @@ export async function listarIdsParticipantesDaConversa(banco: Banco, conversaId:
     .where(eq(participantesConversa.conversaId, conversaId));
 
   return linhas.map((linha) => linha.identidadeId);
+}
+
+export async function listarIdsParticipantesPorConversa(banco: Banco, conversaIds: string[]): Promise<Map<string, string[]>> {
+  const linhas = await banco
+    .select({ conversaId: participantesConversa.conversaId, identidadeId: participantesConversa.identidadeId })
+    .from(participantesConversa)
+    .where(inArray(participantesConversa.conversaId, conversaIds));
+
+  const porConversa = new Map<string, string[]>();
+  for (const { conversaId, identidadeId } of linhas) {
+    porConversa.set(conversaId, [...(porConversa.get(conversaId) ?? []), identidadeId]);
+  }
+  return porConversa;
+}
+
+// Não lidas atuais de uma conversa para uma identidade (null se ela não participa).
+export async function contarNaoLidas(banco: Banco, conversaId: string, identidadeId: string): Promise<number | null> {
+  const [linha] = await banco
+    .select({
+      naoLidas: naoLidasSql(sql`${participantesConversa.conversaId}`, sql`${participantesConversa.lidaAteMensagemId}`, identidadeId),
+    })
+    .from(participantesConversa)
+    .where(and(eq(participantesConversa.conversaId, conversaId), eq(participantesConversa.identidadeId, identidadeId)))
+    .limit(1);
+  return linha?.naoLidas ?? null;
 }

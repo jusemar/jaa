@@ -9,7 +9,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
 import {
-  exigirIdentidadeAutenticada,
+  exigirIdentidadeAtuante,
   obterIdentidadeExigida,
 } from "../../autenticacao/lib/exigir-identidade-autenticada.js";
 import { abrirConversaDireta } from "../casos-de-uso/abrir-conversa-direta.js";
@@ -20,9 +20,9 @@ export function registrarRotasConversas(
   servidor: FastifyInstance,
   dependencias: { banco: Banco; autenticacao: Autenticacao },
 ) {
-  const preHandler = exigirIdentidadeAutenticada(dependencias);
+  const preHandler = exigirIdentidadeAtuante(dependencias);
 
-  // Lista de conversas da identidade DA SESSÃO, por atividade mais recente. Query: antesDe, limite.
+  // Lista de conversas da identidade ATUANTE autorizada (inbox pessoal OU da empresa operada). Query: antesDe, limite.
   servidor.get("/conversas", { preHandler }, async (requisicao, resposta) => {
     const { identidadeId } = obterIdentidadeExigida(requisicao);
     const consulta = listarConversasConsultaSchema.safeParse(requisicao.query);
@@ -40,7 +40,7 @@ export function registrarRotasConversas(
     return pagina;
   });
 
-  // Abre (ou obtém) a conversa direta entre a identidade da sessão e a identidade do @usuario informado.
+  // Abre (ou obtém) a conversa direta entre a identidade atuante e a identidade (pessoa/empresa ativa) do @usuario.
   servidor.post(
     "/conversas/diretas",
     { preHandler },

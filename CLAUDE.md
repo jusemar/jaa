@@ -29,6 +29,12 @@ O Jaa **não deve nascer como marketplace com um chat anexado**. O núcleo do pr
 
 # 2. Fase Atual do Projeto — REGRA CRÍTICA
 
+## Estado atual
+
+A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa") e **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa").
+
+Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, carrinho, pedidos, pagamento, logística, rastreamento, entregadores, loja pública funcional, administração de produtos no Mobile, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
+
 ## FASE 1: MENSAGERIA
 
 Neste momento implementar somente o necessário para um mensageiro funcional.
@@ -90,6 +96,46 @@ A evolução prevista é:
 7. Recursos inteligentes/IA.
 
 Uma etapa só deve ser implementada quando for explicitamente iniciada.
+
+## Decisões de produto aprovadas para fases futuras
+
+Registradas para orientar a arquitetura; **não implementar antes da etapa correspondente**.
+
+### Domínio único de Pedido
+
+O Jaa terá **um único domínio de Pedido**. Um Pedido Jaa poderá ter como origem:
+
+- Chat;
+- Loja pública;
+- Catálogo;
+- Feed/post com produto ou oferta vinculada.
+
+Independentemente da origem, **não existirão sistemas de pedido separados**. Todas as origens convergem para o mesmo domínio (a origem é um atributo do pedido, não um sistema próprio):
+
+```text
+ORIGEM → PEDIDO JAA → ACOMPANHAMENTO EM TEMPO REAL
+```
+
+O acompanhamento deverá permitir a evolução de estados como:
+
+```text
+PEDIDO RECEBIDO → CONFIRMADO → EM PREPARAÇÃO → PRONTO → SAIU PARA ENTREGA → EM ROTA → ENTREGUE
+```
+
+Esse fluxo será refinado na etapa de pedidos. Pedidos poderão surgir da conversa ou da loja pública, sempre no mesmo domínio.
+
+Quando a modalidade logística permitir, o acompanhamento poderá incluir a localização do entregador no mapa em tempo real e a previsão de chegada (seção 16).
+
+### Pagamento na primeira versão: na entrega
+
+Na primeira versão **não haverá pagamento dentro do Jaa**. O pagamento acontece **na entrega**, conforme a operação da empresa. Portanto, não implementar Stripe, Pix, cartão online, checkout financeiro, carteira, dados bancários ou qualquer transação financeira até nova decisão de produto.
+
+Ao criar o pedido (etapa futura), o cliente informa a **forma pretendida de pagamento na entrega**, como instrução do pedido:
+
+- **DINHEIRO**: pode informar **"troco para"** (ex.: total R$ 9,00, troco para R$ 10,00) para a empresa/entregador levar troco. O valor usa a mesma representação monetária segura (centavos inteiros);
+- **CARTÃO**: registra apenas "Pagamento na entrega: Cartão". **Nunca** pedir número, validade, CVV, senha, token ou qualquer credencial financeira; o pagamento é presencial, com a solução da própria empresa/entregador.
+
+Nada disso existe no banco ainda: será modelado junto com o domínio Pedido.
 
 ---
 
@@ -184,22 +230,28 @@ A escolha inicial preferencial é **Socket.IO**, desde que validada no momento d
 
 Socket.IO integrado à API e ao web, **autenticado no handshake pela sessão Better Auth**:
 
-- o servidor valida a sessão e deriva `usuarioId`, `identidadeId` e `sessaoId`; o cliente nunca determina esses IDs;
-- sem sessão válida → `NAO_AUTENTICADO`; sessão válida sem identidade pessoal → `CADASTRO_INCOMPLETO`;
+- o servidor valida a sessão e deriva `usuarioId`, `identidadePessoalId` e `sessaoId`; o cliente nunca determina esses IDs;
+- a conexão age como UMA identidade: a pessoal, ou a pedida em `auth.identidadeId` **se** a conta puder operá-la (seção 7, "Conversas com empresa"). Trocar de identidade no cliente = reconectar;
+- sem sessão válida → `NAO_AUTENTICADO`; sessão válida sem identidade pessoal → `CADASTRO_INCOMPLETO`; identidade pedida não operável → `IDENTIDADE_NAO_AUTORIZADA` (recusa, nunca rebaixa para a pessoal em silêncio);
 - cada socket fica associado à sessão específica que o autenticou;
 - logout ou revogação da sessão desconecta imediatamente os sockets daquela sessão, sem derrubar outras sessões do mesmo usuário;
 - cada reconexão passa novamente pela autenticação;
 - o web envia o cookie da sessão Better Auth com `withCredentials`;
 - o realtime do Expo deverá enviar a mesma sessão oficial do Better Auth, sem token paralelo.
 
-Salas técnicas definidas somente pelo servidor (o cliente não entra em salas): `sessao:<id>` para encerrar conexões de uma sessão e `identidade:<id>` para entregar eventos a todas as conexões de uma identidade. Não são salas de conversa nem substituem a autorização de domínio.
+Salas técnicas definidas somente pelo servidor (o cliente não entra em salas; `realtime/salas.ts`): `sessao:<id>` para encerrar conexões de uma sessão, `identidade:<id>` para entregar eventos a todas as conexões de uma identidade, `presenca:<id>` e `conversa:<id>` para entregar atividade efêmera a conexões **já autorizadas** (seção 14). Salas são só meio de entrega: nunca substituem a autorização de domínio.
 
-Único evento funcional: `mensagem:nova` (servidor → cliente), emitido após a persistência (seção 14). Ainda **não existem** rooms de conversa, presença, digitando, entregue/lido ou outros eventos.
+Divisão HTTP × Socket.IO:
+
+- dados persistentes e comandos de negócio (enviar, confirmar recebimento, confirmar leitura) → **HTTP autenticado**;
+- estado/atividade **efêmera** (presença, digitando) → **Socket.IO**, com acknowledgement e payload validado por Zod; nada disso é persistido.
+
+Eventos servidor → cliente: `mensagem:nova`, `mensagem:atualizada`, `mensagem:excluida-para-mim`, `mensagens:entregues`, `mensagens:lidas`, `conversa:nao-lidas`, `notificacao:nova-mensagem` (todos sempre após o commit), `presenca:atualizada` e `digitando:atualizado`. Cliente → servidor: `conversa:observar`, `conversa:deixar-de-observar`, `digitando:informar`. Contratos em `@jaa/contratos` (`realtime/eventos.ts`, `realtime/atividade-conversa.ts`).
 
 Pendências do realtime:
 
 - tratar a expiração natural da sessão com socket aberto quando surgirem eventos sensíveis;
-- múltiplas instâncias da API exigirão adapter compartilhado do Socket.IO (seção 22);
+- múltiplas instâncias da API exigirão adapter compartilhado do Socket.IO **e** coordenação distribuída de presença e digitando: os registros atuais são em memória de uma instância (interfaces `RegistroPresenca`/`RegistroDigitando` permitem trocar a implementação sem mudar handlers) (seção 22);
 - avaliar rate limit/proteção específica do handshake conforme a escala;
 - validar o envio da sessão no Socket.IO do React Native/Expo quando o realtime mobile for implementado.
 
@@ -330,7 +382,64 @@ Responsabilidades:
 - conta autenticável e sessão: Better Auth (seção 5);
 - identidade: domínio Jaa; a tabela de conta do Better Auth não é a identidade pública/social do produto.
 
-Na Fase 1, cada conta possui **exatamente uma identidade pessoal**. Futuramente, uma conta poderá operar identidades empresariais autorizadas, sem misturar conversas pessoais e empresariais (seção 8); a modelagem atual não deve impedir essa evolução.
+Cada conta possui **exatamente uma identidade pessoal** e pode operar identidades empresariais autorizadas, sem misturar conversas pessoais e empresariais (seção 8).
+
+## Empresas e identidade empresarial (Fase 2 — fundação implementada)
+
+Modelagem (evolução do mesmo domínio de identidades, sem sistema paralelo):
+
+```text
+conta (users) ─┬─ identidade PESSOAL (identidades.usuario_id)
+               └─ membros_empresa (papel) ─→ empresa ─→ identidade EMPRESARIAL (identidades.empresa_id)
+```
+
+- `identidades.tipo` = `pessoal | empresarial`, com **exatamente um dono** conforme o tipo (CHECK `identidades_dono_por_tipo`): pessoal → `usuario_id`; empresarial → `empresa_id`, sem conta dona. Uma identidade empresarial por empresa (índice único parcial);
+- `empresas` (`id`, `slug`, `status`, datas): o **nome público é o `nome_exibicao` da identidade empresarial** e o @usuario também vive nela, sem cópia na empresa (uma fonte só);
+- `membros_empresa (empresa_id, usuario_id, papel)`: vínculo **conta ↔ empresa**, nunca identidade pessoal ↔ empresa. Operar uma empresa não expõe à empresa nem a futuros membros as conversas, contatos ou dados da identidade pessoal. Papel hoje só `proprietario`; administrador, atendente, funcionário e entregador entram como novos valores + permissões;
+- criação atômica: empresa + identidade empresarial + proprietário numa transação; um **trigger de constraint diferido** recusa no commit empresa sem identidade empresarial ou sem proprietário. Na migration, valores de enum recém-adicionados são comparados como texto (o migrator aplica tudo numa transação).
+
+Identificadores:
+
+- **@usuario** (identidade): mesmo espaço único para pessoas e empresas;
+- **slug** (empresa): endereço público da futura `/loja/<slug>`, único, `^[a-z0-9]+(-[a-z0-9]+)*$`, 3–60, com reservados em `@jaa/contratos`. **Nunca autoriza**; as APIs usam ids e vínculos.
+
+Autorização centralizada (`features/empresas/lib/autorizacao-empresas.ts`):
+
+- rotas e casos de uso pedem **permissões** (`ver-empresa`, `editar-empresa`, `operar-identidade-empresarial`) resolvidas por uma tabela papel → permissões; nada de `empresa.usuarioId === usuario.id` espalhado;
+- "esta conta pode operar esta identidade?" = `autorizarOperacaoIdentidade` (pessoal própria ou empresarial com permissão);
+- dono, papel e conta **sempre da sessão**; campos enviados pelo cliente são descartados. Sem acesso ou inexistente → 404 (`EMPRESA_NAO_ENCONTRADA`, `IDENTIDADE_NAO_ENCONTRADA`).
+
+API: `POST /empresas`, `GET /empresas`, `GET /empresas/:id`, `PATCH /empresas/:id` (nome/slug), `GET /identidades/operaveis`, `GET /identidades/operaveis/:identidadeId`.
+
+Web (técnico): área "Minhas empresas" (slug sugerido pelo nome, editável e validado no servidor) e seletor **"Agindo como"** (Pessoa / Empresas). A seleção é **preferência de interface** (localStorage por identidade pessoal), só aceita se o id estiver na lista operável do servidor e confirmada via API; não é credencial.
+
+O mensageiro opera por identidade ATUANTE (seção "Conversas com empresa"), então Pessoa↔Pessoa, Pessoa↔Empresa e Empresa↔Pessoa usam o mesmo domínio; Empresa↔Empresa é estruturalmente possível, sem fluxo próprio.
+
+Pendências: RBAC de membros (convites, remoção, impedir remover o último proprietário), limite de empresas por conta e proteção contra reserva abusiva de slug/@usuario, e cadastro empresarial (CNPJ, endereço, horários) quando necessário.
+
+## Produtos da empresa (Fase 2 — catálogo com administração Web)
+
+**Decisão da primeira versão — WEB × MOBILE:** a gestão comercial (listar, criar, editar, alterar disponibilidade e, no futuro, imagens e configurações) é feita **pela Web**. O **Mobile não terá administração de produtos** e será a experiência do cliente (ver catálogo, escolher, pedir). Não é limitação definitiva: o domínio e a API são independentes da interface, então o Mobile poderá administrar depois sem reconstruir banco, API ou regras.
+
+Um único domínio: **PRODUTO DA EMPRESA**. Não existem "produto web", "produto mobile", "produto do chat" nem "produto da loja"; os canais só apresentam o mesmo domínio.
+
+Modelagem (`produtos`):
+
+- sem tabela `catalogos`: o catálogo de uma empresa é o conjunto dos produtos dela. Categorias, seções, ordenação e destaques poderão referenciar `produtos` depois;
+- `empresa_id` (FK) é estrutural e **imutável**: não existe nos contratos de edição e o trigger `produtos_empresa_imutavel` recusa trocar de empresa. Transferência, se existir, será fluxo explícito;
+- `nome` (1–120, trim), `descricao` (opcional, 1–1000, **null** em vez de vazio), `disponibilidade` `disponivel | indisponivel` (indisponível continua existindo e administrável; futuramente não entra em pedido novo), `criado_em`, `atualizado_em`;
+- **dinheiro em centavos inteiros** (`preco_centavos integer`, 1–99.999.999; R$ 39,90 = 3990) no banco, nos contratos (inteiro JSON; fração/string recusadas) e na UI (conversão por texto, sem float). Sem produto gratuito ou "sob consulta" nesta versão;
+- sem estoque, SKU, variações ou grade. **Sem exclusão nesta etapa** ("indisponível" cobre a operação); quando o Pedido existir, será exclusão **lógica** (`excluido_em`), nunca DELETE, pois pedidos históricos referenciarão o produto.
+
+API administrativa (conta autorizada; toda operação passa por `autorizarEmpresa` com permissão e busca o produto **escopado pela empresa** — produto de outra empresa = 404):
+
+- `GET|POST /empresas/:empresaId/produtos`, `GET|PATCH /empresas/:empresaId/produtos/:produtoId`, `PATCH .../disponibilidade`;
+- permissões `ver-produtos`, `gerenciar-produtos` e `alterar-disponibilidade-produto` (separada, para um futuro atendente mudar disponibilidade sem mexer em preço). Hoje o proprietário tem todas;
+- sem acesso e empresa inexistente são indistinguíveis (404); slug não é chave de acesso; `empresaId` no corpo é descartado.
+
+Não públicos: a futura loja `/loja/<slug>`, o app e o chat terão **consulta pública própria** (empresa pública → produtos disponíveis), com contrato só de dados permitidos, sem proprietário, conta, vínculos ou permissões.
+
+Web (técnico): "Minhas empresas" → Abrir → **Produtos** (lista com preço formatado e disponibilidade, novo/editar, marcar disponível/indisponível). **Imagem do produto aparece desabilitada ("Em breve")**: sem upload, storage ou fornecedor escolhido (seção 32).
 
 ## @usuario
 
@@ -705,11 +814,113 @@ Núcleo de mensagens de texto 1:1 entre identidades pessoais:
 - histórico por cursor (`antesDe` = id da mensagem mais antiga recebida), em ordem determinística por id;
 - texto de 1 a 4000 caracteres, sem conteúdo só com espaços, validado em `@jaa/contratos` e no banco.
 
+## Resposta a uma mensagem (Fase 1)
+
+- `mensagens.mensagem_respondida_id` (nulo = mensagem comum) com **FK composta** `(conversa_id, mensagem_respondida_id) → mensagens(conversa_id, id)`: o banco garante que a original existe e é da **mesma conversa**; CHECK impede responder a si mesma; índice parcial sustenta a FK;
+- a referência aponta para a mensagem (qualquer tipo): responder foto, áudio, produto ou pedido no futuro reutiliza a mesma coluna; muda só a prévia, discriminada por `tipo`;
+- exclusão é **lógica (tombstone)** (seção "Edição e exclusão"): a linha original permanece, a FK continua válida e a referência passa a indicar `excluida: true` sem conteúdo. Por isso a FK é `NO ACTION`, sem cascata nem `SET NULL`; `NO ACTION` também permite apagar em uma instrução mensagens que se referenciam (limpezas de teste);
+- envio: `mensagemRespondidaId` opcional em `POST /conversas/:id/mensagens`, no mesmo fluxo validar → persistir → commit → `mensagem:nova` (sem evento próprio). Inexistente ou de outra conversa (mesmo que o remetente participe dela) → 404 `MENSAGEM_RESPONDIDA_NAO_ENCONTRADA`, sem distinguir os casos. A referência faz parte da tentativa: mesmo `idCliente` com referência diferente/ausente → 409 `ID_CLIENTE_REUTILIZADO`;
+- leitura: toda `Mensagem` traz `mensagemRespondida` (null ou `{ id, remetente: { identidadeId, nomeExibicao }, tipo, previaConteudo, conteudoTruncado }`), montada por subconsulta pela PK (sem N+1) no histórico, no envio, em `mensagem:nova` e na lista. Não depende de a original estar na página carregada. Só dados públicos da identidade;
+- a prévia é limitada pela API a 300 caracteres (payload previsível; a original não muda); a UI limita a duas linhas e adiciona reticências. "Você" é decidido no cliente comparando identidades;
+- lista de conversas mostra só o conteúdo da nova mensagem, sem reproduzir a referência.
+
+## Estados de entrega e leitura (Fase 1)
+
+Ciclo `enviada → entregue → lida`, com significados distintos:
+
+- **enviada**: a API persistiu a mensagem (commit). Falha no banco não gera mensagem nem evento;
+- **entregue**: um cliente autenticado da identidade destinatária **confirmou** que recebeu/processou a mensagem. Persistir, `emit()`, socket conectado ou usuário online **não** contam;
+- **lida**: o destinatário, com a conversa aberta e visível, confirmou leitura.
+
+Modelagem (fatos que só crescem; nenhum estado gravado na própria mensagem):
+
+- `recebimentos_mensagem (mensagem_id, destinatario_identidade_id)` PK, com `conversa_id` e FKs compostas garantindo que a mensagem é daquela conversa e o destinatário participa dela. Uma linha por mensagem × destinatário: vale para 1:1 e grupos. Várias abas/dispositivos confirmam a mesma linha (`ON CONFLICT DO NOTHING`); rastrear por dispositivo no futuro = nova coluna/tabela, sem mudar o contrato;
+- `participantes_conversa.lida_ate_mensagem_id`: **marcador de leitura** por (conversa, identidade). Leu todas as mensagens dos outros com id (UUIDv7) ≤ marcador. Avança só por `UPDATE` condicional (`null` ou `<` novo), atômico sob concorrência; sem FK para mensagens para evitar ciclo, validado na mesma instrução;
+- **estado derivado na leitura** (`estado-mensagem-sql.ts`): `lida` se todo destinatário tem marcador ≥ id; `entregue` se todo destinatário leu ou confirmou recebimento; senão `enviada`. Igual para remetente e destinatário e nunca regride. Em grupos grandes, se o custo por mensagem pesar, introduzir agregados sem mudar o contrato.
+
+Comandos HTTP (identidade sempre da sessão; nada de `identidadeId`/`destinatarioId` do cliente):
+
+- `POST /mensagens/recebimentos { mensagemIds }` (1–100, podem ser de conversas diferentes): só mensagens recebidas pela identidade (de outra identidade, em conversa de que participa). Tudo ou nada: qualquer id próprio, alheio ou inexistente → 404 `MENSAGEM_NAO_ENCONTRADA` sem gravar. Repetir é idempotente;
+- `POST /conversas/:id/leitura { ateMensagemId }`: um marcador cobre qualquer quantidade de mensagens. Não participante → 404 `CONVERSA_NAO_ENCONTRADA`; mensagem que não foi recebida nesta conversa (inclusive a própria) → 404 `MENSAGEM_NAO_ENCONTRADA`. Leitura atrasada/repetida responde o marcador atual.
+
+Realtime (após o commit, para todas as conexões dos participantes): `mensagens:entregues { conversaId, destinatarioIdentidadeId, mensagemIds }` só com recebimentos **novos**; `mensagens:lidas { conversaId, leitorIdentidadeId, ateMensagemId }` só quando o marcador **avança**. `Mensagem.estado` vem no histórico, na resposta do envio (retry devolve o estado atual), em `mensagem:nova` (`enviada`) e na `ultimaMensagem` da lista.
+
+Cliente Web (regra da fase):
+
+- confirma recebimento de tudo que processa (evento `mensagem:nova`, histórico, prévia da lista) em fila única por aba, agrupada e com nova tentativa em falha de rede;
+- confirma leitura somente com a conversa selecionada, histórico apresentado e `document.visibilityState === "visible"`;
+- reconcilia por id e `estadoMaisAvancado` (`@jaa/contratos`): eventos repetidos, fora de ordem ou anteriores à própria mensagem nunca regridem o estado; reconexão recarrega a página mais recente.
+
+Pendências conhecidas:
+
+- sem sincronização de "mensagens pendentes de entrega": o Web só confirma o que carrega. Após ficar offline, mensagens anteriores à última de cada conversa ficam `enviada` até a conversa ser aberta (a leitura as cobre). O mobile deverá sincronizar pendências e usar o mesmo endpoint de recebimento;
+- privacidade de confirmação de leitura (desativar) ainda não existe.
+
+## Edição e exclusão (Fase 1)
+
+- **editar**: `PATCH /conversas/:c/mensagens/:m { conteudo }`, só o autor (identidade da sessão), só texto não excluído; mesmas validações do envio. Atualiza `conteudo` e `editada_em`; nunca cria mensagem nem muda `id`, `criado_em` (horário/ordem), estado ou referência. Mesmo conteúdo = no-op sem evento. Evento `mensagem:atualizada` com a mensagem completa; não conta como não lida nem notifica. Sem histórico de versões. Respostas citando a editada mostram o conteúdo **atual** (prévia lida da original, sem snapshot);
+- **excluir para todos**: `DELETE ...?escopo=todos`, só o autor. Tombstone: `excluida_para_todos_em` + `conteudo = ''` apagado **no banco** (CHECK exige vazio), linha preservada para ordem, cursores, recebimentos e respostas. APIs/eventos entregam `excluidaEm`, `conteudo: ""`, sem referência nem `editadaEm`; referências a ela trazem `excluida: true` sem prévia. Não pode ser editada (409 `MENSAGEM_EXCLUIDA`) nem respondida. Emite `mensagem:atualizada`; repetir devolve o tombstone sem evento. Sem prazo para excluir nesta fase;
+- **excluir para mim**: `DELETE ...?escopo=mim`, qualquer participante → linha em `mensagens_excluidas_para_identidade (mensagem_id, identidade_id)` (FKs compostas: mensagem da conversa e identidade participante). Some do histórico/lista só dessa identidade, persistente; os demais continuam vendo. Idempotente. Evento `mensagem:excluida-para-mim { conversaId, mensagemId, ultimaMensagem }` só para as conexões dela; quem ocultou não recebe mais atualizações daquela mensagem. Referências em respostas continuam mostrando a original (não é exclusão global);
+- códigos: participante não autor → 403 `MENSAGEM_DE_OUTRA_IDENTIDADE`; mensagem inexistente/de outra conversa/oculta para quem pede → 404 `MENSAGEM_NAO_ENCONTRADA`; não participante → 404 `CONVERSA_NAO_ENCONTRADA`;
+- idempotência de envio: retry do mesmo `idCliente` depois de o autor editar ou excluir para todos devolve a mensagem atual (conteúdo não é mais comparável), sem recriar;
+- sem restauração/lixeira; exclusão física de mensagens não existe nas APIs.
+
+## Não lidas (Fase 1)
+
+- **sem contador paralelo**: derivada do marcador `lida_ate_mensagem_id` = mensagens de outras identidades com id acima dele, sem excluídas para todos e sem excluídas para quem conta. Próprias nunca contam; edição não altera;
+- lista: subconsulta por linha **da página** (sem N+1), busca por intervalo no índice `(conversa_id, id)` limitada a `LIMITE_CONTAGEM_NAO_LIDAS` (100 = "100 ou mais"; a UI mostra "99+"). O custo não cresce com o histórico;
+- realtime: `conversa:nao-lidas { conversaId, naoLidas }` com valor **absoluto** só para as conexões da identidade afetada, recalculado do banco após o commit quando pode mudar (mensagem recebida, leitura, exclusão para todos, exclusão para mim). Recálculos serializados e coalescidos por (identidade, conversa), para que o último valor emitido reflita o último commit;
+- Web: badge por conversa (oculto na conversa aberta e visível, que está sendo lida) e total no título da aba; ler usa o mecanismo de leitura existente. Com várias instâncias da API, o atualizador em memória segue válido por instância, mas eventos exigem o adapter compartilhado (seção 22).
+
+## Notificações (Fase 1)
+
+- domínio no servidor (`features/notificacoes`): cada mensagem **criada** gera `notificacao-nova-mensagem` para cada destinatário, **nunca o remetente**. Retry idempotente, edição, exclusão e leitura não notificam. Payload só com dados públicos do autor (`identidadeId`, `nomeExibicao`, `nomeUsuario`), prévia limitada e horário;
+- estado persistente = lista + não lidas; a notificação é só aviso (nada persistido);
+- entrega atual: realtime `notificacao:nova-mensagem` às conexões do destinatário. O Web exibe aviso in-app (máx. 3, um por conversa, deduplicado por id) **exceto** para a conversa aberta e visível; clicar abre a conversa;
+- pendente: **push Web e mobile reais** (provedor, service worker, tokens de dispositivo, preferências e horário de silêncio) serão outro assinante do mesmo fato de domínio, provavelmente só para destinatários sem conexão ativa. A Notification API do navegador não foi ativada: exige decisão de UX para pedir permissão.
+
+## Mídias (ainda não implementadas)
+
+O compositor mostra Foto, Vídeo, Áudio e Documento **desabilitados** ("Em breve"), só como lembrete visual. Não há seletor de arquivo, upload, endpoint, tabela, storage ou fornecedor; a decisão de storage continua aberta (seção 32).
+
+## Conversas com empresa e catálogo do cliente (Fase 2)
+
+**Identidade ATUANTE** (sem sistema paralelo de chat empresarial): toda operação do mensageiro acontece em nome de uma identidade — a pessoal da conta ou uma empresarial que ela pode operar.
+
+- o cliente envia só a INTENÇÃO: cabeçalho `x-jaa-identidade` (HTTP) e `auth.identidadeId` (handshake). Ausente = pessoal;
+- o servidor resolve com `autenticarIdentidade` → sessão → conta → `autorizarOperacaoIdentidade` (mesma camada de permissões da empresa). Não autorizada → 403 `IDENTIDADE_NAO_AUTORIZADA` no HTTP e recusa no handshake. localStorage, slug, `empresaId` ou `identidadeId` do corpo nunca autorizam;
+- **inbox por identidade**: a lista de conversas, o histórico, não lidas, estados, notificações, presença e digitando são consultados para a identidade atuante no servidor (não é filtro visual). Selecionar a empresa não dá acesso às conversas pessoais e vice-versa;
+- **PARTICIPAR ≠ OPERAR**: qualquer pessoa pode conversar COM a empresa; só quem tem vínculo pode falar COMO a empresa (hoje, o proprietário);
+- conversa direta continua pelo par canônico de IDENTIDADES: Pessoa→Empresa e Empresa→Pessoa resolvem para a mesma conversa. Abrir por @usuario aceita pessoa ou empresa com status ativo;
+- para o cliente, quem fala é a identidade (ex.: "Pizzaria BH"); a pessoa que digitou **nunca** é exposta. Auditoria interna: `mensagens.operador_usuario_id`, `editada_por_usuario_id` e `excluida_por_usuario_id` guardam a conta que executou cada ação e jamais são serializadas. Com atendentes, a presença da empresa agrega as conexões de todos os operadores — nada precisa mudar;
+- pendências: anti-spam/solicitação de mensagem para conversas com empresas, e revogar acesso de quem está conectado quando um vínculo for removido (hoje o vínculo é checado a cada requisição e a cada nova conexão).
+
+**Catálogo do cliente** (`/publico/...`, sem autenticação; contrato próprio em `catalogo/catalogo-publico.ts`):
+
+- `GET /publico/empresas/:identidadeId/catalogo` e `.../catalogo/produtos/:produtoId`: resolvem a empresa pela **identidade pública** (empresa ativa) e devolvem só produtos **disponíveis**, com id, nome, descrição e preço em centavos. Nunca proprietário, conta, vínculos, permissões, `empresaId` interno ou campos administrativos; nenhum parâmetro transforma a consulta em administrativa;
+- mesmo domínio Produto da administração (nada é copiado para "produto do chat"); a futura `/loja/<slug>` reusa a mesma consulta, resolvendo a empresa pelo slug;
+- `GET /descoberta/empresas?busca=` é uma descoberta TÉCNICA autenticada e temporária (não é o "Encontrar"); lista só empresas ativas. Pendente antes de abrir ao público: rate limit e cache.
+
+Web: "Agindo como" passou a guiar o mensageiro; na conversa com empresa há **Ver produtos** (lista → detalhe, com **imagem "Em breve" desabilitada**), sem carrinho. **Mobile**: o fluxo de cliente (conversar com empresa e ver catálogo) depende da autenticação mobile, que ainda não existe; contratos e API já são reutilizáveis por ele, e o Mobile continua sem qualquer administração de produtos.
+
+## Presença e digitando (Fase 1)
+
+Atividade efêmera, sem tabela, migration ou histórico.
+
+- **Presença pertence à identidade** (não à conta, sessão ou socket): online enquanto houver ≥ 1 conexão realtime autenticada dela em qualquer aba/dispositivo. Fechar uma de várias conexões não muda nada; a última conexão encerrada vira offline só após **tolerância de 5 s**, e reconectar dentro dela não gera evento (reload/reconexão não "piscam"). Estados exibidos: somente Online/Offline (sem "visto por último");
+- **sem broadcast global**: o cliente envia `conversa:observar { conversaId }` para a conversa aberta; o servidor confere no banco que a identidade do handshake participa dela, inscreve a conexão em `conversa:<id>` e `presenca:<outros>` e responde a presença atual. Não participante/inexistente → `CONVERSA_NAO_ENCONTRADA`. Máximo de 10 conversas observadas por conexão. Cada (re)conexão observa de novo; `conversa:deixar-de-observar` ou a queda encerram a entrega;
+- **digitando**: `digitando:informar { conversaId, digitando }` só é aceito de conexão que já observa a conversa; a identidade vem do handshake. Repassado a quem observa a conversa, exceto as conexões da própria identidade. Agregado por (conversa, identidade): para quando a última conexão para;
+- **controle de volume e estado preso**: o cliente avisa ao começar, renova no máximo a cada 2,5 s e para após 3 s sem tecla, ao apagar, enviar ou sair. O servidor absorve renovações com menos de 2 s, encerra por validade de 6 s sem renovação, na queda da conexão, ao deixar de observar e ao persistir mensagem do remetente (antes de `mensagem:nova`). O receptor descarta "digitando" não renovado em 8 s e limpa ao receber mensagem do outro ou perder a conexão;
+- limitação conhecida: a autorização por participação permite observar a presença de quem se abriu conversa pelo `@usuario`; privacidade de presença, bloqueio e solicitação de mensagem refinarão essa regra quando existirem.
+
+UI técnica da conversa (Web): cabeçalho só com nome, `@usuario` e Online/Offline/"digitando..." (sem prévia nem horário da última mensagem, que pertencem à lista). Cada balão mostra o horário do **seu** `criadoEm` persistido no canto inferior direito (data junto quando não é do dia) e, nas mensagens próprias, ✓/✓✓ do estado ao lado do horário.
+
 ## Lista de conversas (Fase 1)
 
 - `GET /conversas?antesDe&limite`: somente conversas da identidade **da sessão**; nenhum parâmetro escolhe outra identidade;
-- item = conversa + dados públicos da outra identidade (`identidadeId`, `nomeExibicao`, `nomeUsuario`) + última mensagem; nunca telefone, e-mail, conta ou sessão;
-- atividade = última mensagem; ordem e cursor = id (UUIDv7) da última mensagem, único entre conversas, logo determinístico mesmo com horários iguais; conversa sem mensagens não aparece;
+- item = conversa + dados públicos da outra identidade (`identidadeId`, `nomeExibicao`, `nomeUsuario`) + última mensagem (com `estado`); nunca telefone, e-mail, conta ou sessão;
+- atividade = última mensagem **visível para a identidade** (excluídas "para mim" são puladas; tombstone conta e aparece como "Mensagem excluída"); ordem e cursor = id (UUIDv7) da última mensagem, único entre conversas, logo determinístico mesmo com horários iguais; conversa sem mensagens visíveis não aparece;
+- cada item traz `naoLidas` (seção "Não lidas");
 - limite padrão 20, máximo 50;
 - consulta única sem N+1 e **sem dado duplicado em `conversas`**: índice `participantes_conversa (identidade_id, conversa_id)` + busca `LATERAL ... LIMIT 1` no índice `(conversa_id, id)` de mensagens; só as linhas da página leem conteúdo e identidades. O custo cresce com o número de conversas da identidade (≈14 ms para 5.000 conversas localmente), não com o de mensagens;
 - se identidades com dezenas de milhares de conversas (ex.: empresariais) exigirem, introduzir estado por participante (ex.: última atividade em `participantes_conversa`) mantido na mesma transação do envio, sem mudar o contrato;
@@ -1146,7 +1357,7 @@ Não inventar decisão para os itens abaixo. Eles serão definidos quando necess
 - infraestrutura de filas;
 - Redis;
 - mecanismo de busca;
-- pagamentos;
+- pagamentos online futuros (a primeira versão já está decidida: pagamento na entrega, sem pagamento dentro do Jaa; seção 3);
 - biblioteca de styling mobile;
 - infraestrutura final de rastreamento;
 - estratégia de criptografia ponta a ponta, caso seja adotada;

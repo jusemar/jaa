@@ -251,18 +251,20 @@ describe("handshake realtime", () => {
     assert.deepEqual(await contextoNoServidor(socket), {
       usuarioId: contaCompleta.usuarioId,
       identidadeId: contaCompleta.identidadeId,
+      tipoIdentidade: "pessoal",
+      identidadePessoalId: contaCompleta.identidadeId,
       sessaoId: contaCompleta.sessaoId,
     });
     socket.disconnect();
   });
 
-  it("IDs falsos enviados pelo cliente (auth, query e cabeçalhos) são ignorados", async () => {
-    const falsos = { usuarioId: "usuario-falso", identidadeId: "00000000-0000-0000-0000-000000000000", sessaoId: "sessao-falsa" };
+  it("usuarioId/sessaoId falsos enviados pelo cliente (auth, query e cabeçalhos) são ignorados", async () => {
+    const falsos = { usuarioId: "usuario-falso", sessaoId: "sessao-falsa" };
     const socket = criarCliente({
       cookie: contaCompleta.cookie,
       auth: falsos,
-      query: falsos,
-      cabecalhos: { "x-usuario-id": falsos.usuarioId, "x-identidade-id": falsos.identidadeId },
+      query: { ...falsos, identidadeId: "00000000-0000-0000-0000-000000000000" },
+      cabecalhos: { "x-usuario-id": falsos.usuarioId, "x-identidade-id": "00000000-0000-0000-0000-000000000000" },
     });
     assert.deepEqual(await conectar(socket), { conectado: true });
     const contexto = await contextoNoServidor(socket);
@@ -270,6 +272,17 @@ describe("handshake realtime", () => {
     assert.equal(contexto?.identidadeId, contaCompleta.identidadeId);
     assert.equal(contexto?.sessaoId, contaCompleta.sessaoId);
     socket.disconnect();
+  });
+
+  it("identidade atuante pedida em auth.identidadeId: a própria pessoal é aceita; qualquer outra não operável é RECUSADA", async () => {
+    const propria = criarCliente({ cookie: contaCompleta.cookie, auth: { identidadeId: contaCompleta.identidadeId } });
+    assert.deepEqual(await conectar(propria), { conectado: true });
+    assert.equal((await contextoNoServidor(propria))?.identidadeId, contaCompleta.identidadeId);
+    propria.disconnect();
+
+    for (const identidadeId of ["00000000-0000-0000-0000-000000000000", "01a0a394-6225-75f2-b809-b2690993c512", "nao-e-uuid"]) {
+      assertRecusadaCom(await conectar(criarCliente({ cookie: contaCompleta.cookie, auth: { identidadeId } })), "IDENTIDADE_NAO_AUTORIZADA");
+    }
   });
 
   it("reload (nova conexão com a mesma sessão) continua funcionando", async () => {

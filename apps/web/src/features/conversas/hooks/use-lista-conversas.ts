@@ -1,10 +1,28 @@
 "use client";
 
-import { EVENTO_MENSAGEM_NOVA, eventoMensagemNovaSchema, type ItemListaConversas, type Mensagem } from "@jaa/contratos";
+import {
+  EVENTO_CONVERSA_NAO_LIDAS,
+  EVENTO_MENSAGEM_ATUALIZADA,
+  EVENTO_MENSAGEM_EXCLUIDA_PARA_MIM,
+  EVENTO_MENSAGEM_NOVA,
+  eventoConversaNaoLidasSchema,
+  eventoMensagemAtualizadaSchema,
+  eventoMensagemExcluidaParaMimSchema,
+  eventoMensagemNovaSchema,
+  type ExclusaoParaMim,
+  type ItemListaConversas,
+  type Mensagem,
+} from "@jaa/contratos";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { listarConversas } from "../lib/api-conversas";
-import { aplicarMensagemNaLista, mesclarConversas } from "../lib/lista-conversas";
+import {
+  aplicarAtualizacaoNaLista,
+  aplicarExclusaoParaMimNaLista,
+  aplicarMensagemNaLista,
+  aplicarNaoLidasNaLista,
+  mesclarConversas,
+} from "../lib/lista-conversas";
 
 type EstadoLista = {
   itens: ItemListaConversas[];
@@ -19,7 +37,8 @@ type EstadoLista = {
  * Lista de conversas reconciliada entre HTTP e o evento realtime `mensagem:nova` já existente.
  * - mensagem de conversa carregada → sobe ao topo com nova prévia/horário (sem duplicar);
  * - mensagem de conversa ainda não carregada → recarrega a 1ª página (ela estará no topo);
- * - (re)conexão do socket → recarrega a 1ª página para cobrir eventos perdidos enquanto offline.
+ * - (re)conexão do socket → recarrega a 1ª página para cobrir eventos perdidos enquanto offline;
+ * - `conversa:nao-lidas` → contagem absoluta calculada pelo servidor (nunca somada no cliente).
  */
 export function useListaConversas() {
   const [estado, setEstado] = useState<EstadoLista>({
@@ -77,6 +96,15 @@ export function useListaConversas() {
     [recarregarPrimeiraPagina],
   );
 
+  // Alteração de mensagem existente (edição/exclusão): nunca reordena nem é tratada como nova.
+  const registrarAtualizacao = useCallback((mensagem: Mensagem) => {
+    setEstado((atual) => ({ ...atual, itens: aplicarAtualizacaoNaLista(atual.itens, mensagem) }));
+  }, []);
+
+  const registrarExclusaoParaMim = useCallback((exclusao: ExclusaoParaMim) => {
+    setEstado((atual) => ({ ...atual, itens: aplicarExclusaoParaMimNaLista(atual.itens, exclusao) }));
+  }, []);
+
   useEffect(() => {
     const socket = obterClienteRealtime();
 
@@ -84,16 +112,34 @@ export function useListaConversas() {
       const resultado = eventoMensagemNovaSchema.safeParse(evento);
       if (resultado.success) registrarMensagem(resultado.data.mensagem);
     };
+    const aoAtualizar = (evento: unknown) => {
+      const resultado = eventoMensagemAtualizadaSchema.safeParse(evento);
+      if (resultado.success) registrarAtualizacao(resultado.data.mensagem);
+    };
+    const aoExcluirParaMim = (evento: unknown) => {
+      const resultado = eventoMensagemExcluidaParaMimSchema.safeParse(evento);
+      if (resultado.success) registrarExclusaoParaMim(resultado.data);
+    };
+    const aoAtualizarNaoLidas = (evento: unknown) => {
+      const resultado = eventoConversaNaoLidasSchema.safeParse(evento);
+      if (resultado.success) setEstado((atual) => ({ ...atual, itens: aplicarNaoLidasNaLista(atual.itens, resultado.data) }));
+    };
     const aoConectar = () => void recarregarPrimeiraPagina();
 
     socket.on(EVENTO_MENSAGEM_NOVA, aoReceber);
+    socket.on(EVENTO_MENSAGEM_ATUALIZADA, aoAtualizar);
+    socket.on(EVENTO_MENSAGEM_EXCLUIDA_PARA_MIM, aoExcluirParaMim);
+    socket.on(EVENTO_CONVERSA_NAO_LIDAS, aoAtualizarNaoLidas);
     socket.on("connect", aoConectar);
     void recarregarPrimeiraPagina();
     return () => {
       socket.off(EVENTO_MENSAGEM_NOVA, aoReceber);
+      socket.off(EVENTO_MENSAGEM_ATUALIZADA, aoAtualizar);
+      socket.off(EVENTO_MENSAGEM_EXCLUIDA_PARA_MIM, aoExcluirParaMim);
+      socket.off(EVENTO_CONVERSA_NAO_LIDAS, aoAtualizarNaoLidas);
       socket.off("connect", aoConectar);
     };
-  }, [recarregarPrimeiraPagina, registrarMensagem]);
+  }, [recarregarPrimeiraPagina, registrarMensagem, registrarAtualizacao, registrarExclusaoParaMim]);
 
   const carregarMais = useCallback(async () => {
     const cursor = estado.proximoCursor;
@@ -113,5 +159,5 @@ export function useListaConversas() {
     );
   }, [estado.proximoCursor, estado.carregandoMais]);
 
-  return { ...estado, carregarMais, registrarMensagem };
+  return { ...estado, carregarMais, registrarMensagem, registrarAtualizacao, registrarExclusaoParaMim };
 }

@@ -1,5 +1,5 @@
 import type { Banco } from "@jaa/banco";
-import { buscarIdentidadePessoalPorNomeUsuario } from "../../identidades/repositorios/repositorio-identidades.js";
+import { buscarIdentidadeContatavelPorNomeUsuario } from "../../identidades/repositorios/repositorio-identidades.js";
 import {
   listarParticipantesDaConversa,
   obterOuCriarConversaDireta,
@@ -12,15 +12,16 @@ type ResultadoAbrirConversaDireta =
   | { tipo: "consigo-mesmo" };
 
 /**
- * A identidade de origem vem da sessão; a de destino é localizada pelo @usuario público.
- * A↔B e B↔A resolvem para a mesma conversa.
+ * A identidade de origem é a ATUANTE autorizada (pessoa ou empresa operada); a de destino é localizada
+ * pelo @usuario público e pode ser pessoa ou empresa ativa. O par canônico de identidades garante uma
+ * única conversa: Pessoa→Empresa e Empresa→Pessoa resolvem para a mesma.
  */
 export async function abrirConversaDireta(
   banco: Banco,
   identidadeOrigemId: string,
   nomeUsuarioDestino: string,
 ): Promise<ResultadoAbrirConversaDireta> {
-  const destino = await buscarIdentidadePessoalPorNomeUsuario(banco, nomeUsuarioDestino);
+  const destino = await buscarIdentidadeContatavelPorNomeUsuario(banco, nomeUsuarioDestino);
 
   if (!destino) {
     return { tipo: "identidade-nao-encontrada" };

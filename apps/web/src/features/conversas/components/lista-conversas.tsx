@@ -1,6 +1,7 @@
 "use client";
 
 import type { ItemListaConversas } from "@jaa/contratos";
+import { rotuloNaoLidas } from "../lib/lista-conversas";
 
 // Interface TÉCNICA e TEMPORÁRIA para validar a lista de conversas. Não é o design do Jaa.
 
@@ -22,6 +23,8 @@ export function ListaConversas(props: {
   temMais: boolean;
   carregandoMais: boolean;
   conversaAbertaId: string | null;
+  // Conversa aberta e visível: está sendo lida agora, então o contador não é exibido nela.
+  conversaEmLeituraId?: string | null;
   aoAbrir: (item: ItemListaConversas) => void;
   aoCarregarMais: () => void;
 }) {
@@ -52,14 +55,32 @@ export function ListaConversas(props: {
                     <span className="truncate">
                       <span className="font-medium">{outraIdentidade.nomeExibicao}</span>{" "}
                       <span className="text-zinc-500">@{outraIdentidade.nomeUsuario}</span>
+                      {outraIdentidade.tipo === "empresarial" && <span data-tipo-participante="empresarial" className="ml-1 rounded bg-zinc-100 px-1 text-xs text-zinc-600">Empresa</span>}
                     </span>
-                    <time dateTime={ultimaMensagem.criadoEm} className="shrink-0 text-xs text-zinc-500">
-                      {formatarHorario(ultimaMensagem.criadoEm)}
-                    </time>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <time dateTime={ultimaMensagem.criadoEm} className="text-xs text-zinc-500">
+                        {formatarHorario(ultimaMensagem.criadoEm)}
+                      </time>
+                      {item.naoLidas > 0 && item.id !== props.conversaEmLeituraId && (
+                        <span
+                          data-nao-lidas={item.naoLidas}
+                          aria-label={`${item.naoLidas} ${item.naoLidas === 1 ? "mensagem não lida" : "mensagens não lidas"}`}
+                          className="min-w-5 rounded-full bg-emerald-600 px-1.5 text-center text-xs font-semibold leading-5 text-white"
+                        >
+                          {rotuloNaoLidas(item.naoLidas)}
+                        </span>
+                      )}
+                    </span>
                   </span>
                   <span data-previa className="truncate text-zinc-600">
-                    {autor}
-                    {ultimaMensagem.conteudo}
+                    {ultimaMensagem.excluidaEm ? (
+                      <span className="italic">Mensagem excluída</span>
+                    ) : (
+                      <>
+                        {autor}
+                        {ultimaMensagem.conteudo}
+                      </>
+                    )}
                   </span>
                 </button>
               </li>

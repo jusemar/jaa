@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ItemListaConversas, Mensagem } from "@jaa/contratos";
-import { aplicarMensagemNaLista, mesclarConversas } from "./lista-conversas.ts";
+import {
+  aplicarAtualizacaoNaLista,
+  aplicarExclusaoParaMimNaLista,
+  aplicarMensagemNaLista,
+  aplicarNaoLidasNaLista,
+  mesclarConversas,
+  rotuloNaoLidas,
+} from "./lista-conversas.ts";
 
 // UUIDv7 sintéticos: ordem lexicográfica = ordem cronológica.
 const idMensagem = (n: number) => `01a0a394-${String(n).padStart(4, "0")}-7000-8000-000000000000`;
@@ -15,6 +22,10 @@ function mensagem(conversa: string, n: number, conteudo = `m${n}`): Mensagem {
     tipo: "texto",
     conteudo,
     criadoEm: "2026-09-15T12:00:00.000Z",
+    estado: "enviada",
+    mensagemRespondida: null,
+    editadaEm: null,
+    excluidaEm: null,
   };
 }
 
@@ -22,8 +33,9 @@ function item(conversa: string, n: number): ItemListaConversas {
   return {
     id: idConversa(conversa),
     tipo: "direta",
-    outraIdentidade: { identidadeId: idConversa("e"), nomeExibicao: conversa, nomeUsuario: conversa },
+    outraIdentidade: { identidadeId: idConversa("e"), tipo: "pessoal", nomeExibicao: conversa, nomeUsuario: conversa },
     ultimaMensagem: mensagem(conversa, n),
+    naoLidas: 0,
   };
 }
 
@@ -69,5 +81,58 @@ describe("aplicarMensagemNaLista", () => {
     const resultado = aplicarMensagemNaLista(inicial, mensagem("z", 9));
     assert.equal(resultado.conhecida, false);
     assert.equal(resultado.lista, inicial);
+  });
+});
+
+describe("aplicarAtualizacaoNaLista e página com a mesma última mensagem", () => {
+  it("edição da última mensagem troca só a prévia, sem reordenar; edição de outra mensagem não muda nada", () => {
+    const inicial = [item("a", 3), item("b", 2)];
+    const editada = { ...mensagem("b", 2, "b editada"), editadaEm: "2026-09-15T12:10:00.000Z" };
+    const lista = aplicarAtualizacaoNaLista(inicial, editada);
+    assert.equal(ids(lista), "ab");
+    assert.equal(lista[1]?.ultimaMensagem.conteudo, "b editada");
+    assert.deepEqual(aplicarAtualizacaoNaLista(inicial, { ...mensagem("b", 1, "antiga"), editadaEm: "2026-09-15T12:10:00.000Z" }), inicial);
+  });
+
+  it("recarga com a mesma última mensagem não desfaz edição já aplicada", () => {
+    const editada = { ...mensagem("a", 3, "editada"), editadaEm: "2026-09-15T12:10:00.000Z" };
+    const lista = mesclarConversas(aplicarAtualizacaoNaLista([item("a", 3)], editada), [item("a", 3)]);
+    assert.equal(lista[0]?.ultimaMensagem.conteudo, "editada");
+  });
+});
+
+describe("aplicarExclusaoParaMimNaLista", () => {
+  it("se a excluída era a última, usa a nova última visível e reposiciona; senão não muda nada", () => {
+    const inicial = [item("a", 9), item("b", 5)];
+    const lista = aplicarExclusaoParaMimNaLista(inicial, { conversaId: idConversa("a"), mensagemId: idMensagem(9), ultimaMensagem: mensagem("a", 2) });
+    assert.equal(ids(lista), "ba");
+    assert.equal(lista[1]?.ultimaMensagem.id, idMensagem(2));
+    assert.equal(aplicarExclusaoParaMimNaLista(inicial, { conversaId: idConversa("a"), mensagemId: idMensagem(1), ultimaMensagem: mensagem("a", 0) }), inicial);
+  });
+
+  it("sem mensagem visível restante, a conversa sai da lista", () => {
+    const lista = aplicarExclusaoParaMimNaLista([item("a", 9), item("b", 5)], { conversaId: idConversa("b"), mensagemId: idMensagem(5), ultimaMensagem: null });
+    assert.equal(ids(lista), "a");
+  });
+});
+
+describe("não lidas na lista", () => {
+  it("contagem do servidor substitui (não soma), não reordena e ignora conversa não carregada", () => {
+    const inicial = [item("a", 3), item("b", 2)];
+    const lista = aplicarNaoLidasNaLista(inicial, { conversaId: idConversa("b"), naoLidas: 4 });
+    assert.equal(ids(lista), "ab");
+    assert.equal(lista[1]?.naoLidas, 4);
+    assert.equal(aplicarNaoLidasNaLista(lista, { conversaId: idConversa("b"), naoLidas: 0 })[1]?.naoLidas, 0);
+    assert.deepEqual(aplicarNaoLidasNaLista(inicial, { conversaId: idConversa("z"), naoLidas: 9 }), inicial);
+  });
+
+  it("recarga da página traz a contagem atual; nova mensagem não inventa contagem no cliente", () => {
+    const comContagem = mesclarConversas([item("a", 3)], [{ ...item("a", 3), naoLidas: 2 }]);
+    assert.equal(comContagem[0]?.naoLidas, 2);
+    assert.equal(aplicarMensagemNaLista(comContagem, mensagem("a", 4)).lista[0]?.naoLidas, 2);
+  });
+
+  it("rótulo 99+ a partir de 100", () => {
+    assert.deepEqual([1, 99, 100].map(rotuloNaoLidas), ["1", "99", "99+"]);
   });
 });

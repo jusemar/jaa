@@ -5,6 +5,8 @@ import * as z from "zod";
 export const codigoErroConexaoRealtimeSchema = z.enum([
   "NAO_AUTENTICADO",
   "CADASTRO_INCOMPLETO",
+  // `auth.identidadeId` pedido não é operável por esta conta.
+  "IDENTIDADE_NAO_AUTORIZADA",
   "ERRO_INTERNO",
 ]);
 

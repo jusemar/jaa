@@ -9,9 +9,11 @@ export function serializarItemListaConversas(item: ItemListaConversasRegistro): 
     tipo: item.tipo,
     outraIdentidade: {
       identidadeId: item.outraIdentidade.identidadeId,
+      tipo: item.outraIdentidade.tipo,
       nomeExibicao: item.outraIdentidade.nomeExibicao,
       nomeUsuario: item.outraIdentidade.nomeUsuario,
     },
     ultimaMensagem: serializarMensagem(item.ultimaMensagem),
+    naoLidas: item.naoLidas,
   };
 }

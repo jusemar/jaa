@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { eventoConversaNaoLidasSchema } from "../realtime/eventos.ts";
 import {
+  LIMITE_CONTAGEM_NAO_LIDAS,
   LIMITE_PAGINA_CONVERSAS_MAXIMO,
+  contagemNaoLidasSchema,
   LIMITE_PAGINA_CONVERSAS_PADRAO,
   itemListaConversasSchema,
   listarConversasConsultaSchema,
@@ -32,7 +35,7 @@ describe("itemListaConversasSchema", () => {
   const item = {
     id: uuid,
     tipo: "direta",
-    outraIdentidade: { identidadeId: uuid, nomeExibicao: "Bia", nomeUsuario: "bia" },
+    outraIdentidade: { identidadeId: uuid, tipo: "pessoal", nomeExibicao: "Bia", nomeUsuario: "bia" },
     ultimaMensagem: {
       id: uuid,
       conversaId: uuid,
@@ -40,7 +43,12 @@ describe("itemListaConversasSchema", () => {
       tipo: "texto",
       conteudo: "oi",
       criadoEm: "2026-09-15T12:00:00.000Z",
+      estado: "enviada",
+      mensagemRespondida: null,
+      editadaEm: null,
+      excluidaEm: null,
     },
+    naoLidas: 0,
   };
 
   it("aceita item válido e remove dados que não pertencem ao contrato", () => {
@@ -48,10 +56,19 @@ describe("itemListaConversasSchema", () => {
       ...item,
       outraIdentidade: { ...item.outraIdentidade, telefone: "+5531987654321", usuarioId: "u1" },
     });
-    assert.deepEqual(Object.keys(resultado.outraIdentidade).sort(), ["identidadeId", "nomeExibicao", "nomeUsuario"]);
+    assert.deepEqual(Object.keys(resultado.outraIdentidade).sort(), ["identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
   });
 
   it("exige última mensagem", () => {
     assert.equal(itemListaConversasSchema.safeParse({ ...item, ultimaMensagem: null }).success, false);
+  });
+});
+
+describe("naoLidas", () => {
+  it("inteiro de 0 ao limite; negativo, fracionário ou acima do limite é inválido", () => {
+    for (const valido of [0, 1, LIMITE_CONTAGEM_NAO_LIDAS]) assert.equal(contagemNaoLidasSchema.safeParse(valido).success, true);
+    for (const invalido of [-1, 1.5, LIMITE_CONTAGEM_NAO_LIDAS + 1, "3", null]) assert.equal(contagemNaoLidasSchema.safeParse(invalido).success, false);
+    assert.equal(eventoConversaNaoLidasSchema.safeParse({ conversaId: uuid, naoLidas: 3, identidadeId: uuid }).success, true);
+    assert.deepEqual(Object.keys(eventoConversaNaoLidasSchema.parse({ conversaId: uuid, naoLidas: 3, identidadeId: uuid })).sort(), ["conversaId", "naoLidas"]);
   });
 });

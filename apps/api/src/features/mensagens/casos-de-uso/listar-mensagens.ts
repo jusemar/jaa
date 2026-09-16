@@ -19,7 +19,7 @@ export async function listarMensagens(
     return { tipo: "conversa-nao-encontrada" };
   }
 
-  const { mensagens, haMais } = await listarMensagensDaConversa(banco, conversaId, consulta);
+  const { mensagens, haMais } = await listarMensagensDaConversa(banco, conversaId, identidadeId, consulta);
   const maisAntiga = mensagens.at(-1);
 
   return {

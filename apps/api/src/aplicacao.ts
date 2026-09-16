@@ -4,7 +4,10 @@ import Fastify, { type FastifyServerOptions } from "fastify";
 import type { Autenticacao } from "./features/autenticacao/autenticacao.js";
 import { registrarRotasBetterAuth } from "./features/autenticacao/rotas/rotas-better-auth.js";
 import { registrarRotaTesteProtegido } from "./features/autenticacao/rotas/rotas-teste-protegido.js";
+import { registrarRotasCatalogoPublico } from "./features/catalogo/rotas/rotas-catalogo-publico.js";
 import { registrarRotasConversas } from "./features/conversas/rotas/rotas-conversas.js";
+import { registrarRotasEmpresas } from "./features/empresas/rotas/rotas-empresas.js";
+import { registrarRotasProdutosAdministracao } from "./features/produtos/rotas/rotas-produtos-administracao.js";
 import { registrarRotasIdentidades } from "./features/identidades/rotas/rotas-identidades.js";
 import type { CanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
 import { registrarRotasMensagens } from "./features/mensagens/rotas/rotas-mensagens.js";
@@ -26,7 +29,7 @@ export async function criarAplicacao({ ambiente, banco, autenticacao, eventosMen
   await servidor.register(cors, {
     origin: ambiente.ORIGENS_WEB_PERMITIDAS,
     credentials: true,
-    methods: ["GET", "POST", "OPTIONS"],
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   });
 
   servidor.decorateRequest("sessao", null);
@@ -43,6 +46,9 @@ export async function criarAplicacao({ ambiente, banco, autenticacao, eventosMen
   registrarRotaTesteProtegido(servidor, autenticacao);
   registrarRotasUsuarios(servidor, { banco, autenticacao });
   registrarRotasIdentidades(servidor, { banco, autenticacao });
+  registrarRotasEmpresas(servidor, { banco, autenticacao });
+  registrarRotasProdutosAdministracao(servidor, { banco, autenticacao });
+  registrarRotasCatalogoPublico(servidor, { banco, autenticacao });
   registrarRotasConversas(servidor, { banco, autenticacao });
   registrarRotasMensagens(servidor, { banco, autenticacao, eventosMensagens });
 

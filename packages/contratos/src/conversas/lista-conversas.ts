@@ -3,6 +3,14 @@ import { mensagemSchema } from "../mensagens/mensagem.ts";
 import { participanteConversaSchema } from "./conversa.ts";
 
 export const LIMITE_PAGINA_CONVERSAS_PADRAO = 20;
+
+// A contagem de não lidas para neste valor: `naoLidas === LIMITE_CONTAGEM_NAO_LIDAS` significa
+// "este número ou mais" (a interface exibe "99+"). Mantém o custo por conversa limitado.
+export const LIMITE_CONTAGEM_NAO_LIDAS = 100;
+
+// Mensagens recebidas (de outras identidades) depois do marcador de leitura, sem as excluídas para
+// todos e sem as excluídas para quem conta. Calculada pelo servidor a partir do estado persistido.
+export const contagemNaoLidasSchema = z.number().int().min(0).max(LIMITE_CONTAGEM_NAO_LIDAS);
 export const LIMITE_PAGINA_CONVERSAS_MAXIMO = 50;
 
 // A identidade dona da lista nunca é enviada: o servidor a deriva da sessão.
@@ -27,6 +35,7 @@ export const itemListaConversasSchema = z.object({
   outraIdentidade: participanteConversaSchema,
   // A atividade da conversa é a sua mensagem mais recente; o id (UUIDv7) define a ordem da lista.
   ultimaMensagem: mensagemSchema,
+  naoLidas: contagemNaoLidasSchema,
 });
 
 export type ItemListaConversas = z.infer<typeof itemListaConversasSchema>;

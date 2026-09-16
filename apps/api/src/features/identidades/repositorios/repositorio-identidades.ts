@@ -1,6 +1,6 @@
 import type { Banco } from "@jaa/banco";
-import { identidades } from "@jaa/banco/schema";
-import { and, eq } from "drizzle-orm";
+import { empresas, identidades } from "@jaa/banco/schema";
+import { and, eq, isNull, or } from "drizzle-orm";
 
 export type IdentidadeRegistro = typeof identidades.$inferSelect;
 
@@ -87,4 +87,32 @@ export async function buscarIdentidadePessoalPorNomeUsuario(
     .limit(1);
 
   return identidade ?? null;
+}
+
+// Dados PÚBLICOS de uma identidade (nunca conta, telefone ou e-mail).
+export async function buscarDadosPublicosIdentidade(
+  banco: Banco,
+  identidadeId: string,
+): Promise<{ identidadeId: string; tipo: "pessoal" | "empresarial"; nomeExibicao: string; nomeUsuario: string } | null> {
+  const [identidade] = await banco
+    .select({ identidadeId: identidades.id, tipo: identidades.tipo, nomeExibicao: identidades.nomeExibicao, nomeUsuario: identidades.nomeUsuario })
+    .from(identidades)
+    .where(eq(identidades.id, identidadeId))
+    .limit(1);
+  return identidade ?? null;
+}
+
+/**
+ * Identidade que pode ser procurada para conversar pelo @usuario: pessoa, ou empresa com status que
+ * permite operação pública (hoje "ativa"). Não diz nada sobre quem OPERA a empresa.
+ * `nomeUsuario` já deve estar na forma canônica.
+ */
+export async function buscarIdentidadeContatavelPorNomeUsuario(banco: Banco, nomeUsuario: string): Promise<IdentidadeRegistro | null> {
+  const [linha] = await banco
+    .select({ identidade: identidades })
+    .from(identidades)
+    .leftJoin(empresas, eq(empresas.id, identidades.empresaId))
+    .where(and(eq(identidades.nomeUsuario, nomeUsuario), or(isNull(identidades.empresaId), eq(empresas.status, "ativa"))))
+    .limit(1);
+  return linha?.identidade ?? null;
 }

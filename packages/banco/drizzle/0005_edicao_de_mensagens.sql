@@ -1,0 +1,2 @@
+ALTER TABLE "mensagens" ADD COLUMN "editada_em" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "mensagens" ADD CONSTRAINT "mensagens_editada_apos_criacao" CHECK ("mensagens"."editada_em" is null or "mensagens"."editada_em" >= "mensagens"."criado_em");

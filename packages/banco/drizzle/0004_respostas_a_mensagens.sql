@@ -1,0 +1,4 @@
+ALTER TABLE "mensagens" ADD COLUMN "mensagem_respondida_id" uuid;--> statement-breakpoint
+ALTER TABLE "mensagens" ADD CONSTRAINT "mensagens_mensagem_respondida_fk" FOREIGN KEY ("conversa_id","mensagem_respondida_id") REFERENCES "public"."mensagens"("conversa_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "mensagens_conversa_id_mensagem_respondida_id_idx" ON "mensagens" USING btree ("conversa_id","mensagem_respondida_id") WHERE "mensagens"."mensagem_respondida_id" is not null;--> statement-breakpoint
+ALTER TABLE "mensagens" ADD CONSTRAINT "mensagens_nao_responde_a_si_mesma" CHECK ("mensagens"."mensagem_respondida_id" is null or "mensagens"."mensagem_respondida_id" <> "mensagens"."id");

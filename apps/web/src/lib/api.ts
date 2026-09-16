@@ -16,7 +16,7 @@ export async function requisitarApi<T>(
     const resposta = await fetch(`${URL_API}${caminho}`, {
       ...init,
       credentials: "include",
-      headers: init?.body ? { "content-type": "application/json" } : undefined,
+      headers: { ...(init?.body ? { "content-type": "application/json" } : {}), ...(init?.headers as Record<string, string> | undefined) },
     });
     const corpo: unknown = await resposta.json().catch(() => null);
 
