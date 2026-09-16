@@ -1,0 +1,2 @@
+ALTER TABLE "saidas_entrega" DROP CONSTRAINT "saidas_entrega_iniciada_por_status";--> statement-breakpoint
+ALTER TABLE "saidas_entrega" ADD CONSTRAINT "saidas_entrega_iniciada_por_status" CHECK ("saidas_entrega"."iniciada_em" is null or "saidas_entrega"."status" <> 'preparada');

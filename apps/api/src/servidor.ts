@@ -6,6 +6,9 @@ import { criarAvisoSessoesEncerradas } from "./features/autenticacao/lib/sessoes
 import { criarCanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
 import { criarGeocodificadorNominatim, geocodificadorIndisponivel } from "./features/enderecos/lib/geocodificador.js";
 import { criarCanalEventosEntregas } from "./features/entregas/lib/eventos-entregas.js";
+import { criarMotorDeRotas } from "./features/entregas/lib/motor-rotas.js";
+import { criarProvedorMapbox } from "./features/entregas/lib/provedores/provedor-mapbox.js";
+import { iniciarRotinaDespacho } from "./features/entregas/lib/rotina-despacho.js";
 import { criarCanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
 import { carregarAmbiente } from "./lib/ambiente.js";
 import { configurarRealtime } from "./realtime/configurar-realtime.js";
@@ -20,6 +23,14 @@ const eventosEntregas = criarCanalEventosEntregas();
 const geocodificador = ambiente.GEOCODIFICACAO_URL
   ? criarGeocodificadorNominatim({ url: ambiente.GEOCODIFICACAO_URL, contato: ambiente.GEOCODIFICACAO_CONTATO })
   : geocodificadorIndisponivel;
+
+/*
+ * Motor de rotas: com MAPBOX_TOKEN, o Jaa calcula sequência e percurso reais; sem ele, NENHUMA
+ * chamada externa acontece e a operação segue na aproximação local determinística.
+ */
+const motorRotas = criarMotorDeRotas(
+  ambiente.MAPBOX_TOKEN ? criarProvedorMapbox({ token: ambiente.MAPBOX_TOKEN, urlBase: ambiente.MAPBOX_URL }) : null,
+);
 
 const autenticacao = criarAutenticacao({
   banco: conexao.banco,
@@ -36,6 +47,7 @@ const servidor = await criarAplicacao({
   eventosPedidos,
   eventosEntregas,
   geocodificador,
+  motorRotas,
   logger: true,
 });
 
@@ -49,7 +61,15 @@ configurarRealtime(servidor, {
   origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS,
 });
 
+/*
+ * Fechamento por TEMPO das saídas em formação: o prazo vive no banco, esta rotina só processa o que
+ * venceu. Na primeira volta ela também recupera o que venceu enquanto a API esteve fora do ar.
+ */
+const rotinaDespacho = iniciarRotinaDespacho({ banco: conexao.banco, eventosEntregas, motorRotas });
+void rotinaDespacho.executarAgora();
+
 servidor.addHook("onClose", async () => {
+  rotinaDespacho.encerrar();
   await conexao.encerrar();
 });
 

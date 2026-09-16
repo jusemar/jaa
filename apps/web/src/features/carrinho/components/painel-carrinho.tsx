@@ -156,6 +156,23 @@ export function PainelCarrinho({
         )}
       </fieldset>
 
+      {/*
+       * Pagamento ONLINE ainda não existe no Jaa: nada de gateway, cobrança, QR, token ou dado
+       * bancário. As opções aparecem só como lembrete visual, desabilitadas, como as mídias do chat.
+       */}
+      <fieldset disabled className="flex flex-col gap-1 rounded border border-dashed border-zinc-300 p-2 text-zinc-400">
+        <legend className="px-1 text-xs">Pagamento online — em breve</legend>
+        {[
+          { valor: "pix-online", rotulo: "Pix online" },
+          { valor: "cartao-online", rotulo: "Cartão online" },
+        ].map((opcao) => (
+          <label key={opcao.valor} className="flex items-center gap-2">
+            <input type="radio" name="pagamentoOnline" value={opcao.valor} disabled data-pagamento-online={opcao.valor} />
+            {opcao.rotulo} <span className="text-xs">(Em breve)</span>
+          </label>
+        ))}
+      </fieldset>
+
       <button type="button" disabled={enviando || carrinho.itens.length === 0 || endereco === null} onClick={confirmar} className="rounded bg-black px-3 py-2 text-white disabled:opacity-50">
         Confirmar pedido
       </button>

@@ -10,6 +10,11 @@ import {
   EVENTO_NOTIFICACAO_NOVA_MENSAGEM,
   EVENTO_ENTREGA_ATUALIZADA,
   EVENTO_ENTREGADOR_DISPONIBILIDADE,
+  EVENTO_DESPACHO_ATUALIZADO,
+  EVENTO_FILA_ATUALIZADA,
+  EVENTO_PEDIDO_FILA,
+  EVENTO_SITUACAO_OPERACIONAL,
+  EVENTO_SAIDA_ATUALIZADA,
   EVENTO_PEDIDO_STATUS_ATUALIZADO,
   EVENTO_PRESENCA_ATUALIZADA,
   type CodigoErroConexaoRealtime,
@@ -225,6 +230,31 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
     const salas = evento.destinatariosIdentidadeIds.map(salaDaIdentidade);
     if (evento.tipo === "entrega-atualizada") {
       realtime.to(salas).emit(EVENTO_ENTREGA_ATUALIZADA, { pedidoId: evento.pedidoId, entrega: evento.entrega });
+      return;
+    }
+    if (evento.tipo === "saida-atualizada") {
+      // Saída inteira: só empresa e entregador daquela operação.
+      realtime.to(salas).emit(EVENTO_SAIDA_ATUALIZADA, { saida: evento.saida });
+      return;
+    }
+    if (evento.tipo === "painel-operacional-atualizado") {
+      // Painel da base: só para a empresa daquela base.
+      realtime.to(salas).emit(EVENTO_FILA_ATUALIZADA, { painel: evento.painel });
+      return;
+    }
+    if (evento.tipo === "situacao-operacional-atualizada") {
+      // Situação própria: só para o entregador dela.
+      realtime.to(salas).emit(EVENTO_SITUACAO_OPERACIONAL, { situacao: evento.situacao });
+      return;
+    }
+    if (evento.tipo === "fila-atualizada") {
+      // Cliente: só a posição do PRÓPRIO pedido, nunca a sequência.
+      realtime.to(salas).emit(EVENTO_PEDIDO_FILA, evento.fila);
+      return;
+    }
+    if (evento.tipo === "despacho-atualizado") {
+      // Zonas e pendências da automação: assunto interno da empresa.
+      realtime.to(salas).emit(EVENTO_DESPACHO_ATUALIZADO, { painel: evento.painel });
       return;
     }
     // Disponibilidade: só para quem opera a empresa DAQUELE vínculo (nunca outra empresa).

@@ -2,6 +2,7 @@ import type { Banco } from "@jaa/banco";
 import { atribuicoesEntrega, entregadoresEmpresa, identidades } from "@jaa/banco/schema";
 import type { StatusEntregador } from "@jaa/contratos";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { aplicarMudancaOperacional } from "./repositorio-fila.js";
 
 export type EntregadorRegistro = typeof entregadoresEmpresa.$inferSelect;
 
@@ -89,11 +90,26 @@ export async function alterarStatusEntregador(
   banco: Banco,
   { empresaId, entregadorId, status }: { empresaId: string; entregadorId: string; status: StatusEntregador },
 ): Promise<EntregadorRegistro | null> {
-  const [vinculo] = await banco
-    .update(entregadoresEmpresa)
-    .set({ status, disponivel: status === "ativo" ? undefined : false, respondidoEm: status === "convidado" ? null : new Date() })
+  const [existente] = await banco
+    .select({ id: entregadoresEmpresa.id })
+    .from(entregadoresEmpresa)
     .where(and(eq(entregadoresEmpresa.id, entregadorId), eq(entregadoresEmpresa.empresaId, empresaId)))
-    .returning();
+    .limit(1);
+  if (!existente) return null;
+
+  // Vínculo e fila mudam juntos: desativar tira da fila da base na mesma transação.
+  await aplicarMudancaOperacional(
+    banco,
+    entregadorId,
+    { status, ...(status === "ativo" ? {} : { disponivel: false }) },
+    status === "inativo" ? "Vínculo desativado" : "Convite reaberto",
+  );
+  await banco
+    .update(entregadoresEmpresa)
+    .set({ respondidoEm: status === "convidado" ? null : new Date() })
+    .where(eq(entregadoresEmpresa.id, entregadorId));
+
+  const [vinculo] = await banco.select().from(entregadoresEmpresa).where(eq(entregadoresEmpresa.id, entregadorId)).limit(1);
   return vinculo ?? null;
 }
 
@@ -124,11 +140,17 @@ export async function alterarDisponibilidade(
   banco: Banco,
   { entregadorId, usuarioId, disponivel }: { entregadorId: string; usuarioId: string; disponivel: boolean },
 ): Promise<EntregadorRegistro | null> {
-  const [vinculo] = await banco
-    .update(entregadoresEmpresa)
-    .set({ disponivel, disponibilidadeAtualizadaEm: new Date() })
+  // O `usuarioId` no filtro garante que ninguém altera a disponibilidade de outra pessoa.
+  const [alvo] = await banco
+    .select({ id: entregadoresEmpresa.id })
+    .from(entregadoresEmpresa)
     .where(and(eq(entregadoresEmpresa.id, entregadorId), eq(entregadoresEmpresa.usuarioId, usuarioId), eq(entregadoresEmpresa.status, "ativo")))
-    .returning();
+    .limit(1);
+  if (!alvo) return null;
+
+  // Disponibilidade e fila mudam juntas: parar de aceitar sai da fila na mesma transação.
+  await aplicarMudancaOperacional(banco, entregadorId, { disponivel }, "Parou de aceitar entregas");
+  const [vinculo] = await banco.select().from(entregadoresEmpresa).where(eq(entregadoresEmpresa.id, entregadorId)).limit(1);
   return vinculo ?? null;
 }
 

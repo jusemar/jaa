@@ -3,6 +3,9 @@ import { participanteConversaSchema } from "../conversas/conversa.ts";
 import { contagemNaoLidasSchema } from "../conversas/lista-conversas.ts";
 import { exclusaoParaMimSchema, mensagemSchema } from "../mensagens/mensagem.ts";
 import { entregaAtribuidaSchema, entregadorDaEmpresaSchema } from "../entregas/entregador.ts";
+import { painelOperacionalSchema, situacaoOperacionalSchema } from "../entregas/base-e-fila.ts";
+import { painelDespachoSchema } from "../entregas/zonas.ts";
+import { filaDoPedidoSchema, saidaEntregaSchema } from "../entregas/saida.ts";
 import { resumoPedidoSchema } from "../pedidos/pedido.ts";
 import {
   EVENTO_DIGITANDO_ATUALIZADO,
@@ -138,6 +141,61 @@ export const eventoEntregadorDisponibilidadeSchema = z.object({
 
 export type EventoEntregadorDisponibilidade = z.infer<typeof eventoEntregadorDisponibilidadeSchema>;
 
+/**
+ * A SAÍDA mudou (criada, iniciada, reordenada, parada concluída ou saída encerrada), emitido após o
+ * commit para a identidade da EMPRESA e a do ENTREGADOR daquela saída — ninguém mais. O cliente
+ * jamais recebe este evento: ele veria a rota inteira e os pedidos dos outros.
+ */
+export const EVENTO_SAIDA_ATUALIZADA = "saida:atualizada";
+
+export const eventoSaidaAtualizadaSchema = z.object({
+  saida: saidaEntregaSchema,
+});
+
+export type EventoSaidaAtualizada = z.infer<typeof eventoSaidaAtualizadaSchema>;
+
+/**
+ * Posição do PRÓPRIO pedido na fila, para a identidade do cliente. Informação DERIVADA da sequência:
+ * só a situação e quantas entregas há antes da dele — nunca quem são, onde moram ou qual é a rota.
+ */
+export const EVENTO_PEDIDO_FILA = "pedido:fila";
+
+export const eventoPedidoFilaSchema = filaDoPedidoSchema;
+
+export type EventoPedidoFila = z.infer<typeof eventoPedidoFilaSchema>;
+
+/**
+ * A operação da base mudou (alguém chegou, saiu, ligou/desligou "aceitando", pegou uma saída):
+ * o painel inteiro vai para a identidade da EMPRESA daquela base — nunca para outra empresa.
+ * É estado DERIVADO: nenhuma coordenada de entregador trafega aqui.
+ */
+export const EVENTO_FILA_ATUALIZADA = "fila:atualizada";
+
+export const eventoFilaAtualizadaSchema = z.object({ painel: painelOperacionalSchema });
+
+export type EventoFilaAtualizada = z.infer<typeof eventoFilaAtualizadaSchema>;
+
+/**
+ * A situação do PRÓPRIO entregador numa empresa (presença, estado e posição na fila), para a
+ * identidade dele. Ele não recebe a fila dos outros — só quantos estão à frente.
+ */
+export const EVENTO_SITUACAO_OPERACIONAL = "entregador:situacao";
+
+export const eventoSituacaoOperacionalSchema = z.object({ situacao: situacaoOperacionalSchema });
+
+export type EventoSituacaoOperacional = z.infer<typeof eventoSituacaoOperacionalSchema>;
+
+/**
+ * O DESPACHO da empresa mudou: zona configurada, pedido que ficou fora das zonas, automação ligada.
+ * Vai só para a identidade da EMPRESA — o cliente jamais sabe que zonas existem, e o entregador
+ * recebe apenas a saída atribuída a ele.
+ */
+export const EVENTO_DESPACHO_ATUALIZADO = "despacho:atualizado";
+
+export const eventoDespachoAtualizadoSchema = z.object({ painel: painelDespachoSchema });
+
+export type EventoDespachoAtualizado = z.infer<typeof eventoDespachoAtualizadoSchema>;
+
 // Eventos que a API envia ao cliente. Comandos de negócio do cliente (enviar, confirmar) passam pela
 // API HTTP; pelo socket o cliente envia só atividade efêmera (ver atividade-conversa.ts).
 export interface EventosRealtimeServidorParaCliente {
@@ -151,6 +209,11 @@ export interface EventosRealtimeServidorParaCliente {
   [EVENTO_PEDIDO_STATUS_ATUALIZADO]: (evento: EventoPedidoStatusAtualizado) => void;
   [EVENTO_ENTREGA_ATUALIZADA]: (evento: EventoEntregaAtualizada) => void;
   [EVENTO_ENTREGADOR_DISPONIBILIDADE]: (evento: EventoEntregadorDisponibilidade) => void;
+  [EVENTO_SAIDA_ATUALIZADA]: (evento: EventoSaidaAtualizada) => void;
+  [EVENTO_PEDIDO_FILA]: (evento: EventoPedidoFila) => void;
+  [EVENTO_FILA_ATUALIZADA]: (evento: EventoFilaAtualizada) => void;
+  [EVENTO_SITUACAO_OPERACIONAL]: (evento: EventoSituacaoOperacional) => void;
+  [EVENTO_DESPACHO_ATUALIZADO]: (evento: EventoDespachoAtualizado) => void;
   [EVENTO_PRESENCA_ATUALIZADA]: (evento: EventoPresencaAtualizada) => void;
   [EVENTO_DIGITANDO_ATUALIZADO]: (evento: EventoDigitandoAtualizado) => void;
 }

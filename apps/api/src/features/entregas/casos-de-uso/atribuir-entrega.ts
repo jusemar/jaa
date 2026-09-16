@@ -12,6 +12,7 @@ import {
   listarAtribuicoesAtuaisDosVinculos,
 } from "../repositorios/repositorio-atribuicoes.js";
 import { buscarEntregadorDaEmpresa, listarVinculosAtivosDaPessoa } from "../repositorios/repositorio-entregadores.js";
+import { buscarSaidaAtivaDoPedido } from "../repositorios/repositorio-saidas.js";
 
 /*
  * ATRIBUIÇÃO da entrega. Quem atribui é a EMPRESA (permissão `gerenciar-entregadores`); quem executa
@@ -31,6 +32,8 @@ type ResultadoAtribuir =
   // Vínculo ativo, mas a pessoa não está aceitando novas entregas desta empresa agora.
   | { tipo: "entregador-indisponivel" }
   | { tipo: "status-invalido" }
+  // O pedido pertence a uma saída ativa: trocar só ele deixaria saída e pedido contando histórias diferentes.
+  | { tipo: "pedido-em-saida" }
   | { tipo: "conflito" };
 
 export async function atribuirEntregaAutorizada(
@@ -53,6 +56,12 @@ export async function atribuirEntregaAutorizada(
   if (!entregadorPodeOperar(entregador.status)) return { tipo: "entregador-inativo" };
   // NOVA atribuição exige ATIVO + DISPONÍVEL (a transação confere de novo, contra tela velha).
   if (!entregadorPodeReceberAtribuicao(entregador)) return { tipo: "entregador-indisponivel" };
+
+  /*
+   * Pedido dentro de uma saída ativa não é reatribuído individualmente: a saída inteira é a operação.
+   * Transferir uma saída para outro entregador é uma operação própria, ainda não implementada.
+   */
+  if (await buscarSaidaAtivaDoPedido(banco, pedidoId)) return { tipo: "pedido-em-saida" };
 
   const anterior = await buscarAtribuicaoAtual(banco, pedidoId);
   const resultado = await atribuirEntrega(banco, {

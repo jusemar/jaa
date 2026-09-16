@@ -2,6 +2,11 @@
 
 import {
   EVENTO_ENTREGA_ATUALIZADA,
+  EVENTO_SAIDA_ATUALIZADA,
+  EVENTO_SITUACAO_OPERACIONAL,
+  eventoSaidaAtualizadaSchema,
+  eventoSituacaoOperacionalSchema,
+  paradasAtivas,
   ROTULO_PAGAMENTO_ENTREGA,
   ROTULO_STATUS_PEDIDO,
   entregaEstaAtiva,
@@ -13,12 +18,26 @@ import {
   ROTULO_STATUS_ENTREGADOR,
   type ConviteEntregador,
   type EntregaAtribuida,
+  type SaidaEntrega,
+  type SituacaoOperacional,
   type VinculoEntregador,
 } from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
-import { alterarMinhaDisponibilidade, listarMeusConvites, listarMeusVinculos, listarMinhasEntregas, responderConvite } from "../lib/api-entregas";
+import {
+  alterarMinhaDisponibilidade,
+  listarMeusConvites,
+  listarMeusVinculos,
+  listarMinhasEntregas,
+  listarMinhasSaidas,
+  listarMinhasSituacoes,
+  reordenarSequencia,
+  responderConvite,
+} from "../lib/api-entregas";
+import { MapaPercurso } from "./mapa-percurso";
+import { MinhaSituacaoNaBase, usePresencaNaBase } from "./presenca-na-base";
+import { SequenciaDaSaida } from "./saida-apresentacao";
 
 /**
  * "MINHAS ENTREGAS": área do ENTREGADOR, separada da administração da empresa.
@@ -29,29 +48,76 @@ export function AreaMinhasEntregas() {
   const [entregas, setEntregas] = useState<EntregaAtribuida[]>([]);
   const [convites, setConvites] = useState<ConviteEntregador[]>([]);
   const [vinculos, setVinculos] = useState<VinculoEntregador[]>([]);
+  const [saidas, setSaidas] = useState<SaidaEntrega[]>([]);
+  const [situacoes, setSituacoes] = useState<SituacaoOperacional[]>([]);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  const aplicarSituacao = useCallback((situacao: SituacaoOperacional) => {
+    setSituacoes((atuais) => atuais.map((item) => (item.entregadorId === situacao.entregadorId ? situacao : item)));
+  }, []);
+
+  // Enquanto ele estiver aceitando entregas de alguma empresa, o aparelho informa o que mediu.
+  const { permissao, permitir } = usePresencaNaBase(situacoes, aplicarSituacao);
+
   useEffect(() => {
     let ativo = true;
-    void Promise.all([listarMinhasEntregas(), listarMeusConvites(), listarMeusVinculos()]).then(([lista, pendentes, meusVinculos]) => {
-      if (!ativo) return;
-      if (lista.ok) setEntregas(lista.dados.entregas);
-      else setErro(lista.mensagem);
-      if (pendentes.ok) setConvites(pendentes.dados.convites);
-      if (meusVinculos.ok) setVinculos(meusVinculos.dados.vinculos);
-    });
+    void Promise.all([listarMinhasEntregas(), listarMeusConvites(), listarMeusVinculos(), listarMinhasSaidas(), listarMinhasSituacoes()]).then(
+      ([lista, pendentes, meusVinculos, minhasSaidas, minhasSituacoes]) => {
+        if (!ativo) return;
+        if (lista.ok) setEntregas(lista.dados.entregas);
+        else setErro(lista.mensagem);
+        if (pendentes.ok) setConvites(pendentes.dados.convites);
+        if (meusVinculos.ok) setVinculos(meusVinculos.dados.vinculos);
+        if (minhasSaidas.ok) setSaidas(minhasSaidas.dados.saidas);
+        if (minhasSituacoes.ok) setSituacoes(minhasSituacoes.dados.situacoes);
+      },
+    );
     return () => {
       ativo = false;
     };
   }, []);
 
   const recarregar = useCallback(async () => {
-    const [lista, pendentes, meusVinculos] = await Promise.all([listarMinhasEntregas(), listarMeusConvites(), listarMeusVinculos()]);
+    const [lista, pendentes, meusVinculos, minhasSaidas, minhasSituacoes] = await Promise.all([
+      listarMinhasEntregas(),
+      listarMeusConvites(),
+      listarMeusVinculos(),
+      listarMinhasSaidas(),
+      listarMinhasSituacoes(),
+    ]);
     if (lista.ok) setEntregas(lista.dados.entregas);
     if (pendentes.ok) setConvites(pendentes.dados.convites);
     if (meusVinculos.ok) setVinculos(meusVinculos.dados.vinculos);
+    if (minhasSaidas.ok) setSaidas(minhasSaidas.dados.saidas);
+    if (minhasSituacoes.ok) setSituacoes(minhasSituacoes.dados.situacoes);
   }, []);
+
+  /*
+   * A sequência do Jaa é sugestão: quem conhece a região é quem está na rua. Mover uma parada envia a
+   * nova ordem inteira com a versão que a tela viu — se alguém mudou antes, a API recusa e recarregamos.
+   */
+  async function mover(saida: SaidaEntrega, pedidoId: string, direcao: -1 | 1) {
+    const ordem = paradasAtivas(saida).map((parada) => parada.pedidoId);
+    const de = ordem.indexOf(pedidoId);
+    const para = de + direcao;
+    if (de < 0 || para < 0 || para >= ordem.length) return;
+    [ordem[de], ordem[para]] = [ordem[para] as string, ordem[de] as string];
+
+    setOcupado(true);
+    try {
+      const resultado = await reordenarSequencia(saida.id, saida.versaoSequencia, ordem);
+      if (!resultado.ok) {
+        setErro(resultado.mensagem);
+        await recarregar();
+        return;
+      }
+      setErro(null);
+      setSaidas((atuais) => atuais.map((item) => (item.id === resultado.dados.id ? resultado.dados : item)));
+    } finally {
+      setOcupado(false);
+    }
+  }
 
   // Ficar disponível/indisponível é decisão dele, por empresa — e não mexe nas entregas já atribuídas.
   async function alterarDisponibilidade(vinculo: VinculoEntregador, disponivel: boolean) {
@@ -84,11 +150,27 @@ export function AreaMinhasEntregas() {
         return entrega && entregaEstaAtiva(entrega.status) ? [entrega, ...semEla] : semEla;
       });
     };
+    // A saída mudou (empresa iniciou, parada concluída, reordenação em outra aba).
+    const aoAtualizarSaida = (evento: unknown) => {
+      const resultado = eventoSaidaAtualizadaSchema.safeParse(evento);
+      if (!resultado.success) return;
+      const atualizada = resultado.data.saida;
+      setSaidas((atuais) => (atuais.some((item) => item.id === atualizada.id) ? atuais.map((item) => (item.id === atualizada.id ? atualizada : item)) : [atualizada, ...atuais]));
+    };
+    // Minha própria situação mudou (entrei/saí da base, a fila andou, peguei uma saída).
+    const aoAtualizarSituacao = (evento: unknown) => {
+      const resultado = eventoSituacaoOperacionalSchema.safeParse(evento);
+      if (resultado.success) aplicarSituacao(resultado.data.situacao);
+    };
     socket.on(EVENTO_ENTREGA_ATUALIZADA, aoAtualizar);
+    socket.on(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
+    socket.on(EVENTO_SITUACAO_OPERACIONAL, aoAtualizarSituacao);
     return () => {
       socket.off(EVENTO_ENTREGA_ATUALIZADA, aoAtualizar);
+      socket.off(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
+      socket.off(EVENTO_SITUACAO_OPERACIONAL, aoAtualizarSituacao);
     };
-  }, []);
+  }, [aplicarSituacao]);
 
   async function responder(convite: ConviteEntregador, resposta: "aceitar" | "recusar") {
     const resultado = await responderConvite(convite.id, resposta);
@@ -101,7 +183,7 @@ export function AreaMinhasEntregas() {
   }
 
   // Sem vínculo, convite nem entrega, a pessoa não é entregadora: a área nem aparece.
-  if (entregas.length === 0 && convites.length === 0 && vinculos.length === 0) return null;
+  if (entregas.length === 0 && convites.length === 0 && vinculos.length === 0 && saidas.length === 0) return null;
 
   return (
     <section aria-label="Minhas entregas" className="flex flex-col gap-3 rounded border border-zinc-200 p-3">
@@ -126,6 +208,19 @@ export function AreaMinhasEntregas() {
       )}
 
       <EmpresasEmQueTrabalho vinculos={vinculos} ocupado={ocupado} aoAlterarDisponibilidade={(vinculo, disponivel) => void alterarDisponibilidade(vinculo, disponivel)} />
+
+      <MinhaSituacaoNaBase situacoes={situacoes} permissao={permissao} aoPermitir={permitir} />
+
+      {/* Saídas: os pedidos que ele leva juntos, na sequência que pode reordenar. */}
+      {saidas.map((saida) => (
+        <div key={saida.id} data-saida={saida.id} className="flex flex-col gap-2 rounded border border-zinc-200 p-2">
+          <p className="text-sm font-medium">
+            Saída — {saida.empresa.nome} · {paradasAtivas(saida).length} {paradasAtivas(saida).length === 1 ? "entrega" : "entregas"}
+          </p>
+          <SequenciaDaSaida saida={saida} ocupado={ocupado} aoMover={(pedidoId, direcao) => void mover(saida, pedidoId, direcao)} />
+          <MapaPercurso saida={saida} />
+        </div>
+      ))}
 
       <ListaMinhasEntregas entregas={entregas} />
 

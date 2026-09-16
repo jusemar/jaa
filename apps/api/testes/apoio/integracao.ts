@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { criarConexaoBanco } from "@jaa/banco";
-import { atribuicoesEntrega, conversas, empresas, enderecosCliente, entregadoresEmpresa, identidades, membrosEmpresa, mensagens, participantesConversa, pedidos, produtos, rateLimits, users, verifications } from "@jaa/banco/schema";
+import { atribuicoesEntrega, compatibilidadesZona, configuracoesDespacho, conversas, empresas, enderecosCliente, entregadoresEmpresa, paradasSaida, saidasEntrega, identidades, membrosEmpresa, mensagens, participantesConversa, pedidos, produtos, rateLimits, users, verifications, zonasEntrega } from "@jaa/banco/schema";
 import { CABECALHO_IDENTIDADE_ATUANTE, type Mensagem, type PaginaConversas, type PaginaMensagens } from "@jaa/contratos";
 import { betterAuth } from "better-auth";
 import { testUtils } from "better-auth/plugins";
 import { count, inArray, like, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { io, type Socket } from "socket.io-client";
+import type { MotorDeRotas } from "../../src/features/entregas/lib/motor-rotas.js";
 import { criarAplicacao } from "../../src/aplicacao.js";
 import { criarOpcoesAutenticacao } from "../../src/features/autenticacao/autenticacao.js";
 import { criarAvisoSessoesEncerradas } from "../../src/features/autenticacao/lib/sessoes-encerradas.js";
@@ -39,7 +40,16 @@ export function como(pessoa: Pessoa, identidadeId: string | string[]): Pessoa {
   return { ...pessoa, identidadeAtuanteId: identidadeId };
 }
 
-export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: string[]; prefixoIp: string }) {
+export function criarAmbienteIntegracao({
+  telefones,
+  prefixoIp,
+  // Motor de rotas FAKE quando o teste precisa dele: nenhum teste chama provedor externo real.
+  motorRotas,
+}: {
+  telefones: string[];
+  prefixoIp: string;
+  motorRotas?: MotorDeRotas | undefined;
+}) {
   const ambiente = carregarAmbiente();
   const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
   const { banco } = conexao;
@@ -53,7 +63,7 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
   let app: FastifyInstance;
   let porta = 0;
 
-  function api(pessoa: Pessoa | null, metodo: "GET" | "POST" | "PATCH" | "DELETE", url: string, corpo?: unknown) {
+  function api(pessoa: Pessoa | null, metodo: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", url: string, corpo?: unknown) {
     return app.inject({
       method: metodo,
       url,
@@ -89,6 +99,14 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
     // Empresas das contas de teste: identidade empresarial primeiro (FK), depois a empresa (membros em cascata).
     const idsEmpresas = (await empresasTeste).map((linha) => linha.id);
     if (idsEmpresas.length > 0) {
+      // Saídas referenciam entregadores (restrict): saem antes deles; paradas caem em cascata.
+      await banco.delete(paradasSaida).where(inArray(paradasSaida.empresaId, idsEmpresas));
+      await banco.delete(saidasEntrega).where(inArray(saidasEntrega.empresaId, idsEmpresas));
+      // Zonas e configuração de despacho da empresa (as compatibilidades caem em cascata, mas o
+      // delete explícito mantém a limpeza legível).
+      await banco.delete(compatibilidadesZona).where(inArray(compatibilidadesZona.empresaId, idsEmpresas));
+      await banco.delete(zonasEntrega).where(inArray(zonasEntrega.empresaId, idsEmpresas));
+      await banco.delete(configuracoesDespacho).where(inArray(configuracoesDespacho.empresaId, idsEmpresas));
       await banco.delete(atribuicoesEntrega).where(inArray(atribuicoesEntrega.empresaId, idsEmpresas));
       await banco.delete(entregadoresEmpresa).where(inArray(entregadoresEmpresa.empresaId, idsEmpresas));
       await banco.delete(pedidos).where(inArray(pedidos.empresaId, idsEmpresas));
@@ -111,7 +129,7 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
 
     async iniciar() {
       await limpar();
-      app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, eventosPedidos, eventosEntregas, logger: false });
+      app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, eventosPedidos, eventosEntregas, ...(motorRotas ? { motorRotas } : {}), logger: false });
       configurarRealtime(app, { autenticacao, banco, sessoesEncerradas, eventosMensagens, eventosPedidos, eventosEntregas, origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS });
       await app.listen({ port: 0, host: "127.0.0.1" });
       porta = (app.server.address() as AddressInfo).port;
@@ -229,9 +247,10 @@ export function coletar<T>(socket: Socket, evento: string): T[] {
   return recebidos;
 }
 
-export async function aguardarAte(condicao: () => boolean, limiteMs = 3000) {
+// A condição pode consultar a API (assíncrona) ou só olhar eventos já coletados (síncrona).
+export async function aguardarAte(condicao: () => boolean | Promise<boolean>, limiteMs = 3000) {
   const inicio = Date.now();
-  while (!condicao()) {
+  while (!(await condicao())) {
     if (Date.now() - inicio > limiteMs) throw new Error("condição não atingida a tempo");
     await new Promise((r) => setTimeout(r, 20));
   }

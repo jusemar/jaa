@@ -5,7 +5,10 @@ import { useEffect, useState, type FormEvent } from "react";
 import { MensageiroTecnico } from "@/features/conversas/components/mensageiro-tecnico";
 import { AreaEmpresas } from "@/features/empresas/components/area-empresas";
 import { AreaMinhasEntregas } from "@/features/entregas/components/area-minhas-entregas";
+import { AreaZonasEmpresa } from "@/features/entregas/components/area-zonas-empresa";
+import { PainelOperacionalEmpresa } from "@/features/entregas/components/painel-operacional";
 import { QuadroEntregadores } from "@/features/entregas/components/quadro-entregadores";
+import { AreaSaidasEmpresa } from "@/features/entregas/components/area-saidas-empresa";
 import { AreaPedidosEmpresa } from "@/features/pedidos/components/area-pedidos-empresa";
 import { SeletorIdentidade } from "@/features/identidades/components/seletor-identidade";
 import { useIdentidadeAtiva } from "@/features/identidades/hooks/use-identidade-ativa";
@@ -289,7 +292,10 @@ function AreaIdentidadesEEmpresas({ identidadePessoalId }: { identidadePessoalId
         // Operação comercial acontece agindo COMO a empresa; a API autoriza cada chamada pelo vínculo.
         <>
           <AreaPedidosEmpresa key={identidades.ativa.empresa.id} empresaId={identidades.ativa.empresa.id} nomeEmpresa={identidades.ativa.nomeExibicao} />
+          <AreaSaidasEmpresa key={`saidas-${identidades.ativa.empresa.id}`} empresaId={identidades.ativa.empresa.id} nomeEmpresa={identidades.ativa.nomeExibicao} />
           <QuadroEntregadores key={`entregadores-${identidades.ativa.empresa.id}`} empresaId={identidades.ativa.empresa.id} nomeEmpresa={identidades.ativa.nomeExibicao} />
+          <PainelOperacionalEmpresa key={`operacao-${identidades.ativa.empresa.id}`} empresaId={identidades.ativa.empresa.id} nomeEmpresa={identidades.ativa.nomeExibicao} />
+          <AreaZonasEmpresa key={`zonas-${identidades.ativa.empresa.id}`} empresaId={identidades.ativa.empresa.id} nomeEmpresa={identidades.ativa.nomeExibicao} />
         </>
       )}
       {/* Área do ENTREGADOR: é da pessoa, nunca da empresa — e só aparece para quem tem entrega ou convite. */}

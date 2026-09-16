@@ -6,6 +6,8 @@ import {
   EVENTO_MENSAGEM_NOVA,
   EVENTO_MENSAGENS_ENTREGUES,
   EVENTO_MENSAGENS_LIDAS,
+  EVENTO_PEDIDO_FILA,
+  eventoPedidoFilaSchema,
   eventoMensagemAtualizadaSchema,
   eventoMensagemExcluidaParaMimSchema,
   eventoMensagemNovaSchema,
@@ -15,6 +17,7 @@ import {
   type Mensagem,
   type ParticipanteConversa,
   type EnderecoCliente,
+  type FilaDoPedido,
   type Pedido,
   type TipoIdentidade,
 } from "@jaa/contratos";
@@ -47,6 +50,8 @@ import { PainelCarrinho, type ConfirmacaoPedido } from "@/features/carrinho/comp
 import { EtapaEnderecoEntrega } from "@/features/enderecos/components/etapa-endereco-entrega";
 import { useCarrinho } from "@/features/carrinho/hooks/use-carrinho";
 import { itensParaPedido, quantidadeTotal, type Carrinho } from "@/features/carrinho/lib/carrinho";
+import { FilaDoCliente } from "@/features/entregas/components/saida-apresentacao";
+import { obterFilaDoPedido } from "@/features/entregas/lib/api-entregas";
 import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
 import { useStatusPedido } from "@/features/pedidos/hooks/use-status-pedido";
 import { criarPedido, obterPedido } from "@/features/pedidos/lib/api-pedidos";
@@ -121,6 +126,8 @@ export function ConversaTecnica({
   const [erroPedido, setErroPedido] = useState<string | null>(null);
   const [avisoPedido, setAvisoPedido] = useState<string | null>(null);
   const [pedidoAberto, setPedidoAberto] = useState<Pedido | null>(null);
+  // Posição do PRÓPRIO pedido na saída (situação + quantas entregas antes). Nunca a rota.
+  const [filaDoPedido, setFilaDoPedido] = useState<FilaDoPedido | null>(null);
   const atividade = useAtividadeConversa({ conversaId: conversa.id, outraIdentidadeId: conversa.outraIdentidade.identidadeId });
   const listaMensagensRef = useRef<HTMLOListElement>(null);
   const ultimaMensagemId = mensagens.at(-1)?.id;
@@ -232,6 +239,18 @@ export function ConversaTecnica({
       [conversa.id, pedidoAbertoId],
     ),
   );
+
+  useEffect(() => {
+    const socket = obterClienteRealtime();
+    const aoAtualizarFila = (evento: unknown) => {
+      const resultado = eventoPedidoFilaSchema.safeParse(evento);
+      if (resultado.success) setFilaDoPedido((atual) => (atual === null || atual.pedidoId === resultado.data.pedidoId ? resultado.data : atual));
+    };
+    socket.on(EVENTO_PEDIDO_FILA, aoAtualizarFila);
+    return () => {
+      socket.off(EVENTO_PEDIDO_FILA, aoAtualizarFila);
+    };
+  }, []);
 
   // Tudo que esta conversa exibe foi recebido por este cliente: confirma o recebimento (ENTREGUE).
   useEffect(() => {
@@ -452,12 +471,13 @@ export function ConversaTecnica({
 
   async function abrirPedido(pedidoId: string) {
     setErroPedido(null);
-    const resultado = await obterPedido(pedidoId);
+    const [resultado, fila] = await Promise.all([obterPedido(pedidoId), obterFilaDoPedido(pedidoId)]);
     if (!resultado.ok) {
       setErroPedido(resultado.mensagem);
       return;
     }
     setPedidoAberto(resultado.dados);
+    setFilaDoPedido(fila.ok ? fila.dados : null);
   }
 
   const outro = conversa.outraIdentidade;
@@ -529,7 +549,16 @@ export function ConversaTecnica({
           aoFechar={() => setCarrinhoAberto(false)}
         />
       )}
-      {pedidoAberto && <DetalhePedido pedido={pedidoAberto} aoFechar={() => setPedidoAberto(null)} />}
+      {pedidoAberto && (
+        <DetalhePedido
+          pedido={pedidoAberto}
+          aoFechar={() => {
+            setPedidoAberto(null);
+            setFilaDoPedido(null);
+          }}
+          acoes={filaDoPedido && filaDoPedido.pedidoId === pedidoAberto.id ? <FilaDoCliente fila={filaDoPedido} /> : null}
+        />
+      )}
       {avisoPedido && (
         <p role="status" className="text-sm text-emerald-700">
           {avisoPedido}

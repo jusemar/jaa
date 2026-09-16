@@ -22,7 +22,11 @@ export type PermissaoEmpresa =
   | "gerenciar-pedidos"
   // Quadro de entregadores e atribuição das entregas. NÃO é o que autoriza ENTREGAR: quem entrega
   // tem vínculo de entregador (features/entregas), que não dá nenhuma permissão administrativa.
-  | "gerenciar-entregadores";
+  | "gerenciar-entregadores"
+  // Zonas de entrega e automação do despacho (quantidade, tempo, combinação). Separadas de
+  // "gerenciar-entregadores": um futuro supervisor pode configurar a logística sem mexer em vínculos.
+  | "ver-logistica"
+  | "gerenciar-logistica";
 
 const PERMISSOES_POR_PAPEL: Record<PapelMembroEmpresa, ReadonlySet<PermissaoEmpresa>> = {
   proprietario: new Set([
@@ -35,6 +39,8 @@ const PERMISSOES_POR_PAPEL: Record<PapelMembroEmpresa, ReadonlySet<PermissaoEmpr
     "ver-pedidos",
     "gerenciar-pedidos",
     "gerenciar-entregadores",
+    "ver-logistica",
+    "gerenciar-logistica",
   ]),
 };
 

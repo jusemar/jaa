@@ -27,6 +27,14 @@ const ambienteSchema = z
     GEOCODIFICACAO_URL: z.url().optional(),
     // Identificação do aplicativo exigida pela política de uso do Nominatim.
     GEOCODIFICACAO_CONTATO: z.string().min(1).optional(),
+    /*
+     * Roteamento real (sequência sugerida + percurso pelas ruas). OPCIONAL: sem o token, o Jaa não
+     * chama serviço nenhum e a operação segue com a aproximação local determinística.
+     * O token é SEGREDO DE SERVIDOR — nunca vai para o Web nem para o Mobile.
+     */
+    MAPBOX_TOKEN: z.string().min(1).optional(),
+    // Base da API (permite apontar para um ambiente próprio/homologação sem tocar no código).
+    MAPBOX_URL: z.url().optional(),
   })
   .superRefine((ambiente, contexto) => {
     // Segurança: a entrega de desenvolvimento exibe o código no terminal e nunca pode ir para produção.

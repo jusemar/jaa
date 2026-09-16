@@ -11,6 +11,12 @@ import {
 import { buscarEmpresaPublicaPorId, type EmpresaPublicaRegistro } from "../../catalogo/repositorios/repositorio-empresas-publicas.js";
 import { autorizarEmpresa } from "../../empresas/lib/autorizacao-empresas.js";
 import { encerrarEntregaDoPedido, publicarEntrega } from "../../entregas/casos-de-uso/atribuir-entrega.js";
+import { aoPedidoFicarPronto } from "../../entregas/casos-de-uso/despacho-automatico.js";
+import { encerrarParadaDoPedidoConcluido } from "../../entregas/casos-de-uso/gerir-saidas.js";
+import { reavaliarFila } from "../../entregas/casos-de-uso/presenca-e-fila.js";
+import { publicarOperacao } from "../../entregas/lib/publicar-operacao.js";
+import { publicarSaidaPorId } from "../../entregas/lib/publicar-saida.js";
+import { buscarSaidaAtivaDoPedido } from "../../entregas/repositorios/repositorio-saidas.js";
 import type { CanalEventosEntregas } from "../../entregas/lib/eventos-entregas.js";
 import { buscarAtribuicaoAtual } from "../../entregas/repositorios/repositorio-atribuicoes.js";
 import { montarResumoPedido } from "../lib/resumo-pedido.js";
@@ -131,11 +137,28 @@ export async function alterarStatusPedidoAutorizado(
    * Depois do commit, o entregador atual acompanha a entrega: mudança de status atualiza a lista dele
    * e pedido encerrado (entregue/cancelado) sai da lista, com a atribuição encerrada e histórico intacto.
    */
+  const saidaDoPedido = await buscarSaidaAtivaDoPedido(banco, pedidoId);
   if (novoStatus === "entregue" || novoStatus === "cancelado") {
-    await encerrarEntregaDoPedido({ banco, eventosEntregas }, pedidoId, novoStatus === "entregue" ? "Pedido entregue" : "Pedido cancelado");
+    const motivo = novoStatus === "entregue" ? "Pedido entregue" : "Pedido cancelado";
+    await encerrarEntregaDoPedido({ banco, eventosEntregas }, pedidoId, motivo);
+    // A parada sai da sequência ativa (e a saída se conclui quando foi a última); histórico intacto.
+    const parada = await encerrarParadaDoPedidoConcluido(banco, pedidoId, motivo);
+    // Saída concluída com o entregador ainda na base e aceitando: ele volta ao final da fila.
+    if (parada?.entregadorId) {
+      const apos = await reavaliarFila(banco, parada.entregadorId, "Saída concluída");
+      if (apos) await publicarOperacao({ banco, eventosEntregas }, apos.registro);
+    }
   } else {
     await publicarEntrega({ banco, eventosEntregas }, pedidoId);
   }
+
+  /*
+   * PRONTO é o gatilho da automação: o pedido entra na formação da zona dele (quando a empresa tem
+   * zonas). Fora das zonas ou sem automação, nada muda — continua valendo a montagem manual.
+   */
+  if (novoStatus === "pronto") await aoPedidoFicarPronto({ banco, eventosEntregas }, empresaId, pedidoId);
+  // Empresa e entregador recebem a saída atualizada; cada cliente, só a própria posição na fila.
+  if (saidaDoPedido) await publicarSaidaPorId({ banco, eventosEntregas }, saidaDoPedido.saidaId);
 
   // Depois do commit: só o cliente dono e a identidade da empresa recebem a atualização.
   eventosPedidos.publicar({

@@ -5,17 +5,43 @@ import {
   listaConvitesEntregadorSchema,
   listaEntregadoresSchema,
   listaEntregasSchema,
+  baseEmpresaSchema,
+  filaDoPedidoSchema,
+  listaSituacoesOperacionaisSchema,
+  painelOperacionalSchema,
+  situacaoOperacionalSchema,
+  listaSaidasSchema,
   listaVinculosEntregadorSchema,
+  listaZonasSchema,
+  painelDespachoSchema,
+  saidaEntregaSchema,
+  zonaEntregaSchema,
   type EntregaAtribuida,
   type EntregaDoPedido,
   type EntregadorDaEmpresa,
   type ListaConvitesEntregador,
   type ListaEntregadores,
   type ListaEntregas,
+  type BaseEmpresa,
+  type Coordenadas,
+  type EnviarLocalizacaoEntrada,
+  type FilaDoPedido,
+  type ListaSituacoesOperacionais,
+  type PainelOperacional,
+  type SalvarBaseEntrada,
+  type SituacaoOperacional,
+  type ListaSaidas,
   type ListaVinculosEntregador,
+  type ListaZonas,
+  type PainelDespacho,
+  type SaidaEntrega,
+  type SalvarConfiguracaoDespachoEntrada,
+  type SalvarZonaEntrada,
+  type ZonaEntrega,
 } from "@jaa/contratos";
 import * as z from "zod";
 import { requisitarApi, type ResultadoApi } from "@/lib/api";
+import { cabecalhosIdentidadeAtuante } from "@/lib/identidade-atuante";
 
 /*
  * Dois lados bem separados: a EMPRESA administra entregadores e atribui pedidos; a PESSOA responde
@@ -75,4 +101,109 @@ export function listarMeusVinculos(): Promise<ResultadoApi<ListaVinculosEntregad
 
 export function alterarMinhaDisponibilidade(entregadorId: string, disponivel: boolean): Promise<ResultadoApi<EntregadorDaEmpresa>> {
   return requisitarApi(`/entregas/vinculos/${encodeURIComponent(entregadorId)}`, entregadorDaEmpresaSchema, { method: "PATCH", body: JSON.stringify({ disponivel }) });
+}
+
+/*
+ * SAÍDA DE ENTREGA: a empresa monta e acompanha; o entregador abre a própria e reordena a sequência.
+ * O cliente não tem rota aqui — para ele existe só a fila derivada do próprio pedido.
+ */
+
+export function listarSaidasDaEmpresa(empresaId: string): Promise<ResultadoApi<ListaSaidas>> {
+  return requisitarApi(daEmpresa(empresaId, "/saidas"), listaSaidasSchema, {});
+}
+
+export function criarSaida(empresaId: string, entregadorId: string, pedidoIds: string[]): Promise<ResultadoApi<SaidaEntrega>> {
+  return requisitarApi(daEmpresa(empresaId, "/saidas"), saidaEntregaSchema, { method: "POST", body: JSON.stringify({ entregadorId, pedidoIds }) });
+}
+
+export function iniciarSaida(empresaId: string, saidaId: string): Promise<ResultadoApi<SaidaEntrega>> {
+  return requisitarApi(daEmpresa(empresaId, `/saidas/${encodeURIComponent(saidaId)}/iniciar`), saidaEntregaSchema, { method: "POST" });
+}
+
+export function listarMinhasSaidas(): Promise<ResultadoApi<ListaSaidas>> {
+  return requisitarApi("/entregas/saidas", listaSaidasSchema, {});
+}
+
+// A sequência do Jaa é sugestão: quem está na rua reordena, informando a versão que viu.
+export function reordenarSequencia(saidaId: string, versaoSequencia: number, pedidoIds: string[]): Promise<ResultadoApi<SaidaEntrega>> {
+  return requisitarApi(`/entregas/saidas/${encodeURIComponent(saidaId)}/sequencia`, saidaEntregaSchema, {
+    method: "PATCH",
+    body: JSON.stringify({ versaoSequencia, pedidoIds }),
+  });
+}
+
+// Posição do PRÓPRIO pedido: situação + quantas entregas antes. Nada da rota nem de outros clientes.
+export function obterFilaDoPedido(pedidoId: string): Promise<ResultadoApi<FilaDoPedido>> {
+  return requisitarApi(`/pedidos/${encodeURIComponent(pedidoId)}/fila`, filaDoPedidoSchema, { headers: cabecalhosIdentidadeAtuante() });
+}
+
+/*
+ * BASE OPERACIONAL, PRESENÇA e FILA. A empresa configura a base e acompanha o painel; o entregador
+ * manda a leitura do aparelho (nunca "estou na base") e vê a própria situação.
+ */
+
+export function obterBase(empresaId: string): Promise<ResultadoApi<BaseEmpresa>> {
+  return requisitarApi(daEmpresa(empresaId, "/base"), baseEmpresaSchema, {});
+}
+
+export function salvarBase(empresaId: string, entrada: SalvarBaseEntrada): Promise<ResultadoApi<BaseEmpresa>> {
+  return requisitarApi(daEmpresa(empresaId, "/base"), baseEmpresaSchema, { method: "POST", body: JSON.stringify(entrada) });
+}
+
+export function confirmarPontoBase(empresaId: string, coordenadas: Coordenadas): Promise<ResultadoApi<BaseEmpresa>> {
+  return requisitarApi(daEmpresa(empresaId, "/base/localizacao"), baseEmpresaSchema, { method: "POST", body: JSON.stringify(coordenadas) });
+}
+
+export function obterPainelOperacional(empresaId: string): Promise<ResultadoApi<PainelOperacional>> {
+  return requisitarApi(daEmpresa(empresaId, "/operacao"), painelOperacionalSchema, {});
+}
+
+// O aparelho informa o que mediu; quem decide presença é o servidor.
+export function enviarLocalizacao(entregadorId: string, leitura: EnviarLocalizacaoEntrada): Promise<ResultadoApi<SituacaoOperacional>> {
+  return requisitarApi(`/entregas/vinculos/${encodeURIComponent(entregadorId)}/localizacao`, situacaoOperacionalSchema, {
+    method: "POST",
+    body: JSON.stringify(leitura),
+  });
+}
+
+/*
+ * ZONAS e AUTOMAÇÃO DO DESPACHO: administração da EMPRESA. O cliente não tem rota aqui (ele nunca
+ * escolhe zona) e o entregador também não (para ele existe a saída atribuída a ele).
+ */
+
+export function listarZonas(empresaId: string): Promise<ResultadoApi<ListaZonas>> {
+  return requisitarApi(daEmpresa(empresaId, "/zonas"), listaZonasSchema, {});
+}
+
+export function criarZona(empresaId: string, entrada: SalvarZonaEntrada): Promise<ResultadoApi<ZonaEntrega>> {
+  return requisitarApi(daEmpresa(empresaId, "/zonas"), zonaEntregaSchema, { method: "POST", body: JSON.stringify(entrada) });
+}
+
+export function atualizarZona(empresaId: string, zonaId: string, entrada: SalvarZonaEntrada): Promise<ResultadoApi<ZonaEntrega>> {
+  return requisitarApi(daEmpresa(empresaId, `/zonas/${encodeURIComponent(zonaId)}`), zonaEntregaSchema, { method: "PATCH", body: JSON.stringify(entrada) });
+}
+
+// Marcar em A vale para B: o servidor normaliza o par.
+export function definirCompatibilidades(empresaId: string, zonaId: string, zonaIds: string[]): Promise<ResultadoApi<ListaZonas>> {
+  return requisitarApi(daEmpresa(empresaId, `/zonas/${encodeURIComponent(zonaId)}/compatibilidades`), listaZonasSchema, {
+    method: "POST",
+    body: JSON.stringify({ zonaIds }),
+  });
+}
+
+export function obterPainelDespacho(empresaId: string): Promise<ResultadoApi<PainelDespacho>> {
+  return requisitarApi(daEmpresa(empresaId, "/despacho"), painelDespachoSchema, {});
+}
+
+export function salvarConfiguracaoDespacho(empresaId: string, entrada: SalvarConfiguracaoDespachoEntrada): Promise<ResultadoApi<PainelDespacho>> {
+  return requisitarApi(daEmpresa(empresaId, "/despacho"), painelDespachoSchema, { method: "POST", body: JSON.stringify(entrada) });
+}
+
+// Intervenção do gestor: fechar antes da hora uma saída que ainda está juntando pedidos.
+export function fecharSaida(empresaId: string, saidaId: string): Promise<ResultadoApi<SaidaEntrega>> {
+  return requisitarApi(daEmpresa(empresaId, `/saidas/${encodeURIComponent(saidaId)}/fechar`), saidaEntregaSchema, { method: "POST" });
+}
+
+export function listarMinhasSituacoes(): Promise<ResultadoApi<ListaSituacoesOperacionais>> {
+  return requisitarApi("/entregas/situacao", listaSituacoesOperacionaisSchema, {});
 }

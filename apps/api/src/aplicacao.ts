@@ -9,7 +9,9 @@ import { registrarRotasConversas } from "./features/conversas/rotas/rotas-conver
 import { registrarRotasEmpresas } from "./features/empresas/rotas/rotas-empresas.js";
 import { geocodificadorIndisponivel, type GeocodificadorEndereco } from "./features/enderecos/lib/geocodificador.js";
 import { criarCanalEventosEntregas, type CanalEventosEntregas } from "./features/entregas/lib/eventos-entregas.js";
+import { criarMotorDeRotas, type MotorDeRotas } from "./features/entregas/lib/motor-rotas.js";
 import { registrarRotasEntregas } from "./features/entregas/rotas/rotas-entregas.js";
+import { alterarStatusPedidoAutorizado } from "./features/pedidos/casos-de-uso/gerir-pedidos-empresa.js";
 import { registrarRotasEnderecos } from "./features/enderecos/rotas/rotas-enderecos.js";
 import { criarCanalEventosPedidos, type CanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
 import { registrarRotasPedidos } from "./features/pedidos/rotas/rotas-pedidos.js";
@@ -32,6 +34,8 @@ interface DependenciasAplicacao {
   // Fronteira de geocodificação (endereço → coordenada SUGERIDA). Sem provedor configurado, o mapa
   // abre sem palpite: a confirmação do ponto continua sendo do cliente.
   geocodificador?: GeocodificadorEndereco;
+  // Motor de rotas do Jaa. Sem provedor configurado, ele já cai na aproximação local (sem rede).
+  motorRotas?: MotorDeRotas;
   logger: FastifyServerOptions["logger"];
 }
 
@@ -44,6 +48,7 @@ export async function criarAplicacao({
   eventosPedidos = criarCanalEventosPedidos(),
   eventosEntregas = criarCanalEventosEntregas(),
   geocodificador = geocodificadorIndisponivel,
+  motorRotas = criarMotorDeRotas(null),
   logger,
 }: DependenciasAplicacao) {
   const servidor = Fastify({ logger });
@@ -74,7 +79,17 @@ export async function criarAplicacao({
   registrarRotasEnderecos(servidor, { banco, autenticacao, geocodificador });
   registrarRotasPedidos(servidor, { banco, autenticacao, eventosMensagens });
   registrarRotasPedidosEmpresa(servidor, { banco, autenticacao, eventosPedidos, eventosEntregas });
-  registrarRotasEntregas(servidor, { banco, autenticacao, eventosEntregas });
+  registrarRotasEntregas(servidor, {
+    banco,
+    autenticacao,
+    eventosEntregas,
+    motorRotas,
+    // Iniciar a saída avança cada pedido pronto pela MESMA máquina de estados da empresa (com
+    // histórico, realtime e as validações de sempre) — nunca por atalho.
+    avancarPedidoParaEntrega: async (usuarioId, empresaId, pedidoId) => {
+      await alterarStatusPedidoAutorizado({ banco, eventosPedidos, eventosEntregas }, usuarioId, empresaId, pedidoId, { tipo: "avancar", statusAtual: "pronto" });
+    },
+  });
   registrarRotasConversas(servidor, { banco, autenticacao });
   registrarRotasMensagens(servidor, { banco, autenticacao, eventosMensagens });
 

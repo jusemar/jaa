@@ -1,4 +1,4 @@
-import type { EntregaAtribuida, EntregadorDaEmpresa } from "@jaa/contratos";
+import type { EntregaAtribuida, EntregadorDaEmpresa, FilaDoPedido, PainelDespacho, PainelOperacional, SaidaEntrega, SituacaoOperacional } from "@jaa/contratos";
 
 /**
  * Canal interno do domínio ENTREGA: publicado só depois do commit.
@@ -26,7 +26,61 @@ export interface DisponibilidadeAtualizada {
   entregador: EntregadorDaEmpresa;
 }
 
-export type EventoDominioEntregas = EntregaAtualizada | DisponibilidadeAtualizada;
+/**
+ * A SAÍDA mudou (criada, iniciada, reordenada, parada encerrada). Vai para a identidade da EMPRESA e
+ * a do ENTREGADOR daquela saída — nunca para clientes, que veriam a rota inteira e pedidos de outros.
+ */
+export interface SaidaAtualizada {
+  tipo: "saida-atualizada";
+  destinatariosIdentidadeIds: string[];
+  saida: SaidaEntrega;
+}
+
+/**
+ * Posição do PRÓPRIO pedido na fila, para a identidade do cliente dono dele. Informação derivada:
+ * situação + quantas entregas antes. Nunca a sequência, os endereços ou os pedidos dos outros.
+ */
+export interface FilaAtualizada {
+  tipo: "fila-atualizada";
+  destinatariosIdentidadeIds: string[];
+  fila: FilaDoPedido;
+}
+
+/**
+ * Quadro operacional da base (fila, fora da base, indisponíveis) para a identidade da EMPRESA.
+ * Só estados derivados: a empresa nunca recebe posição, mapa ou trajeto de ninguém.
+ */
+export interface PainelOperacionalAtualizado {
+  tipo: "painel-operacional-atualizado";
+  destinatariosIdentidadeIds: string[];
+  painel: PainelOperacional;
+}
+
+// Situação do PRÓPRIO entregador numa empresa (presença, estado, posição na fila).
+export interface SituacaoOperacionalAtualizada {
+  tipo: "situacao-operacional-atualizada";
+  destinatariosIdentidadeIds: string[];
+  situacao: SituacaoOperacional;
+}
+
+/**
+ * Painel de LOGÍSTICA da empresa: zonas, configuração da automação e os pedidos que ficaram fora das
+ * zonas. Vai só para a identidade da EMPRESA — cliente e entregador não têm nada a ver com isso.
+ */
+export interface DespachoAtualizado {
+  tipo: "despacho-atualizado";
+  destinatariosIdentidadeIds: string[];
+  painel: PainelDespacho;
+}
+
+export type EventoDominioEntregas =
+  | EntregaAtualizada
+  | DisponibilidadeAtualizada
+  | SaidaAtualizada
+  | FilaAtualizada
+  | PainelOperacionalAtualizado
+  | SituacaoOperacionalAtualizada
+  | DespachoAtualizado;
 
 type OuvinteEventosEntregas = (evento: EventoDominioEntregas) => void;
 

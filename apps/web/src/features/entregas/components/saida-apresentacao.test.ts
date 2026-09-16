@@ -1,0 +1,118 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import type { FilaDoPedido, ParadaSaida, SaidaEntrega } from "@jaa/contratos";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { FilaDoCliente, SequenciaDaSaida } from "./saida-apresentacao.tsx";
+
+const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
+const uuid = (n: number) => `${String(n).repeat(8)}-0000-4000-8000-000000000000`;
+
+const parada = (n: number, posicao: number, encerradaEm: string | null = null): ParadaSaida => ({
+  id: uuid(n),
+  pedidoId: uuid(n + 1),
+  posicao,
+  statusPedido: encerradaEm ? "entregue" : "saiu_para_entrega",
+  destino: {
+    enderecoId: uuid(n + 2),
+    cep: "30123000",
+    logradouro: `Rua ${n}`,
+    numero: `${100 + n}`,
+    complemento: null,
+    bairro: "Centro",
+    cidade: "Belo Horizonte",
+    uf: "MG",
+    pontoReferencia: null,
+    latitude: -19.919125,
+    longitude: -43.938602,
+    localizacaoConfirmadaEm: "2026-09-16T11:55:00.000Z",
+  },
+  cliente: { identidadeId: uuid(n + 3), tipo: "pessoal", nomeExibicao: `Cliente ${n}`, nomeUsuario: `cliente${n}` },
+  totalCentavos: 3990,
+  encerradaEm,
+  motivoEncerramento: encerradaEm ? "Pedido entregue" : null,
+});
+
+const saida = (paradas: ParadaSaida[]): SaidaEntrega => ({
+  id: uuid(1),
+  empresa: { identidadeId: uuid(2), nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh" },
+  entregador: { identidadeId: uuid(3), tipo: "pessoal", nomeExibicao: "Paulo Entregador", nomeUsuario: "paulo" },
+  status: "em_andamento",
+  versaoSequencia: 2,
+  paradas,
+  rota: null,
+  zonaPrincipal: null,
+  zonasCombinadas: [],
+  automatica: false,
+  criadoEm: "2026-09-16T12:00:00.000Z",
+  formacaoIniciadaEm: null,
+  prazoFormacaoEm: null,
+  fechadaEm: "2026-09-16T12:05:00.000Z",
+  atribuidaEm: "2026-09-16T12:05:00.000Z",
+  iniciadaEm: "2026-09-16T12:10:00.000Z",
+  concluidaEm: null,
+});
+
+describe("sequência da saída", () => {
+  const render = (dados: SaidaEntrega, comReordenacao = false) =>
+    renderToStaticMarkup(createElement(SequenciaDaSaida, { saida: dados, ...(comReordenacao ? { aoMover: () => {} } : {}) }));
+
+  it("numera as paradas ativas e marca a próxima (posição operacional, não localização)", () => {
+    const html = render(saida([parada(1, 1), parada(2, 2), parada(3, 3)]));
+    const conteudo = texto(html);
+    assert.ok(conteudo.includes("1. Cliente 1"));
+    assert.ok(conteudo.includes("3. Cliente 3"));
+    assert.ok(html.includes("data-proxima-parada"), "a primeira ativa é a próxima");
+    assert.equal((html.match(/data-proxima-parada/g) ?? []).length, 1);
+    // Nada de prometer rota/tempo sem motor de roteamento.
+    assert.ok(conteudo.includes("Sequência sugerida pelo Jaa"));
+    for (const proibido of ["melhor rota", "rota mais rápida", "menor tempo", "km", "ETA", "minutos"]) {
+      assert.equal(conteudo.toLowerCase().includes(proibido.toLowerCase()), false, proibido);
+    }
+  });
+
+  it("paradas encerradas saem da sequência ativa e viram histórico", () => {
+    const html = render(saida([parada(1, 1, "2026-09-16T12:40:00.000Z"), parada(2, 2), parada(3, 3)]));
+    assert.ok(html.includes("data-parada-encerrada"));
+    assert.ok(texto(html).includes("Cliente 1 — Pedido entregue"));
+    // A sequência ativa renumera a partir da primeira que sobrou.
+    assert.ok(texto(html).includes("1. Cliente 2"));
+  });
+
+  it("só oferece reordenar quando quem exibe é o entregador", () => {
+    assert.equal(render(saida([parada(1, 1), parada(2, 2)])).includes("data-subir-parada"), false);
+    const doEntregador = render(saida([parada(1, 1), parada(2, 2)]), true);
+    assert.ok(doEntregador.includes("data-subir-parada"));
+    assert.ok(doEntregador.includes("data-descer-parada"));
+    // A primeira não sobe e a última não desce.
+    assert.equal((doEntregador.match(/data-subir-parada="true" disabled=""/g) ?? []).length, 1);
+    assert.equal((doEntregador.match(/data-descer-parada="true" disabled=""/g) ?? []).length, 1);
+  });
+
+  it("saída sem parada ativa explica o estado", () => {
+    assert.ok(texto(render(saida([parada(1, 1, "2026-09-16T12:40:00.000Z")]))).includes("Nenhuma entrega ativa nesta saída."));
+  });
+});
+
+describe("fila do cliente", () => {
+  const render = (fila: FilaDoPedido) => renderToStaticMarkup(createElement(FilaDoCliente, { fila }));
+
+  it("mostra só a posição derivada do próprio pedido", () => {
+    assert.ok(texto(render({ pedidoId: uuid(9), situacao: "na_fila", entregasAntes: 3 })).includes("3 entregas antes da sua"));
+    assert.ok(texto(render({ pedidoId: uuid(9), situacao: "na_fila", entregasAntes: 1 })).includes("1 entrega antes da sua"));
+    assert.ok(texto(render({ pedidoId: uuid(9), situacao: "indo_ate_voce", entregasAntes: 0 })).includes("Indo até você"));
+    assert.ok(texto(render({ pedidoId: uuid(9), situacao: "aguardando_saida", entregasAntes: 2 })).includes("separado para a entrega"));
+  });
+
+  it("não revela nada de outros pedidos, clientes ou da rota", () => {
+    const html = render({ pedidoId: uuid(9), situacao: "na_fila", entregasAntes: 2 });
+    for (const proibido of ["Cliente", "Rua", "Paulo", "sequência", "entregador"]) {
+      assert.equal(texto(html).includes(proibido), false, proibido);
+    }
+  });
+
+  it("pedido fora de saída (ou encerrado) não mostra fila nenhuma", () => {
+    assert.equal(render({ pedidoId: uuid(9), situacao: "sem_saida", entregasAntes: null }), "");
+    assert.equal(render({ pedidoId: uuid(9), situacao: "encerrado", entregasAntes: null }), "");
+  });
+});

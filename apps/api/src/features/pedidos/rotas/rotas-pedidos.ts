@@ -1,5 +1,5 @@
 import type { Banco } from "@jaa/banco";
-import { criarPedidoEntradaSchema, type ErroApi } from "@jaa/contratos";
+import { criarPedidoEntradaSchema, type ErroApi, type FilaDoPedido } from "@jaa/contratos";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as z from "zod";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
@@ -7,6 +7,7 @@ import { exigirIdentidadeAtuante, obterIdentidadeExigida } from "../../autentica
 import type { CanalEventosMensagens } from "../../mensagens/lib/eventos-mensagens.js";
 import { criarPedido } from "../casos-de-uso/criar-pedido.js";
 import { obterPedidoAutorizado } from "../casos-de-uso/obter-pedido.js";
+import { calcularFilaDoPedido } from "../../entregas/casos-de-uso/gerir-saidas.js";
 import { serializarEmpresaPublica } from "../../catalogo/lib/serializar-catalogo.js";
 import { serializarPedido } from "../lib/serializar-pedido.js";
 
@@ -59,6 +60,22 @@ export function registrarRotasPedidos(
       case "ja-existente":
         return resposta.code(200).send(serializarPedido(resultado.pedido, serializarEmpresaPublica(resultado.empresa)));
     }
+  });
+
+  /**
+   * FILA do próprio pedido: informação DERIVADA da sequência da saída — situação e quantas entregas
+   * ativas estão antes da dele. Nunca a rota, os endereços ou os pedidos dos outros clientes.
+   * A autorização é a mesma do pedido (cliente dono ou empresa dona).
+   */
+  servidor.get("/pedidos/:pedidoId/fila", { preHandler }, async (requisicao, resposta) => {
+    const { identidadeId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosPedidoSchema.safeParse(requisicao.params);
+    if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Pedido inválido." });
+
+    const resultado = await obterPedidoAutorizado(dependencias.banco, identidadeId, parametros.data.pedidoId);
+    if (resultado.tipo !== "pedido") return responder(resposta, 404, { codigo: "PEDIDO_NAO_ENCONTRADO", mensagem: "Pedido não encontrado." });
+    const fila: FilaDoPedido = await calcularFilaDoPedido(dependencias.banco, parametros.data.pedidoId);
+    return fila;
   });
 
   servidor.get("/pedidos/:pedidoId", { preHandler }, async (requisicao, resposta) => {
