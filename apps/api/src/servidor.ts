@@ -5,6 +5,7 @@ import { criarEntregadorOtp } from "./features/autenticacao/entrega-otp/entregad
 import { criarAvisoSessoesEncerradas } from "./features/autenticacao/lib/sessoes-encerradas.js";
 import { criarCanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
 import { criarGeocodificadorNominatim, geocodificadorIndisponivel } from "./features/enderecos/lib/geocodificador.js";
+import { criarCanalEventosEntregas } from "./features/entregas/lib/eventos-entregas.js";
 import { criarCanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
 import { carregarAmbiente } from "./lib/ambiente.js";
 import { configurarRealtime } from "./realtime/configurar-realtime.js";
@@ -14,6 +15,7 @@ const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
 const sessoesEncerradas = criarAvisoSessoesEncerradas();
 const eventosMensagens = criarCanalEventosMensagens();
 const eventosPedidos = criarCanalEventosPedidos();
+const eventosEntregas = criarCanalEventosEntregas();
 // Sem GEOCODIFICACAO_URL o Jaa não chama serviço externo nenhum: o mapa abre sem palpite.
 const geocodificador = ambiente.GEOCODIFICACAO_URL
   ? criarGeocodificadorNominatim({ url: ambiente.GEOCODIFICACAO_URL, contato: ambiente.GEOCODIFICACAO_CONTATO })
@@ -32,6 +34,7 @@ const servidor = await criarAplicacao({
   autenticacao,
   eventosMensagens,
   eventosPedidos,
+  eventosEntregas,
   geocodificador,
   logger: true,
 });
@@ -42,6 +45,7 @@ configurarRealtime(servidor, {
   sessoesEncerradas,
   eventosMensagens,
   eventosPedidos,
+  eventosEntregas,
   origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS,
 });
 

@@ -24,13 +24,15 @@ import { aguardarAte, coletar, como, criarAmbienteIntegracao, type Pessoa } from
 
 const PREFIXO = `ges${randomUUID().slice(0, 4)}`;
 const ctx = criarAmbienteIntegracao({
-  telefones: ["+5531987651701", "+5531987651702", "+5531987651703"],
+  telefones: ["+5531987651701", "+5531987651702", "+5531987651703", "+5531987651704"],
   prefixoIp: "198.18.12.",
 });
 
 let A: Pessoa;
 let B: Pessoa;
 let C: Pessoa;
+let D: Pessoa;
+let entregadorId = "";
 let pizzaria: Empresa;
 let farmacia: Empresa;
 let comoPizzaria: Pessoa;
@@ -57,9 +59,13 @@ async function criarPedido(quantidade = 1): Promise<Pedido> {
 }
 
 // Leva o pedido até o status desejado, um passo por vez (como a empresa faria na tela).
+// Ao chegar em "pronto", atribui o entregador: sem ele o servidor recusa a saída para entrega.
 async function levarAte(pedido: Pedido, alvo: StatusPedido): Promise<Pedido> {
   let atual = pedido;
   while (atual.status !== alvo) {
+    if (atual.status === "pronto") {
+      assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${atual.id}/entrega`, { entregadorId })).statusCode, 200);
+    }
     const resposta = await avancar(A, pizzaria, atual.id, atual.status);
     assert.equal(resposta.statusCode, 200, resposta.body);
     atual = resposta.json();
@@ -72,12 +78,15 @@ before(async () => {
   A = await ctx.criarPessoa(0, `${PREFIXO}_a`, "Junior Rocha");
   B = await ctx.criarPessoa(1, `${PREFIXO}_b`, "Bruna Cliente");
   C = await ctx.criarPessoa(2, `${PREFIXO}_c`, "Carlos Terceiro");
+  D = await ctx.criarPessoa(3, `${PREFIXO}_d`, "Paulo Entregador");
   pizzaria = (await ctx.api(A, "POST", "/empresas", { nome: "Pizzaria BH", nomeUsuario: `${PREFIXO}_pizza`, slug: `${PREFIXO}-pizzaria` })).json();
   farmacia = (await ctx.api(A, "POST", "/empresas", { nome: "Farmácia Central", nomeUsuario: `${PREFIXO}_farma`, slug: `${PREFIXO}-farmacia` })).json();
   comoPizzaria = como(A, pizzaria.identidadeId);
   pizza = (await ctx.api(A, "POST", `/empresas/${pizzaria.id}/produtos`, { nome: "Pizza Calabresa", precoCentavos: 3990 })).json();
   conversaBP = await ctx.abrirConversa(B, `${PREFIXO}_pizza`);
   enderecoB = await ctx.criarEnderecoConfirmado(B);
+  // Desde a etapa de entregadores, "Saiu para entrega" exige alguém levando o pedido.
+  entregadorId = await ctx.criarEntregadorAtivo(A, pizzaria.id, D, `${PREFIXO}_d`);
 });
 
 after(() => ctx.encerrar());

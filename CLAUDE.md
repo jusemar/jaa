@@ -31,9 +31,9 @@ O Jaa **não deve nascer como marketplace com um chat anexado**. O núcleo do pr
 
 ## Estado atual
 
-A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa"), **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa"), **GESTÃO DO PEDIDO PELA EMPRESA + ACOMPANHAMENTO PELO CLIENTE** (seção 7, "Operação do pedido") e **ENDEREÇOS DO CLIENTE + PONTO DE ENTREGA CONFIRMADO** (seção 7, "Endereço e ponto de entrega").
+A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa"), **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa"), **GESTÃO DO PEDIDO PELA EMPRESA + ACOMPANHAMENTO PELO CLIENTE** (seção 7, "Operação do pedido"), **ENDEREÇOS DO CLIENTE + PONTO DE ENTREGA CONFIRMADO** (seção 7, "Endereço e ponto de entrega") e **ENTREGADORES DA EMPRESA + ATRIBUIÇÃO DAS ENTREGAS** (seção 7, "Entregadores e atribuição").
 
-Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, pagamento dentro do Jaa, logística, **entregador, rastreamento em tempo real, rota, ETA, fila de entregas e frete** (o mapa existe só para o cliente confirmar o ponto de entrega), loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
+Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, pagamento dentro do Jaa, **rota otimizada, reordenação de paradas, GPS/rastreamento em tempo real, mapa do entregador em movimento, ETA, fila do cliente e frete** (o mapa existe para o cliente confirmar o ponto e para o entregador abrir o destino), loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
 
 ## FASE 1: MENSAGERIA
 
@@ -395,6 +395,7 @@ conta (users) ─┬─ identidade PESSOAL (identidades.usuario_id)
 
 - `identidades.tipo` = `pessoal | empresarial`, com **exatamente um dono** conforme o tipo (CHECK `identidades_dono_por_tipo`): pessoal → `usuario_id`; empresarial → `empresa_id`, sem conta dona. Uma identidade empresarial por empresa (índice único parcial);
 - `empresas` (`id`, `slug`, `status`, datas): o **nome público é o `nome_exibicao` da identidade empresarial** e o @usuario também vive nela, sem cópia na empresa (uma fonte só);
+- entregador NÃO entra aqui: é vínculo próprio (`entregadores_empresa`, seção "Entregadores e atribuição"), sem permissão administrativa nenhuma;
 - `membros_empresa (empresa_id, usuario_id, papel)`: vínculo **conta ↔ empresa**, nunca identidade pessoal ↔ empresa. Operar uma empresa não expõe à empresa nem a futuros membros as conversas, contatos ou dados da identidade pessoal. Papel hoje só `proprietario`; administrador, atendente, funcionário e entregador entram como novos valores + permissões;
 - criação atômica: empresa + identidade empresarial + proprietário numa transação; um **trigger de constraint diferido** recusa no commit empresa sem identidade empresarial ou sem proprietário. Na migration, valores de enum recém-adicionados são comparados como texto (o migrator aplica tudo numa transação).
 
@@ -947,6 +948,7 @@ recebido → confirmado → em_preparacao → pronto → saiu_para_entrega → e
 ```
 
 - **um passo por vez**: salto (recebido → entregue) e regressão (em_rota → em_preparacao) são recusados com 409 `TRANSICAO_PEDIDO_INVALIDA`;
+- **pronto → saiu_para_entrega exige entregador atribuído e ativo** (409 `ENTREGADOR_NAO_ATRIBUIDO`; ver "Entregadores e atribuição");
 - **dois terminais**: `entregue` (fim normal) e `cancelado` — nenhum dos dois avança, retrocede ou cancela de novo;
 - **CANCELADO é da empresa**, enquanto o pedido não terminou, e **exige motivo curto** (3–200 caracteres; sugestões na interface + texto livre), gravado em `pedidos.motivo_cancelamento` (CHECK: motivo ⇔ cancelado) e no histórico. O cliente ainda **não** cancela sozinho: solicitação de cancelamento será outra regra;
 - a interface mostra **só a próxima ação válida** (Confirmar pedido → Iniciar preparação → Marcar como pronto → Saiu para entrega → Marcar em rota → Marcar como entregue), nunca sete botões de status; cancelar exige confirmação explícita com motivo.
@@ -987,6 +989,45 @@ Web (técnica): agindo como a empresa surge a área **Pedidos** (filtros por sta
 **Fronteiras com fornecedores** (o domínio não conhece nenhum): `GeocodificadorEndereco` na API (implementação compatível com Nominatim/OpenStreetMap, ativada só por `GEOCODIFICACAO_URL`; sem ela nada externo é chamado e o mapa abre sem palpite) e `CriarMapaPonto` na Web (implementação Leaflet + tiles OSM, livre e sem chave, com URL configurável). Trocar de fornecedor — ou usar mapa nativo no Mobile — é escrever outra implementação.
 
 **Preparado para o futuro, sem implementar agora**: a coordenada confirmada é a base de navegação do entregador, múltiplas entregas, ordenação/reordenação de rota, ETA e fila do cliente. Nada disso existe nesta etapa. Web: etapa "Entregar em" no carrinho (antes do pagamento) e "Ver ponto no mapa" no detalhe do pedido; latitude/longitude cruas não são exibidas para pessoas. **Mobile**: sem telas ainda (depende da autenticação mobile); contratos e API já servem a ele.
+
+## Entregadores e atribuição das entregas (Fase 2)
+
+**Entregador é um VÍNCULO de uma pessoa com uma empresa** (`entregadores_empresa`), não um login paralelo e **não um administrador**. Dentro do vínculo há duas coisas diferentes: o **STATUS** (profissional, administrado pela empresa) e a **DISPONIBILIDADE** (operacional, decidida pelo entregador) — ver "Disponibilidade" abaixo. A conta continua sendo uma pessoa comum do Jaa (mesma identidade pessoal, mesmas conversas) que também entrega; o vínculo é por empresa, então a mesma pessoa pode entregar para várias — nada de "usuario.entregador = true".
+
+**Permissões separadas**: OPERAR A EMPRESA (`membros_empresa` + permissões, agora com `gerenciar-entregadores`) é uma coisa; EXECUTAR ENTREGA é outra. Entregador não acessa produtos, preços, catálogo administrativo, pedidos da empresa, conversas, outros entregadores nem configurações — todas essas rotas respondem 404 para ele. Quem opera a empresa, por sua vez, não é cadastrado como entregador dela (409).
+
+**Convite e consentimento**: a empresa convida pelo **@usuario público** (nunca busca por telefone; a empresa só vê nome e @usuario). O vínculo nasce `convidado` e só a própria pessoa aceita (vira `ativo`) ou recusa (`inativo`). A empresa liga/desliga (`ativo`/`inativo`), mas não "aceita" por ninguém. Reconvidar reutiliza o mesmo vínculo, preservando o histórico dele.
+
+**Atribuição** (`atribuicoes_entrega`): a empresa atribui ao pedido um entregador dela que esteja **ATIVO E DISPONÍVEL**. Só quando o pedido está **pronto**, **saiu_para_entrega** ou **em_rota** — antes disso não há o que atribuir, e terminal (entregue/cancelado) não aceita. **PRONTO → SAIU_PARA_ENTREGA exige entregador atribuído e ativo**, validado no servidor (409 `ENTREGADOR_NAO_ATRIBUIDO`); a interface só ajuda.
+
+**Reatribuição e histórico append-only**: a linha sem `encerrado_em` é a atribuição ATUAL (índice único parcial: nunca dois entregadores atuais); reatribuir encerra a anterior e abre outra **na mesma transação**, inclusive com o pedido já em rota (imprevisto acontece). O histórico responde "14:30 Paulo, 14:45 Carlos, por qual operador", e **nunca é apagado** — mas **a autorização olha só a atribuição atual**: quem perdeu o pedido perde o acesso na hora. Concorrência: a empresa manda o entregador que via na tela; se mudou, 409 `ATRIBUICAO_CONFLITANTE` em vez de histórico incoerente.
+
+**Revogação imediata**: desativar o vínculo encerra na hora as atribuições em aberto daquela pessoa (motivo "Entregador desativado"), e o pedido volta a não ter entregador — sem entregador não sai para entrega. Cancelar ou entregar o pedido também encerra a atribuição; o histórico permanece.
+
+**O que o entregador vê** (`GET /entregas` e `/entregas/:pedidoId`, só o que está atribuído a ele AGORA): empresa, destino **snapshot** com o ponto que o CLIENTE confirmou (o entregador **nunca geocodifica de novo**), nome público do cliente, itens e como receber na entrega (dinheiro com "Troco para R$ X", ou cartão). Nada além disso: sem telefone do cliente, sem outros endereços, sem outras conversas, sem outros pedidos, sem histórico do cliente. Um entregador pode ter **várias entregas ativas ao mesmo tempo** (a rota com várias paradas vem depois). Entregue e cancelado saem da lista ativa.
+
+**Máquina de estados continua da EMPRESA**: o entregador não confirma, prepara, marca pronto nem cancela — nesta etapa ele consulta suas entregas. Ações próprias dele virão com o fluxo de rota/GPS.
+
+**Realtime** (`entrega:atualizada`, após o commit, só para as conexões do entregador envolvido — nunca broadcast): atribuição, mudança de status, reatribuição, cancelamento e revogação chegam sem F5; `entrega: null` significa "saiu da sua lista" e a tela remove o que ele não pode mais ver. O cliente não recebe nada disso: **trocas internas de entregador não são exibidas para ele** nesta etapa.
+
+Web (técnica): agindo como a empresa há **Entregadores** (convidar por @usuario, ativar/desativar) e, no detalhe do pedido pronto, **Atribuir/Trocar entregador** com o histórico; a pessoa com vínculo vê **Minhas entregas**, separada da administração, com "Abrir no mapa" usando o ponto do pedido. **Mobile**: o entregador será principalmente móvel — contratos, API e autorização já são independentes do Next.js; as telas dependem da autenticação mobile, que ainda não existe.
+
+### Disponibilidade operacional (por empresa)
+
+**ATIVO ≠ DISPONÍVEL.** `status = ativo` diz que existe vínculo profissional válido ("esta pessoa entrega para nós"); `disponivel` diz que **ela está aceitando novas entregas desta empresa agora**. São decisões de donos diferentes: o vínculo é da empresa, a disponibilidade é de quem entrega.
+
+- **é por empresa**, dentro do vínculo — nunca algo global como `usuario.disponivel`. Paulo pode estar disponível na Pizzaria A e indisponível na B, ou **disponível nas duas ao mesmo tempo**: o Jaa não escolhe por ele;
+- **só o próprio entregador muda a sua** (`PATCH /entregas/vinculos/:id`, escopado pela conta da sessão). A empresa não tem rota para isso — tentar (empresa, outro entregador, estranho) é 404;
+- **começa INDISPONÍVEL**: aceitar o convite cria o vínculo ativo, mas ninguém passa a receber entrega sem escolher ficar disponível. Vínculos anteriores à migration também começaram indisponíveis;
+- **convite pendente e vínculo inativo não escolhem disponibilidade**; desativar o vínculo derruba a disponibilidade (o CHECK do banco exige `disponivel ⇒ ativo`), e reativar **não** a devolve — ele escolhe de novo;
+- **NOVA atribuição e reatribuição exigem ATIVO + DISPONÍVEL**, conferido **dentro da transação** com a linha travada: a tela velha do gestor não burla nada, e a recusa (409 `ENTREGADOR_INDISPONIVEL`) **não mexe no entregador atual** do pedido. O seletor da interface já mostra só quem pode receber;
+- **ficar indisponível ≠ perder o que já é seu**: as entregas já atribuídas continuam com ele, acessíveis e concluíveis — nada é cancelado, devolvido nem apagado. Só param as NOVAS atribuições. (Desativar o vínculo, por ser decisão administrativa, continua revogando as entregas em aberto — seção acima.);
+- **privacidade entre empresas**: a Pizzaria A só sabe se Paulo está disponível *para ela*. Não descobre a disponibilidade dele em B, nem quantas entregas ele tem lá, nem quais empresas ele atende. O evento realtime `entregador:disponibilidade` vai **apenas** para a identidade da empresa daquele vínculo (nunca broadcast), e o gestor vê "Paulo está disponível para entregas." sem F5 — sem push real, que é etapa futura;
+- **só dois estados**: disponível e indisponível. Nada de "ocupado", "em rota" ou "lotado" — capacidade e carga entram junto com rotas.
+
+Web: a pessoa vê **"Empresas em que trabalho"** (uma linha por empresa, com 🟢/⚪ e o botão inverso) dentro da sua área; a empresa vê, por entregador, **Vínculo** e **Disponibilidade** separados.
+
+**Preparado, sem implementar agora**: rota sugerida para várias paradas (que o entregador poderá reordenar), fila do cliente ("3 entregas antes da sua"), ETA, GPS e notificação "Indo até você".
 
 ## Presença e digitando (Fase 1)
 

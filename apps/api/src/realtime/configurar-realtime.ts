@@ -8,6 +8,8 @@ import {
   EVENTO_MENSAGENS_ENTREGUES,
   EVENTO_MENSAGENS_LIDAS,
   EVENTO_NOTIFICACAO_NOVA_MENSAGEM,
+  EVENTO_ENTREGA_ATUALIZADA,
+  EVENTO_ENTREGADOR_DISPONIBILIDADE,
   EVENTO_PEDIDO_STATUS_ATUALIZADO,
   EVENTO_PRESENCA_ATUALIZADA,
   type CodigoErroConexaoRealtime,
@@ -24,6 +26,7 @@ import { criarRegistroDigitandoEmMemoria, type RegistroDigitando } from "../feat
 import type { CanalEventosMensagens } from "../features/mensagens/lib/eventos-mensagens.js";
 import { serializarMensagem } from "../features/mensagens/lib/serializar-mensagem.js";
 import { criarNotificadorNovasMensagens } from "../features/notificacoes/lib/notificador-novas-mensagens.js";
+import { criarCanalEventosEntregas, type CanalEventosEntregas } from "../features/entregas/lib/eventos-entregas.js";
 import { criarCanalEventosPedidos, type CanalEventosPedidos } from "../features/pedidos/lib/eventos-pedidos.js";
 import { criarRegistroPresencaEmMemoria, type RegistroPresenca } from "../features/presenca/lib/registro-presenca.js";
 import { salaDaConversa, salaDaIdentidade, salaDaSessao, salaDePresenca } from "./salas.js";
@@ -35,6 +38,7 @@ interface DependenciasRealtime {
   sessoesEncerradas: AvisoSessoesEncerradas;
   eventosMensagens: CanalEventosMensagens;
   eventosPedidos?: CanalEventosPedidos;
+  eventosEntregas?: CanalEventosEntregas;
   origensPermitidas: string[];
   // Opcionais: por padrão, implementações em memória (uma instância da API).
   presenca?: RegistroPresenca;
@@ -59,6 +63,7 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
   const presenca = dependencias.presenca ?? criarRegistroPresencaEmMemoria();
   const digitando = dependencias.digitando ?? criarRegistroDigitandoEmMemoria();
   const eventosPedidos = dependencias.eventosPedidos ?? criarCanalEventosPedidos();
+  const eventosEntregas = dependencias.eventosEntregas ?? criarCanalEventosEntregas();
   const atualizadorNaoLidas = criarAtualizadorNaoLidas({
     banco: dependencias.banco,
     eventosMensagens: dependencias.eventosMensagens,
@@ -212,6 +217,20 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
     });
   });
 
+  /*
+   * Entregas: só as conexões do entregador envolvido. `entrega: null` = saiu da lista dele
+   * (reatribuída, encerrada ou vínculo revogado) — a interface remove o que ele não pode mais ver.
+   */
+  const cancelarEntregaEntregas = eventosEntregas.inscrever((evento) => {
+    const salas = evento.destinatariosIdentidadeIds.map(salaDaIdentidade);
+    if (evento.tipo === "entrega-atualizada") {
+      realtime.to(salas).emit(EVENTO_ENTREGA_ATUALIZADA, { pedidoId: evento.pedidoId, entrega: evento.entrega });
+      return;
+    }
+    // Disponibilidade: só para quem opera a empresa DAQUELE vínculo (nunca outra empresa).
+    realtime.to(salas).emit(EVENTO_ENTREGADOR_DISPONIBILIDADE, { entregador: evento.entregador });
+  });
+
   // Ao desligar a API, fecha só o transporte (sem pacote de "desconexão pelo servidor"):
   // assim os clientes tratam como queda, reconectam sozinhos e passam de novo pelo handshake.
   servidor.addHook("preClose", async () => {
@@ -222,6 +241,7 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
     cancelarInscricao();
     cancelarEntregaMensagens();
     cancelarEntregaPedidos();
+    cancelarEntregaEntregas();
     cancelarPresenca();
     cancelarDigitando();
     await atualizadorNaoLidas.encerrar();

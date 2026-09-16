@@ -92,6 +92,20 @@
       "when": 1789550322692,
       "tag": "0012_enderecos_e_destino_do_pedido",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789552973828,
+      "tag": "0013_entregadores_e_atribuicoes",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789558300825,
+      "tag": "0014_disponibilidade_do_entregador",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,9 @@
 "use client";
 
-import type { FiltroPedidosEmpresa, Pedido, PedidoDaEmpresa } from "@jaa/contratos";
+import { entregadorPodeReceberAtribuicao, type EntregaDoPedido, type EntregadorDaEmpresa, type FiltroPedidosEmpresa, type Pedido, type PedidoDaEmpresa } from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
+import { EntregaDoPedidoEmpresa } from "@/features/entregas/components/entrega-do-pedido";
+import { atribuirEntrega, listarEntregadores, obterEntregaDoPedido } from "@/features/entregas/lib/api-entregas";
 import { useStatusPedido } from "../hooks/use-status-pedido";
 import { avancarStatusPedido, cancelarPedido, listarPedidosDaEmpresa, obterPedidoDaEmpresa } from "../lib/api-pedidos";
 import { AcoesPedidoEmpresa } from "./acoes-pedido-empresa";
@@ -17,6 +19,9 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
   const [aberto, setAberto] = useState<Pedido | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  // Entrega do pedido aberto: quem está levando + histórico de atribuições.
+  const [entrega, setEntrega] = useState<EntregaDoPedido | null>(null);
+  const [entregadores, setEntregadores] = useState<EntregadorDaEmpresa[]>([]);
 
   const carregar = useCallback(
     async (filtroAtual: FiltroPedidosEmpresa) => {
@@ -62,13 +67,33 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
 
   async function abrir(pedidoId: string) {
     // Sempre relê do servidor: a lista local não é autorização nem fonte da verdade.
-    const resultado = await obterPedidoDaEmpresa(empresaId, pedidoId);
+    const [resultado, daEntrega, quadro] = await Promise.all([obterPedidoDaEmpresa(empresaId, pedidoId), obterEntregaDoPedido(empresaId, pedidoId), listarEntregadores(empresaId)]);
     if (!resultado.ok) {
       setErro(resultado.mensagem);
       return;
     }
     setErro(null);
     setAberto(resultado.dados);
+    setEntrega(daEntrega.ok ? daEntrega.dados : null);
+    // Só quem pode receber AGORA: vínculo ativo E disponível (o servidor confere de novo).
+    setEntregadores(quadro.ok ? quadro.dados.entregadores.filter(entregadorPodeReceberAtribuicao) : []);
+  }
+
+  async function atribuir(pedidoId: string, entregadorId: string) {
+    setOcupado(true);
+    try {
+      const resultado = await atribuirEntrega(empresaId, pedidoId, entregadorId, entrega?.entregadorAtual?.id ?? null);
+      if (!resultado.ok) {
+        setErro(resultado.mensagem);
+        // Atribuição concorrente (ou status mudado): relê para mostrar a situação real.
+        await abrir(pedidoId);
+        return;
+      }
+      setErro(null);
+      setEntrega(resultado.dados);
+    } finally {
+      setOcupado(false);
+    }
   }
 
   async function operar(executar: () => Promise<Awaited<ReturnType<typeof obterPedidoDaEmpresa>>>) {
@@ -107,12 +132,21 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
           pedido={aberto}
           aoFechar={() => setAberto(null)}
           acoes={
-            <AcoesPedidoEmpresa
-              pedido={aberto}
-              ocupado={ocupado}
-              aoAvancar={() => void operar(() => avancarStatusPedido(empresaId, aberto.id, aberto.status))}
-              aoCancelar={(motivo) => void operar(() => cancelarPedido(empresaId, aberto.id, aberto.status, motivo))}
-            />
+            <>
+              <EntregaDoPedidoEmpresa
+                status={aberto.status}
+                entrega={entrega}
+                entregadoresAtivos={entregadores}
+                ocupado={ocupado}
+                aoAtribuir={(entregadorId) => void atribuir(aberto.id, entregadorId)}
+              />
+              <AcoesPedidoEmpresa
+                pedido={aberto}
+                ocupado={ocupado}
+                aoAvancar={() => void operar(() => avancarStatusPedido(empresaId, aberto.id, aberto.status))}
+                aoCancelar={(motivo) => void operar(() => cancelarPedido(empresaId, aberto.id, aberto.status, motivo))}
+              />
+            </>
           }
         />
       )}

@@ -8,6 +8,8 @@ import { registrarRotasCatalogoPublico } from "./features/catalogo/rotas/rotas-c
 import { registrarRotasConversas } from "./features/conversas/rotas/rotas-conversas.js";
 import { registrarRotasEmpresas } from "./features/empresas/rotas/rotas-empresas.js";
 import { geocodificadorIndisponivel, type GeocodificadorEndereco } from "./features/enderecos/lib/geocodificador.js";
+import { criarCanalEventosEntregas, type CanalEventosEntregas } from "./features/entregas/lib/eventos-entregas.js";
+import { registrarRotasEntregas } from "./features/entregas/rotas/rotas-entregas.js";
 import { registrarRotasEnderecos } from "./features/enderecos/rotas/rotas-enderecos.js";
 import { criarCanalEventosPedidos, type CanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
 import { registrarRotasPedidos } from "./features/pedidos/rotas/rotas-pedidos.js";
@@ -26,6 +28,7 @@ interface DependenciasAplicacao {
   eventosMensagens: CanalEventosMensagens;
   // Opcional: sem realtime de pedidos (ex.: teste focado em HTTP), os eventos caem num canal sem ouvintes.
   eventosPedidos?: CanalEventosPedidos;
+  eventosEntregas?: CanalEventosEntregas;
   // Fronteira de geocodificação (endereço → coordenada SUGERIDA). Sem provedor configurado, o mapa
   // abre sem palpite: a confirmação do ponto continua sendo do cliente.
   geocodificador?: GeocodificadorEndereco;
@@ -39,6 +42,7 @@ export async function criarAplicacao({
   autenticacao,
   eventosMensagens,
   eventosPedidos = criarCanalEventosPedidos(),
+  eventosEntregas = criarCanalEventosEntregas(),
   geocodificador = geocodificadorIndisponivel,
   logger,
 }: DependenciasAplicacao) {
@@ -69,7 +73,8 @@ export async function criarAplicacao({
   registrarRotasCatalogoPublico(servidor, { banco, autenticacao });
   registrarRotasEnderecos(servidor, { banco, autenticacao, geocodificador });
   registrarRotasPedidos(servidor, { banco, autenticacao, eventosMensagens });
-  registrarRotasPedidosEmpresa(servidor, { banco, autenticacao, eventosPedidos });
+  registrarRotasPedidosEmpresa(servidor, { banco, autenticacao, eventosPedidos, eventosEntregas });
+  registrarRotasEntregas(servidor, { banco, autenticacao, eventosEntregas });
   registrarRotasConversas(servidor, { banco, autenticacao });
   registrarRotasMensagens(servidor, { banco, autenticacao, eventosMensagens });
 

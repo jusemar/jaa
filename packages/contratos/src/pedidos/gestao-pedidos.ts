@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { participanteConversaSchema } from "../conversas/conversa.ts";
 import { formaPagamentoEntregaSchema } from "./pedido.ts";
+import { entregadorAtribuidoSchema, eventoAtribuicaoSchema } from "../entregas/entregador.ts";
 import { motivoCancelamentoSchema, statusPedidoSchema } from "./status-pedido.ts";
 
 /*
@@ -61,6 +62,17 @@ export const listaPedidosEmpresaSchema = z.object({
 });
 
 export type ListaPedidosEmpresa = z.infer<typeof listaPedidosEmpresaSchema>;
+
+/**
+ * Visão OPERACIONAL do pedido para a empresa: entregador atual + histórico de atribuições.
+ * Não faz parte do contrato do cliente — ele não precisa saber de trocas internas de entregador.
+ */
+export const entregaDoPedidoSchema = z.object({
+  entregadorAtual: entregadorAtribuidoSchema.nullable(),
+  historico: z.array(eventoAtribuicaoSchema),
+});
+
+export type EntregaDoPedido = z.infer<typeof entregaDoPedidoSchema>;
 
 /**
  * `statusAtual` é o estado que a empresa estava vendo. Se outro operador já mudou o pedido, a operação

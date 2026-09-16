@@ -1,0 +1,3 @@
+ALTER TABLE "entregadores_empresa" ADD COLUMN "disponivel" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "entregadores_empresa" ADD COLUMN "disponibilidade_atualizada_em" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "entregadores_empresa" ADD CONSTRAINT "entregadores_empresa_disponivel_exige_ativo" CHECK (not "entregadores_empresa"."disponivel" or "entregadores_empresa"."status" = 'ativo');

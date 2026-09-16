@@ -19,7 +19,10 @@ export type PermissaoEmpresa =
   // Pedidos: ver a operação e conduzi-la (avançar status, cancelar). Um futuro atendente poderá
   // receber só "ver-pedidos" sem operar.
   | "ver-pedidos"
-  | "gerenciar-pedidos";
+  | "gerenciar-pedidos"
+  // Quadro de entregadores e atribuição das entregas. NÃO é o que autoriza ENTREGAR: quem entrega
+  // tem vínculo de entregador (features/entregas), que não dá nenhuma permissão administrativa.
+  | "gerenciar-entregadores";
 
 const PERMISSOES_POR_PAPEL: Record<PapelMembroEmpresa, ReadonlySet<PermissaoEmpresa>> = {
   proprietario: new Set([
@@ -31,6 +34,7 @@ const PERMISSOES_POR_PAPEL: Record<PapelMembroEmpresa, ReadonlySet<PermissaoEmpr
     "alterar-disponibilidade-produto",
     "ver-pedidos",
     "gerenciar-pedidos",
+    "gerenciar-entregadores",
   ]),
 };
 

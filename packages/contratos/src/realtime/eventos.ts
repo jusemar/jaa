@@ -2,6 +2,7 @@ import * as z from "zod";
 import { participanteConversaSchema } from "../conversas/conversa.ts";
 import { contagemNaoLidasSchema } from "../conversas/lista-conversas.ts";
 import { exclusaoParaMimSchema, mensagemSchema } from "../mensagens/mensagem.ts";
+import { entregaAtribuidaSchema, entregadorDaEmpresaSchema } from "../entregas/entregador.ts";
 import { resumoPedidoSchema } from "../pedidos/pedido.ts";
 import {
   EVENTO_DIGITANDO_ATUALIZADO,
@@ -109,6 +110,34 @@ export const eventoPedidoStatusAtualizadoSchema = z.object({
 
 export type EventoPedidoStatusAtualizado = z.infer<typeof eventoPedidoStatusAtualizadoSchema>;
 
+/**
+ * A lista de entregas de UM entregador mudou (atribuição, reatribuição, mudança de status, cancelamento
+ * ou perda do vínculo), emitido após o commit só para as conexões daquele entregador — nunca broadcast.
+ * `entrega` presente = passou a valer (criar/atualizar na lista); ausente = saiu da lista dele (foi
+ * reatribuída a outra pessoa, terminou ou o acesso foi revogado). O banco continua sendo a verdade.
+ */
+export const EVENTO_ENTREGA_ATUALIZADA = "entrega:atualizada";
+
+export const eventoEntregaAtualizadaSchema = z.object({
+  pedidoId: z.uuid(),
+  entrega: entregaAtribuidaSchema.nullable(),
+});
+
+export type EventoEntregaAtualizada = z.infer<typeof eventoEntregaAtualizadaSchema>;
+
+/**
+ * Um entregador ficou disponível/indisponível PARA UMA EMPRESA, emitido após o commit só para as
+ * identidades autorizadas daquela empresa (nunca broadcast). Uma empresa não descobre por aqui a
+ * disponibilidade dele em outra: o evento chega apenas a quem opera a empresa do vínculo.
+ */
+export const EVENTO_ENTREGADOR_DISPONIBILIDADE = "entregador:disponibilidade";
+
+export const eventoEntregadorDisponibilidadeSchema = z.object({
+  entregador: entregadorDaEmpresaSchema,
+});
+
+export type EventoEntregadorDisponibilidade = z.infer<typeof eventoEntregadorDisponibilidadeSchema>;
+
 // Eventos que a API envia ao cliente. Comandos de negócio do cliente (enviar, confirmar) passam pela
 // API HTTP; pelo socket o cliente envia só atividade efêmera (ver atividade-conversa.ts).
 export interface EventosRealtimeServidorParaCliente {
@@ -120,6 +149,8 @@ export interface EventosRealtimeServidorParaCliente {
   [EVENTO_MENSAGENS_ENTREGUES]: (evento: EventoMensagensEntregues) => void;
   [EVENTO_MENSAGENS_LIDAS]: (evento: EventoMensagensLidas) => void;
   [EVENTO_PEDIDO_STATUS_ATUALIZADO]: (evento: EventoPedidoStatusAtualizado) => void;
+  [EVENTO_ENTREGA_ATUALIZADA]: (evento: EventoEntregaAtualizada) => void;
+  [EVENTO_ENTREGADOR_DISPONIBILIDADE]: (evento: EventoEntregadorDisponibilidade) => void;
   [EVENTO_PRESENCA_ATUALIZADA]: (evento: EventoPresencaAtualizada) => void;
   [EVENTO_DIGITANDO_ATUALIZADO]: (evento: EventoDigitandoAtualizado) => void;
 }

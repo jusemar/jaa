@@ -1,6 +1,7 @@
 import type { Banco } from "@jaa/banco";
 import {
   LIMITE_MAXIMO_PEDIDOS_EMPRESA,
+  entregadorPodeOperar,
   STATUS_POR_FILTRO_PEDIDOS,
   proximoStatusPedido,
   statusPedidoTerminal,
@@ -9,6 +10,9 @@ import {
 } from "@jaa/contratos";
 import { buscarEmpresaPublicaPorId, type EmpresaPublicaRegistro } from "../../catalogo/repositorios/repositorio-empresas-publicas.js";
 import { autorizarEmpresa } from "../../empresas/lib/autorizacao-empresas.js";
+import { encerrarEntregaDoPedido, publicarEntrega } from "../../entregas/casos-de-uso/atribuir-entrega.js";
+import type { CanalEventosEntregas } from "../../entregas/lib/eventos-entregas.js";
+import { buscarAtribuicaoAtual } from "../../entregas/repositorios/repositorio-atribuicoes.js";
 import { montarResumoPedido } from "../lib/resumo-pedido.js";
 import type { CanalEventosPedidos } from "../lib/eventos-pedidos.js";
 import {
@@ -71,7 +75,9 @@ type ResultadoAlterar =
   | SemAcesso
   | SemPedido
   // Transição impossível pela máquina de estados (salto, regressão, terminal) ou estado já mudou.
-  | { tipo: "transicao-invalida"; statusAtual: StatusPedido | null };
+  | { tipo: "transicao-invalida"; statusAtual: StatusPedido | null }
+  // "Saiu para entrega" sem entregador atribuído e ativo.
+  | { tipo: "entregador-nao-atribuido" };
 
 /**
  * Avança um passo ou cancela, sempre em UMA transação (status atual + histórico). O `statusAtual`
@@ -79,7 +85,7 @@ type ResultadoAlterar =
  * gravado e a operação é recusada, em vez de produzir um histórico impossível.
  */
 export async function alterarStatusPedidoAutorizado(
-  { banco, eventosPedidos }: { banco: Banco; eventosPedidos: CanalEventosPedidos },
+  { banco, eventosPedidos, eventosEntregas }: { banco: Banco; eventosPedidos: CanalEventosPedidos; eventosEntregas: CanalEventosEntregas },
   usuarioId: string,
   empresaId: string,
   pedidoId: string,
@@ -97,6 +103,15 @@ export async function alterarStatusPedidoAutorizado(
     return { tipo: "transicao-invalida", statusAtual: atual.pedido.status };
   }
 
+  /*
+   * Sair para entrega exige ALGUÉM levando: entregador atribuído e com vínculo ativo. A regra vive no
+   * servidor (a interface só ajuda); sem isso não existe entrega em rua sem responsável.
+   */
+  if (novoStatus === "saiu_para_entrega") {
+    const atribuicao = await buscarAtribuicaoAtual(banco, pedidoId);
+    if (!atribuicao || !entregadorPodeOperar(atribuicao.status)) return { tipo: "entregador-nao-atribuido" };
+  }
+
   const alteracao = await alterarStatusPedido(banco, {
     pedidoId,
     empresaId,
@@ -111,6 +126,16 @@ export async function alterarStatusPedidoAutorizado(
   if (!pedido) throw new Error("Pedido alterado não encontrado.");
   const empresa = await buscarEmpresaPublicaPorId(banco, empresaId);
   if (!empresa) throw new Error("Empresa do pedido não encontrada.");
+
+  /*
+   * Depois do commit, o entregador atual acompanha a entrega: mudança de status atualiza a lista dele
+   * e pedido encerrado (entregue/cancelado) sai da lista, com a atribuição encerrada e histórico intacto.
+   */
+  if (novoStatus === "entregue" || novoStatus === "cancelado") {
+    await encerrarEntregaDoPedido({ banco, eventosEntregas }, pedidoId, novoStatus === "entregue" ? "Pedido entregue" : "Pedido cancelado");
+  } else {
+    await publicarEntrega({ banco, eventosEntregas }, pedidoId);
+  }
 
   // Depois do commit: só o cliente dono e a identidade da empresa recebem a atualização.
   eventosPedidos.publicar({

@@ -18,6 +18,7 @@ import {
   obterPedidoDaEmpresaAutorizado,
   type IntencaoStatus,
 } from "../casos-de-uso/gerir-pedidos-empresa.js";
+import type { CanalEventosEntregas } from "../../entregas/lib/eventos-entregas.js";
 import type { CanalEventosPedidos } from "../lib/eventos-pedidos.js";
 import { serializarPedido, serializarPedidoDaEmpresa } from "../lib/serializar-pedido.js";
 
@@ -43,7 +44,7 @@ const PEDIDO_NAO_ENCONTRADO: ErroApi = { codigo: "PEDIDO_NAO_ENCONTRADO", mensag
  */
 export function registrarRotasPedidosEmpresa(
   servidor: FastifyInstance,
-  dependencias: { banco: Banco; autenticacao: Autenticacao; eventosPedidos: CanalEventosPedidos },
+  dependencias: { banco: Banco; autenticacao: Autenticacao; eventosPedidos: CanalEventosPedidos; eventosEntregas: CanalEventosEntregas },
 ) {
   const preHandler = exigirIdentidadeAutenticada(dependencias);
   const { banco } = dependencias;
@@ -91,6 +92,8 @@ export function registrarRotasPedidosEmpresa(
         return responder(resposta, 404, NAO_ENCONTRADA);
       case "pedido-nao-encontrado":
         return responder(resposta, 404, PEDIDO_NAO_ENCONTRADO);
+      case "entregador-nao-atribuido":
+        return responder(resposta, 409, { codigo: "ENTREGADOR_NAO_ATRIBUIDO", mensagem: "Escolha um entregador antes de iniciar a entrega." });
       case "transicao-invalida":
         return responder(resposta, 409, {
           codigo: "TRANSICAO_PEDIDO_INVALIDA",

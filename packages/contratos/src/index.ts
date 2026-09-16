@@ -8,6 +8,7 @@ export * from "./enderecos/endereco.ts";
 export * from "./pedidos/status-pedido.ts";
 export * from "./pedidos/pedido.ts";
 export * from "./pedidos/gestao-pedidos.ts";
+export * from "./entregas/entregador.ts";
 export * from "./usuarios/conta-atual.ts";
 export * from "./realtime/erros-conexao.ts";
 export * from "./conversas/conversa.ts";

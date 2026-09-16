@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { criarConexaoBanco } from "@jaa/banco";
-import { conversas, empresas, enderecosCliente, identidades, membrosEmpresa, mensagens, participantesConversa, pedidos, produtos, rateLimits, users, verifications } from "@jaa/banco/schema";
+import { atribuicoesEntrega, conversas, empresas, enderecosCliente, entregadoresEmpresa, identidades, membrosEmpresa, mensagens, participantesConversa, pedidos, produtos, rateLimits, users, verifications } from "@jaa/banco/schema";
 import { CABECALHO_IDENTIDADE_ATUANTE, type Mensagem, type PaginaConversas, type PaginaMensagens } from "@jaa/contratos";
 import { betterAuth } from "better-auth";
 import { testUtils } from "better-auth/plugins";
@@ -13,6 +13,7 @@ import { criarAplicacao } from "../../src/aplicacao.js";
 import { criarOpcoesAutenticacao } from "../../src/features/autenticacao/autenticacao.js";
 import { criarAvisoSessoesEncerradas } from "../../src/features/autenticacao/lib/sessoes-encerradas.js";
 import { criarCanalEventosMensagens } from "../../src/features/mensagens/lib/eventos-mensagens.js";
+import { criarCanalEventosEntregas } from "../../src/features/entregas/lib/eventos-entregas.js";
 import { criarCanalEventosPedidos } from "../../src/features/pedidos/lib/eventos-pedidos.js";
 import { carregarAmbiente } from "../../src/lib/ambiente.js";
 import { configurarRealtime } from "../../src/realtime/configurar-realtime.js";
@@ -44,6 +45,7 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
   const { banco } = conexao;
   const eventosMensagens = criarCanalEventosMensagens();
   const eventosPedidos = criarCanalEventosPedidos();
+  const eventosEntregas = criarCanalEventosEntregas();
   const sessoesEncerradas = criarAvisoSessoesEncerradas();
   const opcoes = criarOpcoesAutenticacao({ banco, ambiente, entregadorOtp: { enviar: async () => {} }, sessoesEncerradas });
   const autenticacao = betterAuth({ ...opcoes, plugins: [...opcoes.plugins, testUtils({ captureOTP: true })] });
@@ -79,6 +81,7 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
       .where(inArray(participantesConversa.identidadeId, identidadesTeste));
     // Ordem: mensagens (referenciam pedidos) → pedidos (itens em cascata) → conversas → produtos → …
     await banco.delete(mensagens).where(inArray(mensagens.conversaId, conversasTeste));
+    await banco.delete(atribuicoesEntrega).where(inArray(atribuicoesEntrega.pedidoId, banco.select({ id: pedidos.id }).from(pedidos).where(inArray(pedidos.clienteIdentidadeId, identidadesTeste))));
     await banco.delete(pedidos).where(inArray(pedidos.clienteIdentidadeId, identidadesTeste));
     await banco.delete(conversas).where(inArray(conversas.id, conversasTeste));
     // Endereços do cliente: apagados depois dos pedidos (o destino referencia o endereço).
@@ -86,6 +89,8 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
     // Empresas das contas de teste: identidade empresarial primeiro (FK), depois a empresa (membros em cascata).
     const idsEmpresas = (await empresasTeste).map((linha) => linha.id);
     if (idsEmpresas.length > 0) {
+      await banco.delete(atribuicoesEntrega).where(inArray(atribuicoesEntrega.empresaId, idsEmpresas));
+      await banco.delete(entregadoresEmpresa).where(inArray(entregadoresEmpresa.empresaId, idsEmpresas));
       await banco.delete(pedidos).where(inArray(pedidos.empresaId, idsEmpresas));
       await banco.delete(produtos).where(inArray(produtos.empresaId, idsEmpresas));
       await banco.delete(identidades).where(inArray(identidades.empresaId, idsEmpresas));
@@ -101,12 +106,13 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
     banco,
     eventosMensagens,
     eventosPedidos,
+    eventosEntregas,
     api,
 
     async iniciar() {
       await limpar();
-      app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, eventosPedidos, logger: false });
-      configurarRealtime(app, { autenticacao, banco, sessoesEncerradas, eventosMensagens, eventosPedidos, origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS });
+      app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, eventosPedidos, eventosEntregas, logger: false });
+      configurarRealtime(app, { autenticacao, banco, sessoesEncerradas, eventosMensagens, eventosPedidos, eventosEntregas, origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS });
       await app.listen({ port: 0, host: "127.0.0.1" });
       porta = (app.server.address() as AddressInfo).port;
     },
@@ -154,6 +160,26 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
       const confirmado = await api(pessoa, "POST", `/enderecos/${enderecoId}/localizacao`, coordenadas);
       assert.equal(confirmado.statusCode, 200, confirmado.body);
       return enderecoId;
+    },
+
+    /*
+     * Entregador pronto para receber entregas: a empresa convida pelo @usuario, a pessoa aceita
+     * (vínculo ATIVO, começando INDISPONÍVEL) e então escolhe ficar DISPONÍVEL para essa empresa.
+     */
+    async criarEntregadorAtivo(dona: Pessoa, empresaId: string, pessoa: Pessoa, nomeUsuario: string, disponivel = true): Promise<string> {
+      const convite = await api(dona, "POST", `/empresas/${empresaId}/entregadores`, { nomeUsuario });
+      assert.equal(convite.statusCode, 201, convite.body);
+      const entregadorId: string = convite.json().id;
+      // Convidar quem já está ativo não reabre convite: nesse caso não há o que aceitar.
+      if (convite.json().status === "convidado") {
+        const aceite = await api(pessoa, "POST", `/entregas/convites/${entregadorId}`, { resposta: "aceitar" });
+        assert.equal(aceite.statusCode, 200, aceite.body);
+      }
+      if (disponivel) {
+        const disponibilidade = await api(pessoa, "PATCH", `/entregas/vinculos/${entregadorId}`, { disponivel: true });
+        assert.equal(disponibilidade.statusCode, 200, disponibilidade.body);
+      }
+      return entregadorId;
     },
 
     async abrirConversa(origem: Pessoa, nomeUsuarioDestino: string): Promise<string> {
