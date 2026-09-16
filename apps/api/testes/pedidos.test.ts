@@ -38,6 +38,7 @@ let refrigerante: Produto;
 let esgotado: Produto;
 let dipirona: Produto;
 let conversaBP = "";
+let enderecoB = "";
 
 const criarProduto = async (empresa: Empresa, corpo: Record<string, unknown>): Promise<Produto> => {
   const resposta = await ctx.api(A, "POST", `/empresas/${empresa.id}/produtos`, corpo);
@@ -49,6 +50,7 @@ const pedidoBase = (extras: Record<string, unknown> = {}) => ({
   idCliente: randomUUID(),
   empresaIdentidadeId: pizzaria.identidadeId,
   conversaId: conversaBP,
+  enderecoId: enderecoB,
   itens: [{ produtoId: pizza.id, quantidade: 2 }],
   pagamento: { forma: "cartao" },
   ...extras,
@@ -67,6 +69,7 @@ before(async () => {
   esgotado = await criarProduto(pizzaria, { nome: "Pizza Esgotada", precoCentavos: 4500, disponibilidade: "indisponivel" });
   dipirona = await criarProduto(farmacia, { nome: "Dipirona", precoCentavos: 890 });
   conversaBP = await ctx.abrirConversa(B, `${PREFIXO}_pizza`);
+  enderecoB = await ctx.criarEnderecoConfirmado(B);
 });
 
 after(() => ctx.encerrar());

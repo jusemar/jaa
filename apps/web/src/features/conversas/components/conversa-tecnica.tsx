@@ -14,6 +14,7 @@ import {
   type ExclusaoParaMim,
   type Mensagem,
   type ParticipanteConversa,
+  type EnderecoCliente,
   type Pedido,
   type TipoIdentidade,
 } from "@jaa/contratos";
@@ -43,6 +44,7 @@ import {
 import { resumirConteudoParaPrevia, rotuloAutorResposta } from "../lib/respostas";
 import { CatalogoDaEmpresa } from "@/features/catalogo/components/catalogo-da-empresa";
 import { PainelCarrinho, type ConfirmacaoPedido } from "@/features/carrinho/components/painel-carrinho";
+import { EtapaEnderecoEntrega } from "@/features/enderecos/components/etapa-endereco-entrega";
 import { useCarrinho } from "@/features/carrinho/hooks/use-carrinho";
 import { itensParaPedido, quantidadeTotal, type Carrinho } from "@/features/carrinho/lib/carrinho";
 import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
@@ -109,6 +111,9 @@ export function ConversaTecnica({
   const podeComprar = tipoIdentidade === "pessoal" && conversa.outraIdentidade.tipo === "empresarial";
   const { carrinho, adicionar: adicionarAoCarrinho, substituirPorEmpresa, alterarQuantidade, remover, limpar } = useCarrinho(identidadeId);
   const [carrinhoAberto, setCarrinhoAberto] = useState(false);
+  // Destino escolhido para este pedido (com ponto já confirmado no mapa).
+  const [enderecoEntrega, setEnderecoEntrega] = useState<EnderecoCliente | null>(null);
+  const [escolhendoEndereco, setEscolhendoEndereco] = useState(false);
   // Carrinho aberto de OUTRA empresa: pergunta antes de substituir; nunca troca em silêncio.
   const [trocaDeEmpresa, setTrocaDeEmpresa] = useState<{ empresa: Carrinho["empresa"]; produto: Parameters<typeof adicionarAoCarrinho>[1]; quantidade: number; nomeAtual: string } | null>(null);
   const [tentativaPedido, setTentativaPedido] = useState<TentativaPedido | null>(null);
@@ -405,8 +410,13 @@ export function ConversaTecnica({
 
   async function confirmarPedido(confirmacao: ConfirmacaoPedido) {
     if (!carrinho) return;
+    // Pedido de entrega não é criado sem destino; o servidor confere de novo.
+    if (!enderecoEntrega) {
+      setEscolhendoEndereco(true);
+      return;
+    }
     const itens = itensParaPedido(carrinho);
-    const assinatura = JSON.stringify({ itens, confirmacao });
+    const assinatura = JSON.stringify({ itens, confirmacao, enderecoId: enderecoEntrega.id });
     // Mesmo conteúdo = mesma tentativa: um reenvio após falha de rede não cria um segundo pedido.
     const tentativa = tentativaPedido && tentativaPedido.assinatura === assinatura ? tentativaPedido : { idCliente: crypto.randomUUID(), assinatura };
     setTentativaPedido(tentativa);
@@ -418,6 +428,7 @@ export function ConversaTecnica({
         idCliente: tentativa.idCliente,
         empresaIdentidadeId: conversa.outraIdentidade.identidadeId,
         conversaId: conversa.id,
+        enderecoId: enderecoEntrega.id,
         itens,
         pagamento:
           confirmacao.forma === "dinheiro"
@@ -432,6 +443,7 @@ export function ConversaTecnica({
       limpar();
       setTentativaPedido(null);
       setCarrinhoAberto(false);
+      setEscolhendoEndereco(false);
       setAvisoPedido("Pedido enviado para a empresa.");
     } finally {
       setEnviandoPedido(false);
@@ -494,13 +506,25 @@ export function ConversaTecnica({
           </span>
         </div>
       )}
+      {/* A etapa de endereço aparece ACIMA do carrinho: escolher destino não perde a forma de pagamento. */}
+      {carrinhoAberto && escolhendoEndereco && (
+        <EtapaEnderecoEntrega
+          aoSelecionar={(endereco) => {
+            setEnderecoEntrega(endereco);
+            setEscolhendoEndereco(false);
+          }}
+          aoVoltar={() => setEscolhendoEndereco(false)}
+        />
+      )}
       {carrinhoAberto && carrinho && carrinho.itens.length > 0 && (
         <PainelCarrinho
           carrinho={carrinho}
+          endereco={enderecoEntrega}
           enviando={enviandoPedido}
           erro={erroPedido}
           aoAlterarQuantidade={alterarQuantidade}
           aoRemover={remover}
+          aoTrocarEndereco={() => setEscolhendoEndereco(true)}
           aoConfirmar={(confirmacao) => void confirmarPedido(confirmacao)}
           aoFechar={() => setCarrinhoAberto(false)}
         />

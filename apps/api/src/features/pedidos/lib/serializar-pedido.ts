@@ -4,7 +4,7 @@ import type { PedidoComItensRegistro, PedidoDaEmpresaRegistro } from "../reposit
 // Campos escolhidos um a um: nada de conta, membros, permissões, empresaId interno — e nenhum dado de
 // pagamento além da forma escolhida (o Jaa não processa pagamento).
 export function serializarPedido(registro: PedidoComItensRegistro, empresa: EmpresaPublica): Pedido {
-  const { pedido, itens, cliente, historico } = registro;
+  const { pedido, itens, cliente, historico, destino } = registro;
   return {
     id: pedido.id,
     origem: pedido.origem,
@@ -18,6 +18,7 @@ export function serializarPedido(registro: PedidoComItensRegistro, empresa: Empr
     trocoParaCentavos: pedido.trocoParaCentavos,
     totalCentavos: pedido.totalCentavos,
     itens,
+    destino,
     criadoEm: pedido.criadoEm.toISOString(),
     atualizadoEm: pedido.atualizadoEm.toISOString(),
   };

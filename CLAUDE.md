@@ -31,9 +31,9 @@ O Jaa **não deve nascer como marketplace com um chat anexado**. O núcleo do pr
 
 ## Estado atual
 
-A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa"), **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa") e **GESTÃO DO PEDIDO PELA EMPRESA + ACOMPANHAMENTO PELO CLIENTE** (seção 7, "Operação do pedido").
+A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa"), **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa"), **GESTÃO DO PEDIDO PELA EMPRESA + ACOMPANHAMENTO PELO CLIENTE** (seção 7, "Operação do pedido") e **ENDEREÇOS DO CLIENTE + PONTO DE ENTREGA CONFIRMADO** (seção 7, "Endereço e ponto de entrega").
 
-Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, pagamento dentro do Jaa, logística, **entregador, GPS, mapa, ETA, rota e frete**, loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
+Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, pagamento dentro do Jaa, logística, **entregador, rastreamento em tempo real, rota, ETA, fila de entregas e frete** (o mapa existe só para o cliente confirmar o ponto de entrega), loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
 
 ## FASE 1: MENSAGERIA
 
@@ -904,7 +904,7 @@ Web: "Agindo como" passou a guiar o mensageiro; na conversa com empresa há **Ve
 
 ## Carrinho e Pedido Jaa (Fase 2 — criação do pedido na conversa)
 
-Fluxo implementado: cliente → conversa com a empresa → **Ver produtos** → adiciona ao carrinho (com quantidade) → revisa o carrinho → informa como vai pagar **na entrega** → confirma → **Pedido Jaa criado** → a empresa recebe o pedido na própria conversa.
+Fluxo implementado: cliente → conversa com a empresa → **Ver produtos** → adiciona ao carrinho (com quantidade) → revisa o carrinho → **escolhe o endereço de entrega** (seção "Endereço e ponto de entrega") → informa como vai pagar **na entrega** → confirma → **Pedido Jaa criado** → a empresa recebe o pedido na própria conversa.
 
 **1. Um único domínio de Pedido.** Não existem "pedido do chat", "pedido da loja" nem "pedido do app": tabelas `pedidos` + `itens_pedido` servem a todas as origens. A origem é **atributo** (`origem`, hoje só `conversa`, com `conversa_id` exigido por CHECK), não um sistema paralelo. A loja pública e o feed entrarão como novas origens, sem domínio novo.
 
@@ -964,6 +964,29 @@ recebido → confirmado → em_preparacao → pronto → saiu_para_entrega → e
 **Realtime**: `pedido:status-atualizado` (após o commit) vai só para o cliente dono e a identidade da empresa — nunca broadcast, nunca para terceiros. **Não é mensagem**: não cria mensagem, não reordena a conversa e **não incrementa não lidas**; o MESMO card da conversa passa a mostrar o novo status. Detalhe e timeline são relidos da API (o evento avisa, o banco é a verdade).
 
 Web (técnica): agindo como a empresa surge a área **Pedidos** (filtros por status, lista com cliente/itens/total/pagamento/status, detalhe com timeline e a próxima ação); o cliente abre **Ver pedido** no card e vê a timeline (concluídas ✓, atual ●, futuras ○) e, se cancelado, o motivo. **Mobile**: nada de administração empresarial; o contrato de acompanhamento já é reutilizável quando a autenticação mobile existir.
+
+## Endereço e ponto de entrega (Fase 2)
+
+**Duas informações diferentes, nunca equivalentes:** o endereço TEXTUAL diz como o local é conhecido (rua, número, complemento, bairro, cidade/UF, CEP, referência) e é do cliente; a COORDENADA confirmada diz "entregar exatamente aqui". Geocodificação erra número, condomínio tem entrada em outra rua e base cartográfica tem imprecisão — por isso:
+
+- **o mapa NUNCA corrige o texto**: ajustar o pin não faz reverse geocoding nem troca rua, número, bairro ou CEP. Cliente informou "Rua X, 150"? Continua 150, ainda que o mapa ache que ali é o 142;
+- **geocodificação ≠ confirmação**: o palpite só serve para ABRIR o mapa perto do lugar provável. Só a ação explícita "Confirmar ponto de entrega" grava `latitude`, `longitude` e `localizacao_confirmada_em`. Abrir o mapa não confirma nada;
+- **o pin é ajustável** (marcador fixo no centro e o mapa se move embaixo dele — funciona com uma mão no celular) e continua ajustável depois ("Ajustar ponto no mapa"): nova confirmação substitui o ponto e a data;
+- **localização do aparelho é só REFERÊNCIA**, pedida quando o cliente toca no botão, explicada na hora ("apenas para ajudar você a conferir o ponto") e **nunca armazenada**. Ela jamais vira o destino sozinha: pedir para a casa da mãe estando no trabalho é normal, e **estar longe não bloqueia o pedido** (nada de regra rígida de distância).
+
+**Agenda privada** (`enderecos_cliente`): vários endereços por identidade PESSOAL, com apelido ("Casa", "Trabalho"). Endereço nasce **sem ponto**; o banco garante tudo-ou-nada (lat + long + data) e faixas válidas (−90..90 / −180..180), com `numeric(9,6)` ≈ 0,11 m — precisão de navegação urbana **sem PostGIS**. Remoção é lógica (`arquivado_em`), porque pedidos antigos referenciam o endereço.
+
+**Privacidade**: só o dono lista, cadastra, edita, arquiva e confirma (`/enderecos*`, identidade da sessão; endereço alheio é indistinguível de inexistente, 404). **Identidade empresarial não tem agenda de consumidor** (403) e **a empresa nunca acessa a agenda do cliente**: ela vê apenas o snapshot do endereço daquele Pedido.
+
+**Reutilização e invalidação** (regra central em `enderecos/endereco.ts`, usada pela API e pela interface): endereço já confirmado é reutilizado direto nos próximos pedidos — sem mapa de novo. Mudar campo ESTRUTURAL (CEP, logradouro, número, complemento, bairro, cidade, UF) **invalida** a confirmação: as coordenadas são apagadas e a próxima utilização pede nova confirmação. Complemento entra na lista porque "Apto 302" → "Casa 2 dos fundos" pode ser outra entrada física; na dúvida, pedir de novo é melhor que entregar no lugar errado. Apelido é etiqueta pessoal e **não** invalida.
+
+**Snapshot no Pedido** (`destinos_pedido`, 1:1 com o pedido): ao confirmar, o servidor copia do banco o endereço textual completo + a coordenada confirmada. Como nos itens, é histórico: editar o endereço salvo depois **não altera pedido nenhum**. `endereco_id` é referência auxiliar (`SET NULL`), não a fonte. Pedidos anteriores a esta etapa simplesmente não têm destino (`destino: null`) e continuam válidos — nada é inventado para eles.
+
+**Servidor é autoridade**: o cliente envia só `enderecoId`; a API confere sessão → identidade pessoal → endereço é dele → ponto confirmado → monta o snapshot. Sem isso, 404 `ENDERECO_NAO_ENCONTRADO` ou 409 `LOCALIZACAO_NAO_CONFIRMADA`; o navegador nunca envia endereço nem coordenadas do pedido. Criação continua **atômica**: pedido + itens + destino + histórico inicial + card, tudo em uma transação.
+
+**Fronteiras com fornecedores** (o domínio não conhece nenhum): `GeocodificadorEndereco` na API (implementação compatível com Nominatim/OpenStreetMap, ativada só por `GEOCODIFICACAO_URL`; sem ela nada externo é chamado e o mapa abre sem palpite) e `CriarMapaPonto` na Web (implementação Leaflet + tiles OSM, livre e sem chave, com URL configurável). Trocar de fornecedor — ou usar mapa nativo no Mobile — é escrever outra implementação.
+
+**Preparado para o futuro, sem implementar agora**: a coordenada confirmada é a base de navegação do entregador, múltiplas entregas, ordenação/reordenação de rota, ETA e fila do cliente. Nada disso existe nesta etapa. Web: etapa "Entregar em" no carrinho (antes do pagamento) e "Ver ponto no mapa" no detalhe do pedido; latitude/longitude cruas não são exibidas para pessoas. **Mobile**: sem telas ainda (depende da autenticação mobile); contratos e API já servem a ele.
 
 ## Presença e digitando (Fase 1)
 
@@ -1414,8 +1437,7 @@ Não inventar decisão para os itens abaixo. Eles serão definidos quando necess
 - hospedagem final da API;
 - storage de arquivos;
 - push notification provider/configuração final;
-- provedor de mapas;
-- biblioteca final de mapas;
+- provedor de mapas/geocodificação para PRODUÇÃO (hoje: Leaflet + tiles OSM na Web e geocodificação opcional compatível com Nominatim, ambos livres e sem chave; a política de uso do OSM não cobre volume de produção, então o serviço definitivo será escolhido quando houver escala — sem inventar credenciais);
 - infraestrutura de filas;
 - Redis;
 - mecanismo de busca;

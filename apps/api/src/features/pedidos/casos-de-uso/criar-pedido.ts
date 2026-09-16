@@ -1,5 +1,6 @@
 import type { Banco } from "@jaa/banco";
-import type { FormaPagamentoEntrega } from "@jaa/contratos";
+import { enderecoTemLocalizacaoConfirmada, type FormaPagamentoEntrega } from "@jaa/contratos";
+import { buscarEndereco } from "../../enderecos/repositorios/repositorio-enderecos.js";
 import { buscarEmpresaPublicaPorIdentidade, type EmpresaPublicaRegistro } from "../../catalogo/repositorios/repositorio-empresas-publicas.js";
 import { listarIdsParticipantesDaConversa } from "../../conversas/repositorios/repositorio-conversas.js";
 import type { CanalEventosMensagens } from "../../mensagens/lib/eventos-mensagens.js";
@@ -19,6 +20,8 @@ type ResultadoCriarPedido =
   | { tipo: "empresa-nao-encontrada" }
   | { tipo: "conversa-nao-encontrada" }
   | { tipo: "itens-invalidos" }
+  | { tipo: "endereco-nao-encontrado" }
+  | { tipo: "localizacao-nao-confirmada" }
   | { tipo: "pagamento-invalido" }
   | { tipo: "id-cliente-reutilizado" };
 
@@ -26,6 +29,7 @@ interface EntradaPedido {
   idCliente: string;
   empresaIdentidadeId: string;
   conversaId: string;
+  enderecoId: string;
   itens: Array<{ produtoId: string; quantidade: number }>;
   pagamento: { forma: FormaPagamentoEntrega; trocoParaCentavos?: number | null | undefined };
 }
@@ -33,8 +37,9 @@ interface EntradaPedido {
 /**
  * Cria o PEDIDO JAA a partir do carrinho do cliente. O cliente manda produto e quantidade; TUDO o que
  * é dinheiro (preço unitário, subtotal, total) vem do banco aqui, nunca do navegador.
- * Sequência: empresa pública ativa → conversa com cliente E empresa → produtos disponíveis DESTA empresa
- * → cálculo → regra de pagamento na entrega → transação (pedido + itens com snapshot + card) → evento.
+ * Sequência: empresa pública ativa → conversa com cliente E empresa → ENDEREÇO do próprio cliente com
+ * ponto confirmado → produtos disponíveis DESTA empresa → cálculo → regra de pagamento na entrega →
+ * transação (pedido + itens + destino, todos snapshot + histórico inicial + card) → evento.
  * Retry com o mesmo `idCliente` devolve o MESMO pedido; conteúdo diferente é conflito.
  */
 export async function criarPedido(
@@ -50,6 +55,17 @@ export async function criarPedido(
   const participantes = await listarIdsParticipantesDaConversa(banco, entrada.conversaId);
   if (!participantes.includes(clienteIdentidadeId) || !participantes.includes(empresa.identidadeId)) {
     return { tipo: "conversa-nao-encontrada" };
+  }
+
+  /*
+   * Destino: o cliente só informa QUAL endereço salvo escolheu. O servidor confere que é dele
+   * (endereço alheio é indistinguível de inexistente), que o ponto foi confirmado no mapa e copia o
+   * snapshot do banco — o navegador nunca envia endereço nem coordenadas.
+   */
+  const endereco = await buscarEndereco(banco, clienteIdentidadeId, entrada.enderecoId);
+  if (!endereco) return { tipo: "endereco-nao-encontrado" };
+  if (!enderecoTemLocalizacaoConfirmada({ latitude: endereco.latitude, longitude: endereco.longitude, localizacaoConfirmadaEm: endereco.localizacaoConfirmadaEm?.toISOString() ?? null })) {
+    return { tipo: "localizacao-nao-confirmada" };
   }
 
   const produtos = await listarProdutosDisponiveisPorIds(banco, empresa.empresaId, entrada.itens.map((item) => item.produtoId));
@@ -69,6 +85,20 @@ export async function criarPedido(
       totalCentavos: calculo.totalCentavos,
       idCliente: entrada.idCliente,
       itens: calculo.itens,
+      destino: {
+        enderecoId: endereco.id,
+        cep: endereco.cep,
+        logradouro: endereco.logradouro,
+        numero: endereco.numero,
+        complemento: endereco.complemento,
+        bairro: endereco.bairro,
+        cidade: endereco.cidade,
+        uf: endereco.uf,
+        pontoReferencia: endereco.pontoReferencia,
+        latitude: endereco.latitude as number,
+        longitude: endereco.longitude as number,
+        localizacaoConfirmadaEm: endereco.localizacaoConfirmadaEm as Date,
+      },
       operadorUsuarioId,
     });
 

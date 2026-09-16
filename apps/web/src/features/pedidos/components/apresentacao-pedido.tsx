@@ -1,4 +1,14 @@
-import { ROTULO_PAGAMENTO_ENTREGA, ROTULO_STATUS_PEDIDO, montarTimelinePedido, trocoEsperadoCentavos, type Pedido, type ResumoPedido } from "@jaa/contratos";
+import {
+  ROTULO_PAGAMENTO_ENTREGA,
+  ROTULO_STATUS_PEDIDO,
+  formatarCep,
+  formatarEnderecoResumido,
+  montarTimelinePedido,
+  trocoEsperadoCentavos,
+  type DestinoPedido,
+  type Pedido,
+  type ResumoPedido,
+} from "@jaa/contratos";
 import { formatarHorarioMensagem } from "@/features/conversas/lib/horarios";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 
@@ -68,7 +78,39 @@ export function TimelinePedido({ pedido }: { pedido: Pick<Pedido, "status" | "hi
   );
 }
 
-export function DetalhePedido({ pedido, aoFechar, acoes }: { pedido: Pedido; aoFechar: () => void; acoes?: React.ReactNode }) {
+/**
+ * ENTREGA do pedido: o texto é o SNAPSHOT do que o cliente cadastrou (editar o endereço depois não
+ * muda pedido antigo) e o ponto é a coordenada que ele confirmou no mapa. Latitude/longitude cruas
+ * não são exibidas: quem lê vê o endereço e o selo de ponto confirmado.
+ */
+export function EnderecoDoPedido({ destino, aoVerNoMapa }: { destino: DestinoPedido | null; aoVerNoMapa?: ((destino: DestinoPedido) => void) | undefined }) {
+  if (!destino) {
+    return (
+      <p data-sem-destino className="text-xs text-zinc-500">
+        Este pedido é anterior ao ponto de entrega confirmado.
+      </p>
+    );
+  }
+
+  return (
+    <div data-destino-pedido className="flex flex-col gap-0.5 text-xs">
+      <p className="font-medium">Entregar em</p>
+      <p>{formatarEnderecoResumido(destino)}</p>
+      <p className="text-zinc-600">
+        {destino.bairro}, {destino.cidade}/{destino.uf} · CEP {formatarCep(destino.cep)}
+      </p>
+      {destino.pontoReferencia && <p className="text-zinc-600">Referência: {destino.pontoReferencia}</p>}
+      <p data-ponto-confirmado className="text-emerald-700">📍 Ponto de entrega confirmado</p>
+      {aoVerNoMapa && (
+        <button type="button" data-ver-ponto-mapa onClick={() => aoVerNoMapa(destino)} className="self-start rounded border px-2 py-0.5">
+          Ver ponto no mapa
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function DetalhePedido({ pedido, aoFechar, acoes, aoVerPontoNoMapa }: { pedido: Pedido; aoFechar: () => void; acoes?: React.ReactNode; aoVerPontoNoMapa?: ((destino: DestinoPedido) => void) | undefined }) {
   return (
     <article aria-label="Detalhe do pedido" className="flex flex-col gap-1 rounded border border-zinc-200 bg-white p-3 text-sm">
       <button type="button" onClick={aoFechar} className="self-end text-xs underline">
@@ -86,6 +128,7 @@ export function DetalhePedido({ pedido, aoFechar, acoes }: { pedido: Pedido; aoF
       <p data-total-pedido className="font-medium">
         Total: {formatarPrecoCentavos(pedido.totalCentavos)}
       </p>
+      <EnderecoDoPedido destino={pedido.destino} aoVerNoMapa={aoVerPontoNoMapa} />
       <LinhaPagamento pedido={pedido} />
       <p data-status-pedido={pedido.status}>Status: {ROTULO_STATUS_PEDIDO[pedido.status]}</p>
       {pedido.motivoCancelamento && (

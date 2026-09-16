@@ -44,6 +44,10 @@ export function registrarRotasPedidos(
         return responder(resposta, 404, { codigo: "EMPRESA_NAO_ENCONTRADA", mensagem: "Empresa não encontrada." });
       case "conversa-nao-encontrada":
         return responder(resposta, 404, { codigo: "CONVERSA_NAO_ENCONTRADA", mensagem: "Conversa não encontrada." });
+      case "endereco-nao-encontrado":
+        return responder(resposta, 404, { codigo: "ENDERECO_NAO_ENCONTRADO", mensagem: "Endereço de entrega não encontrado." });
+      case "localizacao-nao-confirmada":
+        return responder(resposta, 409, { codigo: "LOCALIZACAO_NAO_CONFIRMADA", mensagem: "Confirme no mapa onde devemos entregar antes de fazer o pedido." });
       case "itens-invalidos":
         return responder(resposta, 409, { codigo: "ITENS_INVALIDOS", mensagem: "Algum produto do carrinho não está mais disponível nesta empresa." });
       case "pagamento-invalido":

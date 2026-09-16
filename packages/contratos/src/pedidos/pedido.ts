@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { empresaPublicaSchema } from "../catalogo/catalogo-publico.ts";
+import { coordenadasSchema, ufSchema } from "../enderecos/endereco.ts";
 import { participanteConversaSchema } from "../conversas/conversa.ts";
 import { eventoStatusPedidoSchema, statusPedidoSchema } from "./status-pedido.ts";
 
@@ -54,6 +55,9 @@ export const itemPedidoEntradaSchema = z.object({
  */
 export const criarPedidoEntradaSchema = z.object({
   idCliente: z.uuid(),
+  // Endereço de entrega ESCOLHIDO entre os do próprio cliente; o servidor confere dono e confirmação
+  // e copia o snapshot do banco. O navegador nunca envia o endereço nem as coordenadas do pedido.
+  enderecoId: z.uuid(),
   // Empresa pela sua identidade pública (a mesma da conversa e do catálogo).
   empresaIdentidadeId: z.uuid(),
   conversaId: z.uuid(),
@@ -76,6 +80,28 @@ export const itemPedidoSchema = z.object({
 
 export type ItemPedido = z.infer<typeof itemPedidoSchema>;
 
+/**
+ * DESTINO do pedido: SNAPSHOT do endereço e do ponto confirmado no momento da compra.
+ * Editar o endereço salvo depois não muda pedido nenhum. `enderecoId` é referência auxiliar
+ * (pode apontar para um endereço já alterado ou arquivado): o histórico não depende dele.
+ */
+export const destinoPedidoSchema = z.object({
+  enderecoId: z.uuid().nullable(),
+  cep: z.string(),
+  logradouro: z.string(),
+  numero: z.string(),
+  complemento: z.string().nullable(),
+  bairro: z.string(),
+  cidade: z.string(),
+  uf: ufSchema,
+  pontoReferencia: z.string().nullable(),
+  // Ponto que o cliente confirmou no mapa (base da futura navegação/rota do entregador).
+  ...coordenadasSchema.shape,
+  localizacaoConfirmadaEm: z.iso.datetime(),
+});
+
+export type DestinoPedido = z.infer<typeof destinoPedidoSchema>;
+
 export const pedidoSchema = z.object({
   id: z.uuid(),
   origem: origemPedidoSchema,
@@ -91,6 +117,8 @@ export const pedidoSchema = z.object({
   trocoParaCentavos: z.number().int().nullable(),
   totalCentavos: z.number().int(),
   itens: z.array(itemPedidoSchema).min(1),
+  // null só em pedidos criados antes desta etapa (legados), nunca em pedidos novos de entrega.
+  destino: destinoPedidoSchema.nullable(),
   // Append-only, em ordem cronológica: só o que REALMENTE aconteceu (começa em "recebido").
   historico: z.array(eventoStatusPedidoSchema).min(1),
   criadoEm: z.iso.datetime(),

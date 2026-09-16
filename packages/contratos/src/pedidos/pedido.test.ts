@@ -11,7 +11,7 @@ import {
 import { statusPedidoSchema } from "./status-pedido.ts";
 
 const uuid = "01a0a394-6225-75f2-b809-b2690993c512";
-const base = { idCliente: uuid, empresaIdentidadeId: uuid, conversaId: uuid, itens: [{ produtoId: uuid, quantidade: 2 }] };
+const base = { idCliente: uuid, empresaIdentidadeId: uuid, conversaId: uuid, enderecoId: uuid, itens: [{ produtoId: uuid, quantidade: 2 }] };
 
 describe("criarPedidoEntradaSchema", () => {
   it("cliente envia só produto e quantidade: preço, subtotal, total, status e identidade do cliente são descartados", () => {
@@ -24,7 +24,7 @@ describe("criarPedidoEntradaSchema", () => {
       clienteIdentidadeId: uuid,
       empresaId: uuid,
     });
-    assert.deepEqual(Object.keys(entrada).sort(), ["conversaId", "empresaIdentidadeId", "idCliente", "itens", "pagamento"]);
+    assert.deepEqual(Object.keys(entrada).sort(), ["conversaId", "empresaIdentidadeId", "enderecoId", "idCliente", "itens", "pagamento"]);
     assert.deepEqual(entrada.itens, [{ produtoId: uuid, quantidade: 2 }]);
   });
 
@@ -47,7 +47,7 @@ describe("criarPedidoEntradaSchema", () => {
   });
 
   it("idempotência e conversa são obrigatórias nesta origem", () => {
-    for (const campo of ["idCliente", "conversaId", "empresaIdentidadeId"] as const) {
+    for (const campo of ["idCliente", "conversaId", "empresaIdentidadeId", "enderecoId"] as const) {
       const { [campo]: _fora, ...incompleta } = base;
       assert.equal(criarPedidoEntradaSchema.safeParse({ ...incompleta, pagamento: { forma: "cartao" } }).success, false, campo);
     }
@@ -75,6 +75,20 @@ describe("pedido e card na conversa", () => {
       status: "recebido",
       motivoCancelamento: null,
       historico: [{ id: uuid, status: "recebido", ocorridoEm: "2026-09-15T12:00:00.000Z", motivo: null }],
+      destino: {
+        enderecoId: uuid,
+        cep: "30123000",
+        logradouro: "Rua das Flores",
+        numero: "150",
+        complemento: "Apto 302",
+        bairro: "Centro",
+        cidade: "Belo Horizonte",
+        uf: "MG",
+        pontoReferencia: "Portão azul",
+        latitude: -19.9191249,
+        longitude: -43.9386015,
+        localizacaoConfirmadaEm: "2026-09-15T11:55:00.000Z",
+      },
       formaPagamentoNaEntrega: "dinheiro",
       trocoParaCentavos: 10000,
       totalCentavos: 9180,
@@ -86,6 +100,10 @@ describe("pedido e card na conversa", () => {
     assert.equal(pedidoSchema.safeParse({ ...pedido, itens: [] }).success, false);
     // Pedido sem histórico não existe: "recebido" é registrado na criação.
     assert.equal(pedidoSchema.safeParse({ ...pedido, historico: [] }).success, false);
+    // Pedidos legados (anteriores ao ponto de entrega) continuam válidos, sem destino.
+    assert.equal(pedidoSchema.safeParse({ ...pedido, destino: null }).success, true);
+    // Destino sem coordenada confirmada não é destino.
+    assert.equal(pedidoSchema.safeParse({ ...pedido, destino: { ...pedido.destino, latitude: null } }).success, false);
     // O pedido público não expõe a empresa por id interno nem dados de cartão.
     assert.deepEqual(Object.keys(pedidoSchema.parse(pedido).empresa).sort(), ["identidadeId", "nome", "nomeUsuario", "slug"]);
 

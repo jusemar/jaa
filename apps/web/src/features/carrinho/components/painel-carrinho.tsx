@@ -1,6 +1,6 @@
 "use client";
 
-import { ROTULO_PAGAMENTO_ENTREGA, type FormaPagamentoEntrega } from "@jaa/contratos";
+import { ROTULO_PAGAMENTO_ENTREGA, formatarEnderecoResumido, type EnderecoCliente, type FormaPagamentoEntrega } from "@jaa/contratos";
 import { useState } from "react";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { interpretarPrecoDigitado } from "@/features/produtos/lib/precos";
@@ -13,18 +13,23 @@ export type ConfirmacaoPedido = { forma: FormaPagamentoEntrega; trocoParaCentavo
 
 export function PainelCarrinho({
   carrinho,
+  endereco,
   enviando,
   erro,
   aoAlterarQuantidade,
   aoRemover,
+  aoTrocarEndereco,
   aoConfirmar,
   aoFechar,
 }: {
   carrinho: Carrinho;
+  // Destino já escolhido e com ponto confirmado; sem ele não há como confirmar o pedido.
+  endereco: EnderecoCliente | null;
   enviando: boolean;
   erro: string | null;
   aoAlterarQuantidade: (produtoId: string, quantidade: number) => void;
   aoRemover: (produtoId: string) => void;
+  aoTrocarEndereco: () => void;
   aoConfirmar: (confirmacao: ConfirmacaoPedido) => void;
   aoFechar: () => void;
 }) {
@@ -90,6 +95,29 @@ export function PainelCarrinho({
         Total: {formatarPrecoCentavos(total)}
       </p>
 
+      {/* Destino antes do pagamento: pedido de entrega não existe sem endereço confirmado. */}
+      <div data-endereco-selecionado={endereco?.id ?? ""} className="flex items-start justify-between gap-2 rounded border border-zinc-200 p-2">
+        <span className="flex min-w-0 flex-col text-xs">
+          <span className="font-medium">Entregar em</span>
+          {endereco ? (
+            <>
+              <span>
+                {endereco.apelido} · {formatarEnderecoResumido(endereco)}
+              </span>
+              <span className="text-zinc-500">
+                {endereco.bairro}, {endereco.cidade}/{endereco.uf}
+              </span>
+              <span className="text-emerald-700">📍 Ponto de entrega confirmado</span>
+            </>
+          ) : (
+            <span className="text-amber-700">Escolha o endereço de entrega para continuar.</span>
+          )}
+        </span>
+        <button type="button" data-escolher-endereco onClick={aoTrocarEndereco} className="shrink-0 rounded border px-2 py-1 text-xs">
+          {endereco ? "Trocar endereço" : "Escolher endereço"}
+        </button>
+      </div>
+
       <fieldset className="flex flex-col gap-1 rounded border border-zinc-200 p-2">
         <legend className="px-1 text-xs text-zinc-500">Pagamento na entrega</legend>
         {(["dinheiro", "cartao"] as const).map((opcao) => (
@@ -128,7 +156,7 @@ export function PainelCarrinho({
         )}
       </fieldset>
 
-      <button type="button" disabled={enviando || carrinho.itens.length === 0} onClick={confirmar} className="rounded bg-black px-3 py-2 text-white disabled:opacity-50">
+      <button type="button" disabled={enviando || carrinho.itens.length === 0 || endereco === null} onClick={confirmar} className="rounded bg-black px-3 py-2 text-white disabled:opacity-50">
         Confirmar pedido
       </button>
       {(erroTroco ?? erro) && (

@@ -4,6 +4,7 @@ export * from "./identidades/identidade-operavel.ts";
 export * from "./empresas/empresa.ts";
 export * from "./produtos/produto.ts";
 export * from "./catalogo/catalogo-publico.ts";
+export * from "./enderecos/endereco.ts";
 export * from "./pedidos/status-pedido.ts";
 export * from "./pedidos/pedido.ts";
 export * from "./pedidos/gestao-pedidos.ts";

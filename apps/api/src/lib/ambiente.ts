@@ -19,6 +19,14 @@ const ambienteSchema = z
     ORIGENS_WEB_PERMITIDAS: listaDeOrigens,
     // Único mecanismo disponível hoje. Um provedor de SMS real entrará como nova opção.
     OTP_ENTREGA: z.enum(["desenvolvimento"]),
+    /*
+     * Geocodificação (endereço textual → coordenada SUGERIDA para abrir o mapa). OPCIONAL: sem a URL,
+     * nenhum serviço externo é chamado e o cliente confirma o ponto do mesmo jeito. Espera-se uma API
+     * compatível com a busca do Nominatim/OpenStreetMap, que não exige chave nem cobrança.
+     */
+    GEOCODIFICACAO_URL: z.url().optional(),
+    // Identificação do aplicativo exigida pela política de uso do Nominatim.
+    GEOCODIFICACAO_CONTATO: z.string().min(1).optional(),
   })
   .superRefine((ambiente, contexto) => {
     // Segurança: a entrega de desenvolvimento exibe o código no terminal e nunca pode ir para produção.

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { criarConexaoBanco } from "@jaa/banco";
-import { conversas, empresas, identidades, membrosEmpresa, mensagens, participantesConversa, pedidos, produtos, rateLimits, users, verifications } from "@jaa/banco/schema";
+import { conversas, empresas, enderecosCliente, identidades, membrosEmpresa, mensagens, participantesConversa, pedidos, produtos, rateLimits, users, verifications } from "@jaa/banco/schema";
 import { CABECALHO_IDENTIDADE_ATUANTE, type Mensagem, type PaginaConversas, type PaginaMensagens } from "@jaa/contratos";
 import { betterAuth } from "better-auth";
 import { testUtils } from "better-auth/plugins";
@@ -81,6 +81,8 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
     await banco.delete(mensagens).where(inArray(mensagens.conversaId, conversasTeste));
     await banco.delete(pedidos).where(inArray(pedidos.clienteIdentidadeId, identidadesTeste));
     await banco.delete(conversas).where(inArray(conversas.id, conversasTeste));
+    // Endereços do cliente: apagados depois dos pedidos (o destino referencia o endereço).
+    await banco.delete(enderecosCliente).where(inArray(enderecosCliente.identidadeId, identidadesTeste));
     // Empresas das contas de teste: identidade empresarial primeiro (FK), depois a empresa (membros em cascata).
     const idsEmpresas = (await empresasTeste).map((linha) => linha.id);
     if (idsEmpresas.length > 0) {
@@ -131,6 +133,27 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
       const identidade = await api(pessoa, "POST", "/identidades/pessoal", { nomeExibicao, nomeUsuario });
       assert.equal(identidade.statusCode, 201, identidade.body);
       return { ...pessoa, identidadeId: identidade.json().id };
+    },
+
+    // Endereço do cliente com o ponto JÁ confirmado (atalho para testes que focam no pedido).
+    async criarEnderecoConfirmado(pessoa: Pessoa, dados: Record<string, unknown> = {}, coordenadas = { latitude: -19.919125, longitude: -43.938602 }): Promise<string> {
+      const criado = await api(pessoa, "POST", "/enderecos", {
+        apelido: "Casa",
+        cep: "30123-000",
+        logradouro: "Rua das Flores",
+        numero: "150",
+        complemento: "Apto 302",
+        bairro: "Centro",
+        cidade: "Belo Horizonte",
+        uf: "MG",
+        pontoReferencia: "Portão azul",
+        ...dados,
+      });
+      assert.equal(criado.statusCode, 201, criado.body);
+      const enderecoId: string = criado.json().id;
+      const confirmado = await api(pessoa, "POST", `/enderecos/${enderecoId}/localizacao`, coordenadas);
+      assert.equal(confirmado.statusCode, 200, confirmado.body);
+      return enderecoId;
     },
 
     async abrirConversa(origem: Pessoa, nomeUsuarioDestino: string): Promise<string> {

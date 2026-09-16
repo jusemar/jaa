@@ -36,6 +36,7 @@ let farmacia: Empresa;
 let comoPizzaria: Pessoa;
 let pizza: Produto;
 let conversaBP = "";
+let enderecoB = "";
 
 const avancar = (pessoa: Pessoa, empresa: Empresa, pedidoId: string, statusAtual: StatusPedido) =>
   ctx.api(pessoa, "POST", `/empresas/${empresa.id}/pedidos/${pedidoId}/avancar`, { statusAtual });
@@ -47,6 +48,7 @@ async function criarPedido(quantidade = 1): Promise<Pedido> {
     idCliente: randomUUID(),
     empresaIdentidadeId: pizzaria.identidadeId,
     conversaId: conversaBP,
+    enderecoId: enderecoB,
     itens: [{ produtoId: pizza.id, quantidade }],
     pagamento: { forma: "dinheiro", trocoParaCentavos: 10000 },
   });
@@ -75,6 +77,7 @@ before(async () => {
   comoPizzaria = como(A, pizzaria.identidadeId);
   pizza = (await ctx.api(A, "POST", `/empresas/${pizzaria.id}/produtos`, { nome: "Pizza Calabresa", precoCentavos: 3990 })).json();
   conversaBP = await ctx.abrirConversa(B, `${PREFIXO}_pizza`);
+  enderecoB = await ctx.criarEnderecoConfirmado(B);
 });
 
 after(() => ctx.encerrar());
@@ -330,6 +333,7 @@ describe("pagamento preservado", () => {
         idCliente: randomUUID(),
         empresaIdentidadeId: pizzaria.identidadeId,
         conversaId: conversaBP,
+        enderecoId: enderecoB,
         itens: [{ produtoId: pizza.id, quantidade: 1 }],
         pagamento: { forma: "cartao" },
       })

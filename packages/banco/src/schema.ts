@@ -13,7 +13,10 @@ export * from "./tabelas/empresas/relacoes.js";
 export * from "./tabelas/produtos/produtos.js";
 export * from "./tabelas/produtos/relacoes.js";
 
+export * from "./tabelas/enderecos/enderecos-cliente.js";
+export * from "./tabelas/enderecos/relacoes.js";
 export * from "./tabelas/pedidos/pedidos.js";
+export * from "./tabelas/pedidos/destinos-pedido.js";
 export * from "./tabelas/pedidos/itens-pedido.js";
 export * from "./tabelas/pedidos/historico-status-pedido.js";
 export * from "./tabelas/pedidos/relacoes.js";

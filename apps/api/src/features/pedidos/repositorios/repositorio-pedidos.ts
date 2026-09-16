@@ -1,16 +1,20 @@
 import type { Banco } from "@jaa/banco";
-import { historicoStatusPedido, identidades, itensPedido, mensagens, pedidos } from "@jaa/banco/schema";
-import type { EventoStatusPedido, FormaPagamentoEntrega, ItemPedido, StatusPedido } from "@jaa/contratos";
+import { destinosPedido, historicoStatusPedido, identidades, itensPedido, mensagens, pedidos } from "@jaa/banco/schema";
+import type { DestinoPedido, EventoStatusPedido, FormaPagamentoEntrega, ItemPedido, StatusPedido, Uf } from "@jaa/contratos";
 import { and, asc, count, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 export type PedidoRegistro = typeof pedidos.$inferSelect;
 
 export type ClientePublico = { identidadeId: string; tipo: "pessoal" | "empresarial"; nomeExibicao: string; nomeUsuario: string };
 
+export type DestinoRegistro = typeof destinosPedido.$inferSelect;
+
 export interface PedidoComItensRegistro {
   pedido: PedidoRegistro;
   itens: ItemPedido[];
   cliente: ClientePublico;
+  // null em pedidos legados (criados antes do ponto de entrega confirmado).
+  destino: DestinoPedido | null;
   // Append-only, em ordem cronológica (o primeiro evento é sempre "recebido").
   historico: EventoStatusPedido[];
 }
@@ -62,6 +66,8 @@ export async function inserirPedidoComItens(
     totalCentavos: number;
     idCliente: string;
     itens: ItemParaGravar[];
+    // Snapshot do endereço + ponto confirmado, já lido do banco por quem chama.
+    destino: Omit<DestinoRegistro, "pedidoId">;
     operadorUsuarioId: string;
   },
 ): Promise<{ pedidoId: string; mensagemId: string }> {
@@ -83,6 +89,9 @@ export async function inserirPedidoComItens(
       if (!pedido) throw new Error("Inserção de pedido não retornou registro.");
 
       await transacao.insert(itensPedido).values(dados.itens.map((item) => ({ ...item, pedidoId: pedido.id, empresaId: dados.empresaId })));
+
+      // Destino: snapshot do endereço e do ponto confirmado (não depende do endereço salvo depois).
+      await transacao.insert(destinosPedido).values({ ...dados.destino, pedidoId: pedido.id });
 
       // Primeiro evento do histórico: o pedido nasce "recebido". Sem operador — quem criou foi o cliente.
       await transacao.insert(historicoStatusPedido).values({ pedidoId: pedido.id, status: "recebido" });
@@ -119,6 +128,23 @@ const colunasItem = {
   subtotalCentavos: itensPedido.subtotalCentavos,
 };
 
+function serializarDestino(destino: DestinoRegistro): DestinoPedido {
+  return {
+    enderecoId: destino.enderecoId,
+    cep: destino.cep,
+    logradouro: destino.logradouro,
+    numero: destino.numero,
+    complemento: destino.complemento,
+    bairro: destino.bairro,
+    cidade: destino.cidade,
+    uf: destino.uf as Uf,
+    pontoReferencia: destino.pontoReferencia,
+    latitude: destino.latitude,
+    longitude: destino.longitude,
+    localizacaoConfirmadaEm: destino.localizacaoConfirmadaEm.toISOString(),
+  };
+}
+
 const colunasEvento = {
   id: historicoStatusPedido.id,
   status: historicoStatusPedido.status,
@@ -141,7 +167,14 @@ async function montarPedido(banco: Banco, pedido: PedidoRegistro | undefined): P
     .where(eq(identidades.id, pedido.clienteIdentidadeId))
     .limit(1);
   if (!cliente) throw new Error("Pedido sem identidade de cliente.");
-  return { pedido, itens, cliente, historico: await listarHistoricoPedido(banco, pedido.id) };
+  const [destino] = await banco.select().from(destinosPedido).where(eq(destinosPedido.pedidoId, pedido.id)).limit(1);
+  return {
+    pedido,
+    itens,
+    cliente,
+    destino: destino ? serializarDestino(destino) : null,
+    historico: await listarHistoricoPedido(banco, pedido.id),
+  };
 }
 
 export async function buscarPedido(banco: Banco, pedidoId: string): Promise<PedidoComItensRegistro | null> {
