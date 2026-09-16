@@ -1,4 +1,5 @@
-import { ROTULO_PAGAMENTO_ENTREGA, ROTULO_STATUS_PEDIDO, trocoEsperadoCentavos, type Pedido, type ResumoPedido } from "@jaa/contratos";
+import { ROTULO_PAGAMENTO_ENTREGA, ROTULO_STATUS_PEDIDO, montarTimelinePedido, trocoEsperadoCentavos, type Pedido, type ResumoPedido } from "@jaa/contratos";
+import { formatarHorarioMensagem } from "@/features/conversas/lib/horarios";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 
 // Interface TÉCNICA do Pedido Jaa: card na conversa e detalhe. O Jaa não processa pagamento; só mostra
@@ -46,7 +47,28 @@ export function CardPedido({ pedido, aoAbrir }: { pedido: ResumoPedido; aoAbrir:
   );
 }
 
-export function DetalhePedido({ pedido, aoFechar }: { pedido: Pedido; aoFechar: () => void }) {
+/**
+ * Acompanhamento: etapas concluídas (com o horário real), a atual e as futuras. As futuras são
+ * derivadas da máquina de estados só para exibir — não existem no histórico até acontecerem.
+ */
+export function TimelinePedido({ pedido }: { pedido: Pick<Pedido, "status" | "historico"> }) {
+  const etapas = montarTimelinePedido(pedido.status, pedido.historico);
+  const marca = { concluida: "✓", atual: "●", futura: "○" } as const;
+
+  return (
+    <ol aria-label="Acompanhamento do pedido" className="flex flex-col gap-0.5 text-xs">
+      {etapas.map((etapa) => (
+        <li key={etapa.status} data-etapa={etapa.status} data-situacao={etapa.situacao} className={etapa.situacao === "futura" ? "text-zinc-400" : etapa.situacao === "atual" ? "font-semibold" : ""}>
+          <span aria-hidden>{marca[etapa.situacao]} </span>
+          {ROTULO_STATUS_PEDIDO[etapa.status]}
+          {etapa.ocorridoEm && <span className="text-zinc-500"> — {formatarHorarioMensagem(etapa.ocorridoEm)}</span>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function DetalhePedido({ pedido, aoFechar, acoes }: { pedido: Pedido; aoFechar: () => void; acoes?: React.ReactNode }) {
   return (
     <article aria-label="Detalhe do pedido" className="flex flex-col gap-1 rounded border border-zinc-200 bg-white p-3 text-sm">
       <button type="button" onClick={aoFechar} className="self-end text-xs underline">
@@ -66,6 +88,13 @@ export function DetalhePedido({ pedido, aoFechar }: { pedido: Pedido; aoFechar: 
       </p>
       <LinhaPagamento pedido={pedido} />
       <p data-status-pedido={pedido.status}>Status: {ROTULO_STATUS_PEDIDO[pedido.status]}</p>
+      {pedido.motivoCancelamento && (
+        <p data-motivo-cancelamento className="text-xs text-red-700">
+          Motivo do cancelamento: {pedido.motivoCancelamento}
+        </p>
+      )}
+      <TimelinePedido pedido={pedido} />
+      {acoes}
     </article>
   );
 }

@@ -33,6 +33,8 @@ const pedido: Pedido = {
   formaPagamentoNaEntrega: "dinheiro",
   trocoParaCentavos: null,
   totalCentavos: 9180,
+  motivoCancelamento: null,
+  historico: [{ id: "55555555-0000-4000-8000-000000000000", status: "recebido", ocorridoEm: "2026-09-15T12:00:00.000Z", motivo: null }],
   criadoEm: "2026-09-15T12:00:00.000Z",
   atualizadoEm: "2026-09-15T12:00:00.000Z",
 };

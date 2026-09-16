@@ -31,9 +31,9 @@ O Jaa **não deve nascer como marketplace com um chat anexado**. O núcleo do pr
 
 ## Estado atual
 
-A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa") e **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa").
+A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa"), **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa") e **GESTÃO DO PEDIDO PELA EMPRESA + ACOMPANHAMENTO PELO CLIENTE** (seção 7, "Operação do pedido").
 
-Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, **transições de status do pedido** (o pedido nasce e permanece em `recebido`), pagamento dentro do Jaa, logística, rastreamento, entregadores, loja pública funcional, administração de produtos no Mobile, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
+Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, pagamento dentro do Jaa, logística, **entregador, GPS, mapa, ETA, rota e frete**, loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
 
 ## FASE 1: MENSAGERIA
 
@@ -122,7 +122,7 @@ O acompanhamento deverá permitir a evolução de estados como:
 PEDIDO RECEBIDO → CONFIRMADO → EM PREPARAÇÃO → PRONTO → SAIU PARA ENTREGA → EM ROTA → ENTREGUE
 ```
 
-A criação do pedido pela conversa já está implementada (seção 7, "Carrinho e Pedido Jaa"): o enum de status já modela o fluxo inteiro, mas **nenhuma transição existe ainda**. Pedidos poderão surgir da conversa ou da loja pública, sempre no mesmo domínio.
+Esse fluxo já está implementado (seção 7, "Operação do pedido"), com o desvio terminal **CANCELADO**. Pedidos poderão surgir da conversa ou da loja pública, sempre no mesmo domínio.
 
 Quando a modalidade logística permitir, o acompanhamento poderá incluir a localização do entregador no mapa em tempo real e a previsão de chegada (seção 16).
 
@@ -928,12 +928,42 @@ Fluxo implementado: cliente → conversa com a empresa → **Ver produtos** → 
 
 Modelagem e garantias:
 
-- `pedidos`: `empresa_id`, `cliente_identidade_id`, `conversa_id` (FK composta `(conversa_id, cliente_identidade_id)` → `participantes_conversa`: o banco exige que o cliente participe da conversa), `status` (`status_pedido` já com `recebido → confirmado → em_preparacao → pronto → saiu_para_entrega → em_rota → entregue`; **default `recebido`, sem nenhuma transição implementada**), forma de pagamento, troco, `total_centavos`, `id_cliente`;
+- `pedidos`: `empresa_id`, `cliente_identidade_id`, `conversa_id` (FK composta `(conversa_id, cliente_identidade_id)` → `participantes_conversa`: o banco exige que o cliente participe da conversa), `status` (`status_pedido` já com `recebido → confirmado → em_preparacao → pronto → saiu_para_entrega → em_rota → entregue`; **default `recebido`**; a evolução e o cancelamento estão em "Operação do pedido"), forma de pagamento, troco, `total_centavos`, `id_cliente`;
 - **criação atômica**: pedido + itens + mensagem do card em **uma transação**; ou tudo existe, ou nada existe (evento realtime só depois do commit);
 - **idempotência** igual à das mensagens: `id_cliente` único por identidade (`pedidos_id_cliente_por_identidade_unico`). Repetir a mesma tentativa devolve **200** com o mesmo pedido (sem segundo card, sem segundo evento); a mesma chave com conteúdo diferente é **409 `ID_CLIENTE_REUTILIZADO`**;
 - **card na conversa sem duplicar dados**: `mensagens.tipo` ganhou `pedido` e a coluna `pedido_id` (CHECK `mensagens_pedido_por_tipo`: tipo `pedido` ⇔ `pedido_id` presente, conteúdo vazio). O card lê o Pedido real (resumo em subconsulta JSON), então realtime, não lidas, notificações e exclusão continuam valendo sem regra nova. Card não é texto: não se edita nem responde;
 - **API**: `POST /pedidos` (só identidade **pessoal**; empresarial = 403) e `GET /pedidos/:pedidoId`, visível **apenas** ao cliente dono e a quem opera a empresa do pedido — qualquer outra identidade recebe 404 (não revela existência);
 - Web (técnica): "Adicionar" na lista/detalhe do catálogo, painel **Carrinho** (quantidade, remover, total, forma de pagamento, troco), confirmação, **card do pedido** no balão e **Ver pedido**. **Mobile**: nada de carrinho/pedido ainda (depende da autenticação mobile); contratos e API são reutilizáveis por ele.
+
+## Operação do pedido: empresa conduz, cliente acompanha (Fase 2)
+
+Mesmo domínio Pedido: a EMPRESA opera, o CLIENTE acompanha. Não existe pedido paralelo, nem nesta etapa entregador, GPS, mapa, rota, ETA ou frete — só a evolução operacional do estado.
+
+**Máquina de estados** (`pedidos/status-pedido.ts`, compartilhada por API e clientes; o servidor é quem decide, o cliente usa só para exibir):
+
+```text
+recebido → confirmado → em_preparacao → pronto → saiu_para_entrega → em_rota → entregue
+                              ↘ (a qualquer momento, pela empresa) cancelado
+```
+
+- **um passo por vez**: salto (recebido → entregue) e regressão (em_rota → em_preparacao) são recusados com 409 `TRANSICAO_PEDIDO_INVALIDA`;
+- **dois terminais**: `entregue` (fim normal) e `cancelado` — nenhum dos dois avança, retrocede ou cancela de novo;
+- **CANCELADO é da empresa**, enquanto o pedido não terminou, e **exige motivo curto** (3–200 caracteres; sugestões na interface + texto livre), gravado em `pedidos.motivo_cancelamento` (CHECK: motivo ⇔ cancelado) e no histórico. O cliente ainda **não** cancela sozinho: solicitação de cancelamento será outra regra;
+- a interface mostra **só a próxima ação válida** (Confirmar pedido → Iniciar preparação → Marcar como pronto → Saiu para entrega → Marcar em rota → Marcar como entregue), nunca sete botões de status; cancelar exige confirmação explícita com motivo.
+
+**Histórico append-only** (`historico_status_pedido`): `pedidos.status` é o estado ATUAL; a tabela guarda o que aconteceu (status, `ocorrido_em`, motivo quando cancelado). O evento `recebido` é gravado **na mesma transação da criação** do pedido (migration 0011 fez o backfill dos pedidos anteriores), e cada mudança grava status + histórico **numa transação só** — atual e histórico nunca divergem. Índice único `(pedido_id, status)`: o fluxo não repete etapa. Nada de evento futuro adiantado: a timeline exibida deriva as etapas futuras da máquina de estados só para visualização.
+
+**Concorrência**: a empresa envia o `statusAtual` que estava vendo e o UPDATE só se aplica se o banco ainda estiver nesse status (`where id = … and status = …`). Dois operadores simultâneos → um vence, o outro recebe 409 e recarrega. Nunca se produz histórico impossível.
+
+**Auditoria**: `historico_status_pedido.operador_usuario_id` guarda a CONTA que executou pela empresa (null quando o evento nasceu do cliente, na criação). Como em mensagens, **jamais é serializado**: para o cliente quem opera é a EMPRESA, nunca uma pessoa.
+
+**Autorização** (central, `autorizarEmpresa`, com as permissões novas `ver-pedidos` e `gerenciar-pedidos`): empresa nenhuma lista, abre, altera ou cancela pedido de outra; sem acesso e inexistente são 404. O CLIENTE só lê o próprio pedido (`GET /pedidos/:id`, com histórico): qualquer tentativa de definir status, confirmar, cancelar ou usar as rotas da empresa é 404, inclusive mandando `x-jaa-identidade` da empresa.
+
+**API** (intenção operacional, nunca `PATCH { status: qualquerCoisa }`): `GET /empresas/:empresaId/pedidos?filtro&antesDe&limite` (mais recentes primeiro, cursor por id UUIDv7, limite padrão 20 e máximo 50; o filtro "Em entrega" agrupa `saiu_para_entrega` + `em_rota` só na interface), `GET /empresas/:empresaId/pedidos/:pedidoId`, `POST …/avancar` e `POST …/cancelar`.
+
+**Realtime**: `pedido:status-atualizado` (após o commit) vai só para o cliente dono e a identidade da empresa — nunca broadcast, nunca para terceiros. **Não é mensagem**: não cria mensagem, não reordena a conversa e **não incrementa não lidas**; o MESMO card da conversa passa a mostrar o novo status. Detalhe e timeline são relidos da API (o evento avisa, o banco é a verdade).
+
+Web (técnica): agindo como a empresa surge a área **Pedidos** (filtros por status, lista com cliente/itens/total/pagamento/status, detalhe com timeline e a próxima ação); o cliente abre **Ver pedido** no card e vê a timeline (concluídas ✓, atual ●, futuras ○) e, se cancelado, o motivo. **Mobile**: nada de administração empresarial; o contrato de acompanhamento já é reutilizável quando a autenticação mobile existir.
 
 ## Presença e digitando (Fase 1)
 

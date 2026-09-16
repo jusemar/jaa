@@ -2,6 +2,7 @@ import * as z from "zod";
 import { participanteConversaSchema } from "../conversas/conversa.ts";
 import { contagemNaoLidasSchema } from "../conversas/lista-conversas.ts";
 import { exclusaoParaMimSchema, mensagemSchema } from "../mensagens/mensagem.ts";
+import { resumoPedidoSchema } from "../pedidos/pedido.ts";
 import {
   EVENTO_DIGITANDO_ATUALIZADO,
   EVENTO_PRESENCA_ATUALIZADA,
@@ -89,6 +90,25 @@ export const eventoMensagensLidasSchema = z.object({
 
 export type EventoMensagensLidas = z.infer<typeof eventoMensagensLidasSchema>;
 
+/**
+ * Status do PEDIDO mudou (empresa avançou ou cancelou), emitido após o commit. Vai só para as
+ * identidades com relação real com o pedido: o cliente dono e a identidade da empresa.
+ * NÃO é mensagem: não cria mensagem nova, não reordena a conversa e não altera não lidas — o cliente
+ * só substitui o resumo do card e a tela do pedido. O banco continua sendo a fonte da verdade.
+ */
+export const EVENTO_PEDIDO_STATUS_ATUALIZADO = "pedido:status-atualizado";
+
+export const eventoPedidoStatusAtualizadoSchema = z.object({
+  // Conversa de origem (quando houver): permite atualizar o card sem recarregar o histórico.
+  conversaId: z.uuid().nullable(),
+  pedido: resumoPedidoSchema,
+  // Só no cancelamento; nunca identifica a pessoa que operou a empresa.
+  motivoCancelamento: z.string().nullable(),
+  ocorridoEm: z.iso.datetime(),
+});
+
+export type EventoPedidoStatusAtualizado = z.infer<typeof eventoPedidoStatusAtualizadoSchema>;
+
 // Eventos que a API envia ao cliente. Comandos de negócio do cliente (enviar, confirmar) passam pela
 // API HTTP; pelo socket o cliente envia só atividade efêmera (ver atividade-conversa.ts).
 export interface EventosRealtimeServidorParaCliente {
@@ -99,6 +119,7 @@ export interface EventosRealtimeServidorParaCliente {
   [EVENTO_NOTIFICACAO_NOVA_MENSAGEM]: (evento: EventoNotificacaoNovaMensagem) => void;
   [EVENTO_MENSAGENS_ENTREGUES]: (evento: EventoMensagensEntregues) => void;
   [EVENTO_MENSAGENS_LIDAS]: (evento: EventoMensagensLidas) => void;
+  [EVENTO_PEDIDO_STATUS_ATUALIZADO]: (evento: EventoPedidoStatusAtualizado) => void;
   [EVENTO_PRESENCA_ATUALIZADA]: (evento: EventoPresencaAtualizada) => void;
   [EVENTO_DIGITANDO_ATUALIZADO]: (evento: EventoDigitandoAtualizado) => void;
 }

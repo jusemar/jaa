@@ -3,6 +3,7 @@ import {
   type EventoMensagensEntregues,
   type EventoMensagensLidas,
   type Mensagem,
+  type ResumoPedido,
 } from "@jaa/contratos";
 import { resumirConteudoParaPrevia } from "./respostas";
 import { versaoMaisRecente } from "./versoes-mensagem";
@@ -69,6 +70,18 @@ export function receberAtualizacao(conversa: ConversaReconciliada, atualizada: M
     porId.set(mensagem.id, { ...mensagem, mensagemRespondida: { ...referencia, ...previa } });
   }
   return reaplicar(conversa, porId);
+}
+
+/*
+ * Status do pedido mudou: o MESMO card (mesma mensagem) passa a exibir o resumo atual.
+ * Não é mensagem nova nem edição: não reordena, não muda estado de entrega/leitura e não conta
+ * como não lida — só troca o resumo do pedido que o card referencia.
+ */
+export function atualizarPedidoNasMensagens(conversa: ConversaReconciliada, pedido: ResumoPedido): ConversaReconciliada {
+  return {
+    ...conversa,
+    mensagens: conversa.mensagens.map((mensagem) => (mensagem.pedido?.id === pedido.id ? { ...mensagem, pedido } : mensagem)),
+  };
 }
 
 // "Excluir para mim" (resposta HTTP ou evento de outra aba): remove e impede que volte.

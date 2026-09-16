@@ -8,6 +8,7 @@ import {
   EVENTO_MENSAGENS_ENTREGUES,
   EVENTO_MENSAGENS_LIDAS,
   EVENTO_NOTIFICACAO_NOVA_MENSAGEM,
+  EVENTO_PEDIDO_STATUS_ATUALIZADO,
   EVENTO_PRESENCA_ATUALIZADA,
   type CodigoErroConexaoRealtime,
   type ErroConexaoRealtime,
@@ -23,6 +24,7 @@ import { criarRegistroDigitandoEmMemoria, type RegistroDigitando } from "../feat
 import type { CanalEventosMensagens } from "../features/mensagens/lib/eventos-mensagens.js";
 import { serializarMensagem } from "../features/mensagens/lib/serializar-mensagem.js";
 import { criarNotificadorNovasMensagens } from "../features/notificacoes/lib/notificador-novas-mensagens.js";
+import { criarCanalEventosPedidos, type CanalEventosPedidos } from "../features/pedidos/lib/eventos-pedidos.js";
 import { criarRegistroPresencaEmMemoria, type RegistroPresenca } from "../features/presenca/lib/registro-presenca.js";
 import { salaDaConversa, salaDaIdentidade, salaDaSessao, salaDePresenca } from "./salas.js";
 import type { ServidorRealtime } from "./tipos.js";
@@ -32,6 +34,7 @@ interface DependenciasRealtime {
   banco: Banco;
   sessoesEncerradas: AvisoSessoesEncerradas;
   eventosMensagens: CanalEventosMensagens;
+  eventosPedidos?: CanalEventosPedidos;
   origensPermitidas: string[];
   // Opcionais: por padrão, implementações em memória (uma instância da API).
   presenca?: RegistroPresenca;
@@ -55,6 +58,7 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
   const origens = new Set(dependencias.origensPermitidas);
   const presenca = dependencias.presenca ?? criarRegistroPresencaEmMemoria();
   const digitando = dependencias.digitando ?? criarRegistroDigitandoEmMemoria();
+  const eventosPedidos = dependencias.eventosPedidos ?? criarCanalEventosPedidos();
   const atualizadorNaoLidas = criarAtualizadorNaoLidas({
     banco: dependencias.banco,
     eventosMensagens: dependencias.eventosMensagens,
@@ -195,6 +199,19 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
     }
   });
 
+  /*
+   * Status do pedido mudou (já commitado): entrega só às identidades com relação real com o pedido
+   * (cliente dono e identidade da empresa). Não é mensagem — não mexe em conversa nem em não lidas.
+   */
+  const cancelarEntregaPedidos = eventosPedidos.inscrever((evento) => {
+    realtime.to(evento.destinatariosIdentidadeIds.map(salaDaIdentidade)).emit(EVENTO_PEDIDO_STATUS_ATUALIZADO, {
+      conversaId: evento.conversaId,
+      pedido: evento.pedido,
+      motivoCancelamento: evento.motivoCancelamento,
+      ocorridoEm: evento.ocorridoEm.toISOString(),
+    });
+  });
+
   // Ao desligar a API, fecha só o transporte (sem pacote de "desconexão pelo servidor"):
   // assim os clientes tratam como queda, reconectam sozinhos e passam de novo pelo handshake.
   servidor.addHook("preClose", async () => {
@@ -204,6 +221,7 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
   servidor.addHook("onClose", async () => {
     cancelarInscricao();
     cancelarEntregaMensagens();
+    cancelarEntregaPedidos();
     cancelarPresenca();
     cancelarDigitando();
     await atualizadorNaoLidas.encerrar();

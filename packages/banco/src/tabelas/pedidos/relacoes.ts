@@ -3,6 +3,7 @@ import { conversas } from "../conversas/conversas.js";
 import { empresas } from "../empresas/empresas.js";
 import { identidades } from "../identidades/identidades.js";
 import { produtos } from "../produtos/produtos.js";
+import { historicoStatusPedido } from "./historico-status-pedido.js";
 import { itensPedido } from "./itens-pedido.js";
 import { pedidos } from "./pedidos.js";
 
@@ -11,6 +12,11 @@ export const pedidosRelacoes = relations(pedidos, ({ one, many }) => ({
   cliente: one(identidades, { fields: [pedidos.clienteIdentidadeId], references: [identidades.id] }),
   conversa: one(conversas, { fields: [pedidos.conversaId], references: [conversas.id] }),
   itens: many(itensPedido),
+  historico: many(historicoStatusPedido),
+}));
+
+export const historicoStatusPedidoRelacoes = relations(historicoStatusPedido, ({ one }) => ({
+  pedido: one(pedidos, { fields: [historicoStatusPedido.pedidoId], references: [pedidos.id] }),
 }));
 
 export const itensPedidoRelacoes = relations(itensPedido, ({ one }) => ({

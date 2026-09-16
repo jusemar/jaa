@@ -6,9 +6,9 @@ import {
   QUANTIDADE_MAXIMA_POR_ITEM,
   criarPedidoEntradaSchema,
   pedidoSchema,
-  statusPedidoSchema,
   trocoEsperadoCentavos,
 } from "./pedido.ts";
+import { statusPedidoSchema } from "./status-pedido.ts";
 
 const uuid = "01a0a394-6225-75f2-b809-b2690993c512";
 const base = { idCliente: uuid, empresaIdentidadeId: uuid, conversaId: uuid, itens: [{ produtoId: uuid, quantidade: 2 }] };
@@ -55,9 +55,9 @@ describe("criarPedidoEntradaSchema", () => {
 });
 
 describe("pedido e card na conversa", () => {
-  it("status inicial é recebido e o fluxo futuro está no contrato", () => {
-    assert.deepEqual(statusPedidoSchema.options, ["recebido", "confirmado", "em_preparacao", "pronto", "saiu_para_entrega", "em_rota", "entregue"]);
-    assert.equal(statusPedidoSchema.safeParse("cancelado").success, false);
+  it("o fluxo operacional inteiro, mais o cancelamento, está no contrato", () => {
+    assert.deepEqual(statusPedidoSchema.options, ["recebido", "confirmado", "em_preparacao", "pronto", "saiu_para_entrega", "em_rota", "entregue", "cancelado"]);
+    assert.equal(statusPedidoSchema.safeParse("a_caminho").success, false);
   });
 
   it("troco esperado = valor entregue − total; sem troco, nada a devolver", () => {
@@ -73,6 +73,8 @@ describe("pedido e card na conversa", () => {
       empresa: { identidadeId: uuid, nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh" },
       cliente: { identidadeId: uuid, tipo: "pessoal", nomeExibicao: "Bruna", nomeUsuario: "bruna" },
       status: "recebido",
+      motivoCancelamento: null,
+      historico: [{ id: uuid, status: "recebido", ocorridoEm: "2026-09-15T12:00:00.000Z", motivo: null }],
       formaPagamentoNaEntrega: "dinheiro",
       trocoParaCentavos: 10000,
       totalCentavos: 9180,
@@ -82,6 +84,8 @@ describe("pedido e card na conversa", () => {
     };
     assert.equal(pedidoSchema.safeParse(pedido).success, true);
     assert.equal(pedidoSchema.safeParse({ ...pedido, itens: [] }).success, false);
+    // Pedido sem histórico não existe: "recebido" é registrado na criação.
+    assert.equal(pedidoSchema.safeParse({ ...pedido, historico: [] }).success, false);
     // O pedido público não expõe a empresa por id interno nem dados de cartão.
     assert.deepEqual(Object.keys(pedidoSchema.parse(pedido).empresa).sort(), ["identidadeId", "nome", "nomeUsuario", "slug"]);
 

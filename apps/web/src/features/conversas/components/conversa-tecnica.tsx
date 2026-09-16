@@ -37,6 +37,7 @@ import {
   receberEntrega,
   receberLeitura,
   receberMensagens,
+  atualizarPedidoNasMensagens,
   ultimaMensagemRecebida,
 } from "../lib/estados-mensagens";
 import { resumirConteudoParaPrevia, rotuloAutorResposta } from "../lib/respostas";
@@ -45,6 +46,7 @@ import { PainelCarrinho, type ConfirmacaoPedido } from "@/features/carrinho/comp
 import { useCarrinho } from "@/features/carrinho/hooks/use-carrinho";
 import { itensParaPedido, quantidadeTotal, type Carrinho } from "@/features/carrinho/lib/carrinho";
 import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
+import { useStatusPedido } from "@/features/pedidos/hooks/use-status-pedido";
 import { criarPedido, obterPedido } from "@/features/pedidos/lib/api-pedidos";
 import { AcoesMidiaDesabilitadas } from "./acoes-midia-desabilitadas";
 import { BalaoMensagem } from "./balao-mensagem";
@@ -203,6 +205,28 @@ export function ConversaTecnica({
       socket.off("connect", aoConectar);
     };
   }, [conversa.id, adicionar]);
+
+  /*
+   * Status do pedido mudou (a empresa avançou ou cancelou): o MESMO card passa a mostrar o novo
+   * estado e o pedido aberto acompanha. Não é mensagem nova — não reordena a conversa nem conta
+   * como não lida.
+   */
+  const pedidoAbertoId = pedidoAberto?.id ?? null;
+  useStatusPedido(
+    useCallback(
+      (evento) => {
+        if (evento.conversaId !== null && evento.conversaId !== conversa.id) return;
+        setReconciliada((atual) => atualizarPedidoNasMensagens(atual, evento.pedido));
+        // Timeline e motivo vêm do servidor (fonte da verdade); o evento só avisa que mudou.
+        if (pedidoAbertoId === evento.pedido.id) {
+          void obterPedido(evento.pedido.id).then((resultado) => {
+            if (resultado.ok) setPedidoAberto(resultado.dados);
+          });
+        }
+      },
+      [conversa.id, pedidoAbertoId],
+    ),
+  );
 
   // Tudo que esta conversa exibe foi recebido por este cliente: confirma o recebimento (ENTREGUE).
   useEffect(() => {

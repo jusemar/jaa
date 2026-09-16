@@ -15,7 +15,11 @@ export type PermissaoEmpresa =
   // Produtos: ver/gerenciar dados comerciais; disponibilidade separada (ex.: futuro atendente).
   | "ver-produtos"
   | "gerenciar-produtos"
-  | "alterar-disponibilidade-produto";
+  | "alterar-disponibilidade-produto"
+  // Pedidos: ver a operação e conduzi-la (avançar status, cancelar). Um futuro atendente poderá
+  // receber só "ver-pedidos" sem operar.
+  | "ver-pedidos"
+  | "gerenciar-pedidos";
 
 const PERMISSOES_POR_PAPEL: Record<PapelMembroEmpresa, ReadonlySet<PermissaoEmpresa>> = {
   proprietario: new Set([
@@ -25,6 +29,8 @@ const PERMISSOES_POR_PAPEL: Record<PapelMembroEmpresa, ReadonlySet<PermissaoEmpr
     "ver-produtos",
     "gerenciar-produtos",
     "alterar-disponibilidade-produto",
+    "ver-pedidos",
+    "gerenciar-pedidos",
   ]),
 };
 

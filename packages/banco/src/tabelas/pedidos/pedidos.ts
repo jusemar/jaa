@@ -1,11 +1,12 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, pgEnum, pgTable, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, foreignKey, index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { conversas } from "../conversas/conversas.js";
 import { participantesConversa } from "../conversas/participantes-conversa.js";
 import { empresas } from "../empresas/empresas.js";
 import { identidades } from "../identidades/identidades.js";
 
-// Fluxo operacional aprovado; nesta fase só "recebido" é usado (transições virão na etapa de acompanhamento).
+// Fluxo operacional: um passo por vez (validado pela máquina de estados), com dois terminais —
+// "entregue" (fim normal) e "cancelado" (a empresa não vai atender, com motivo).
 export const statusPedido = pgEnum("status_pedido", [
   "recebido",
   "confirmado",
@@ -14,6 +15,7 @@ export const statusPedido = pgEnum("status_pedido", [
   "saiu_para_entrega",
   "em_rota",
   "entregue",
+  "cancelado",
 ]);
 
 // Canal de origem do MESMO domínio Pedido (loja pública e app entram como novos valores).
@@ -44,6 +46,8 @@ export const pedidos = pgTable(
     // Conversa em que o pedido nasceu (null quando vier de outro canal no futuro).
     conversaId: uuid().references(() => conversas.id, { onDelete: "restrict" }),
     status: statusPedido().notNull().default("recebido"),
+    // Só existe no cancelamento (texto curto informado pela empresa); o cliente vê o motivo.
+    motivoCancelamento: text(),
     formaPagamentoNaEntrega: formaPagamentoEntrega().notNull(),
     // "Troco para quanto?": valor que o cliente pretende entregar. Só no dinheiro e só quando precisa
     // de troco (por isso > total; igual ao total é normalizado para null).
@@ -75,6 +79,11 @@ export const pedidos = pgTable(
     check(
       "pedidos_troco_por_forma",
       sql`(${tabela.formaPagamentoNaEntrega} = 'cartao' and ${tabela.trocoParaCentavos} is null) or (${tabela.formaPagamentoNaEntrega} = 'dinheiro' and (${tabela.trocoParaCentavos} is null or ${tabela.trocoParaCentavos} > ${tabela.totalCentavos}))`,
+    ),
+    // Motivo ⇔ cancelado: nem cancelamento sem motivo, nem motivo em pedido que segue vivo.
+    check(
+      "pedidos_motivo_por_status",
+      sql`(${tabela.status}::text = 'cancelado') = (${tabela.motivoCancelamento} is not null) and (${tabela.motivoCancelamento} is null or char_length(${tabela.motivoCancelamento}) between 3 and 200)`,
     ),
     check("pedidos_conversa_por_origem", sql`${tabela.origem}::text <> 'conversa' or ${tabela.conversaId} is not null`),
   ],

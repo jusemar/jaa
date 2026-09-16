@@ -4,6 +4,7 @@ import type { ContaAtual } from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
 import { MensageiroTecnico } from "@/features/conversas/components/mensageiro-tecnico";
 import { AreaEmpresas } from "@/features/empresas/components/area-empresas";
+import { AreaPedidosEmpresa } from "@/features/pedidos/components/area-pedidos-empresa";
 import { SeletorIdentidade } from "@/features/identidades/components/seletor-identidade";
 import { useIdentidadeAtiva } from "@/features/identidades/hooks/use-identidade-ativa";
 import { useConexaoRealtime } from "@/lib/realtime/use-realtime-conectado";
@@ -282,6 +283,10 @@ function AreaIdentidadesEEmpresas({ identidadePessoalId }: { identidadePessoalId
         aoSelecionar={(identidadeId) => void identidades.selecionar(identidadeId)}
       />
       <AreaEmpresas aoEmpresaCriada={() => void identidades.recarregar()} />
+      {identidades.ativa?.tipo === "empresarial" && (
+        // Operação comercial acontece agindo COMO a empresa; a API autoriza cada chamada pelo vínculo.
+        <AreaPedidosEmpresa key={identidades.ativa.empresa.id} empresaId={identidades.ativa.empresa.id} nomeEmpresa={identidades.ativa.nomeExibicao} />
+      )}
       {identidades.ativa && (
         // O mensageiro opera como a identidade ATIVA (autorizada pela API em cada chamada).
         // `key`: trocar de identidade recomeça inbox, conversa aberta, confirmações e avisos do zero.

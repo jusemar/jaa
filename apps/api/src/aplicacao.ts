@@ -7,7 +7,9 @@ import { registrarRotaTesteProtegido } from "./features/autenticacao/rotas/rotas
 import { registrarRotasCatalogoPublico } from "./features/catalogo/rotas/rotas-catalogo-publico.js";
 import { registrarRotasConversas } from "./features/conversas/rotas/rotas-conversas.js";
 import { registrarRotasEmpresas } from "./features/empresas/rotas/rotas-empresas.js";
+import { criarCanalEventosPedidos, type CanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
 import { registrarRotasPedidos } from "./features/pedidos/rotas/rotas-pedidos.js";
+import { registrarRotasPedidosEmpresa } from "./features/pedidos/rotas/rotas-pedidos-empresa.js";
 import { registrarRotasProdutosAdministracao } from "./features/produtos/rotas/rotas-produtos-administracao.js";
 import { registrarRotasIdentidades } from "./features/identidades/rotas/rotas-identidades.js";
 import type { CanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
@@ -20,11 +22,13 @@ interface DependenciasAplicacao {
   banco: Banco;
   autenticacao: Autenticacao;
   eventosMensagens: CanalEventosMensagens;
+  // Opcional: sem realtime de pedidos (ex.: teste focado em HTTP), os eventos caem num canal sem ouvintes.
+  eventosPedidos?: CanalEventosPedidos;
   logger: FastifyServerOptions["logger"];
 }
 
 // Monta a aplicação HTTP sem abrir porta, para ser usada pelo servidor e pelos testes.
-export async function criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, logger }: DependenciasAplicacao) {
+export async function criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, eventosPedidos = criarCanalEventosPedidos(), logger }: DependenciasAplicacao) {
   const servidor = Fastify({ logger });
 
   await servidor.register(cors, {
@@ -51,6 +55,7 @@ export async function criarAplicacao({ ambiente, banco, autenticacao, eventosMen
   registrarRotasProdutosAdministracao(servidor, { banco, autenticacao });
   registrarRotasCatalogoPublico(servidor, { banco, autenticacao });
   registrarRotasPedidos(servidor, { banco, autenticacao, eventosMensagens });
+  registrarRotasPedidosEmpresa(servidor, { banco, autenticacao, eventosPedidos });
   registrarRotasConversas(servidor, { banco, autenticacao });
   registrarRotasMensagens(servidor, { banco, autenticacao, eventosMensagens });
 

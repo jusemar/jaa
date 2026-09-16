@@ -13,6 +13,7 @@ import { criarAplicacao } from "../../src/aplicacao.js";
 import { criarOpcoesAutenticacao } from "../../src/features/autenticacao/autenticacao.js";
 import { criarAvisoSessoesEncerradas } from "../../src/features/autenticacao/lib/sessoes-encerradas.js";
 import { criarCanalEventosMensagens } from "../../src/features/mensagens/lib/eventos-mensagens.js";
+import { criarCanalEventosPedidos } from "../../src/features/pedidos/lib/eventos-pedidos.js";
 import { carregarAmbiente } from "../../src/lib/ambiente.js";
 import { configurarRealtime } from "../../src/realtime/configurar-realtime.js";
 
@@ -42,6 +43,7 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
   const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
   const { banco } = conexao;
   const eventosMensagens = criarCanalEventosMensagens();
+  const eventosPedidos = criarCanalEventosPedidos();
   const sessoesEncerradas = criarAvisoSessoesEncerradas();
   const opcoes = criarOpcoesAutenticacao({ banco, ambiente, entregadorOtp: { enviar: async () => {} }, sessoesEncerradas });
   const autenticacao = betterAuth({ ...opcoes, plugins: [...opcoes.plugins, testUtils({ captureOTP: true })] });
@@ -96,12 +98,13 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
   return {
     banco,
     eventosMensagens,
+    eventosPedidos,
     api,
 
     async iniciar() {
       await limpar();
-      app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, logger: false });
-      configurarRealtime(app, { autenticacao, banco, sessoesEncerradas, eventosMensagens, origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS });
+      app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, eventosPedidos, logger: false });
+      configurarRealtime(app, { autenticacao, banco, sessoesEncerradas, eventosMensagens, eventosPedidos, origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS });
       await app.listen({ port: 0, host: "127.0.0.1" });
       porta = (app.server.address() as AddressInfo).port;
     },

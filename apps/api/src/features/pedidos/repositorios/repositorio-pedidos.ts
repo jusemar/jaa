@@ -1,14 +1,18 @@
 import type { Banco } from "@jaa/banco";
-import { identidades, itensPedido, mensagens, pedidos } from "@jaa/banco/schema";
-import type { FormaPagamentoEntrega, ItemPedido, StatusPedido } from "@jaa/contratos";
-import { and, asc, eq } from "drizzle-orm";
+import { historicoStatusPedido, identidades, itensPedido, mensagens, pedidos } from "@jaa/banco/schema";
+import type { EventoStatusPedido, FormaPagamentoEntrega, ItemPedido, StatusPedido } from "@jaa/contratos";
+import { and, asc, count, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 export type PedidoRegistro = typeof pedidos.$inferSelect;
+
+export type ClientePublico = { identidadeId: string; tipo: "pessoal" | "empresarial"; nomeExibicao: string; nomeUsuario: string };
 
 export interface PedidoComItensRegistro {
   pedido: PedidoRegistro;
   itens: ItemPedido[];
-  cliente: { identidadeId: string; tipo: "pessoal" | "empresarial"; nomeExibicao: string; nomeUsuario: string };
+  cliente: ClientePublico;
+  // Append-only, em ordem cronológica (o primeiro evento é sempre "recebido").
+  historico: EventoStatusPedido[];
 }
 
 export interface ItemParaGravar {
@@ -80,6 +84,9 @@ export async function inserirPedidoComItens(
 
       await transacao.insert(itensPedido).values(dados.itens.map((item) => ({ ...item, pedidoId: pedido.id, empresaId: dados.empresaId })));
 
+      // Primeiro evento do histórico: o pedido nasce "recebido". Sem operador — quem criou foi o cliente.
+      await transacao.insert(historicoStatusPedido).values({ pedidoId: pedido.id, status: "recebido" });
+
       // Card do pedido na conversa: mensagem normal (tipo "pedido") que REFERENCIA o pedido.
       const [mensagem] = await transacao
         .insert(mensagens)
@@ -112,6 +119,19 @@ const colunasItem = {
   subtotalCentavos: itensPedido.subtotalCentavos,
 };
 
+const colunasEvento = {
+  id: historicoStatusPedido.id,
+  status: historicoStatusPedido.status,
+  ocorridoEm: historicoStatusPedido.ocorridoEm,
+  motivo: historicoStatusPedido.motivo,
+};
+
+// Auditoria (operador_usuario_id) fica fora de propósito: para o cliente quem opera é a EMPRESA.
+export async function listarHistoricoPedido(banco: Banco, pedidoId: string): Promise<EventoStatusPedido[]> {
+  const eventos = await banco.select(colunasEvento).from(historicoStatusPedido).where(eq(historicoStatusPedido.pedidoId, pedidoId)).orderBy(asc(historicoStatusPedido.id));
+  return eventos.map((evento) => ({ ...evento, ocorridoEm: evento.ocorridoEm.toISOString() }));
+}
+
 async function montarPedido(banco: Banco, pedido: PedidoRegistro | undefined): Promise<PedidoComItensRegistro | null> {
   if (!pedido) return null;
   const itens = await banco.select(colunasItem).from(itensPedido).where(eq(itensPedido.pedidoId, pedido.id)).orderBy(asc(itensPedido.nomeProduto), asc(itensPedido.id));
@@ -121,7 +141,7 @@ async function montarPedido(banco: Banco, pedido: PedidoRegistro | undefined): P
     .where(eq(identidades.id, pedido.clienteIdentidadeId))
     .limit(1);
   if (!cliente) throw new Error("Pedido sem identidade de cliente.");
-  return { pedido, itens, cliente };
+  return { pedido, itens, cliente, historico: await listarHistoricoPedido(banco, pedido.id) };
 }
 
 export async function buscarPedido(banco: Banco, pedidoId: string): Promise<PedidoComItensRegistro | null> {
@@ -137,6 +157,108 @@ export async function buscarPedidoPorTentativa(banco: Banco, clienteIdentidadeId
     .where(and(eq(pedidos.clienteIdentidadeId, clienteIdentidadeId), eq(pedidos.idCliente, idCliente)))
     .limit(1);
   return montarPedido(banco, pedido);
+}
+
+// Pedido de UMA empresa: o escopo faz parte da consulta (nunca só do id enviado pelo cliente).
+export async function buscarPedidoDaEmpresa(banco: Banco, empresaId: string, pedidoId: string): Promise<PedidoComItensRegistro | null> {
+  const [pedido] = await banco
+    .select()
+    .from(pedidos)
+    .where(and(eq(pedidos.id, pedidoId), eq(pedidos.empresaId, empresaId)))
+    .limit(1);
+  return montarPedido(banco, pedido);
+}
+
+export interface PedidoDaEmpresaRegistro {
+  id: string;
+  status: StatusPedido;
+  cliente: ClientePublico;
+  conversaId: string | null;
+  quantidadeItens: number;
+  totalCentavos: number;
+  formaPagamentoNaEntrega: FormaPagamentoEntrega;
+  trocoParaCentavos: number | null;
+  criadoEm: Date;
+}
+
+/**
+ * Lista operacional da empresa: mais recentes primeiro, ordem determinística pelo id (UUIDv7) e
+ * paginação por cursor — nunca "todos os pedidos". A quantidade de itens vem agregada (sem N+1).
+ */
+export async function listarPedidosDaEmpresa(
+  banco: Banco,
+  empresaId: string,
+  opcoes: { status: readonly StatusPedido[]; limite: number; antesDe?: string | undefined },
+): Promise<PedidoDaEmpresaRegistro[]> {
+  const filtros = [eq(pedidos.empresaId, empresaId)];
+  if (opcoes.status.length > 0) filtros.push(inArray(pedidos.status, [...opcoes.status]));
+  if (opcoes.antesDe) filtros.push(lt(pedidos.id, opcoes.antesDe));
+
+  return banco
+    .select({
+      id: pedidos.id,
+      status: pedidos.status,
+      conversaId: pedidos.conversaId,
+      totalCentavos: pedidos.totalCentavos,
+      formaPagamentoNaEntrega: pedidos.formaPagamentoNaEntrega,
+      trocoParaCentavos: pedidos.trocoParaCentavos,
+      criadoEm: pedidos.criadoEm,
+      quantidadeItens: sql<number>`(select count(*)::int from ${itensPedido} where ${itensPedido.pedidoId} = ${pedidos.id})`,
+      cliente: {
+        identidadeId: identidades.id,
+        tipo: identidades.tipo,
+        nomeExibicao: identidades.nomeExibicao,
+        nomeUsuario: identidades.nomeUsuario,
+      },
+    })
+    .from(pedidos)
+    .innerJoin(identidades, eq(identidades.id, pedidos.clienteIdentidadeId))
+    .where(and(...filtros))
+    .orderBy(desc(pedidos.id))
+    .limit(opcoes.limite);
+}
+
+export type ResultadoAlteracaoStatus = { tipo: "alterado"; pedido: PedidoRegistro } | { tipo: "status-mudou"; statusAtual: StatusPedido | null };
+
+/**
+ * Mudança de status ATÔMICA e protegida contra concorrência: o UPDATE só acontece se o status no
+ * banco ainda for `statusEsperado` (dois operadores simultâneos → um vence, o outro é recusado).
+ * Status atual e histórico mudam na mesma transação: nunca divergem.
+ */
+export async function alterarStatusPedido(
+  banco: Banco,
+  dados: { pedidoId: string; empresaId: string; statusEsperado: StatusPedido; novoStatus: StatusPedido; motivo: string | null; operadorUsuarioId: string },
+): Promise<ResultadoAlteracaoStatus> {
+  return banco.transaction(async (transacao) => {
+    const [atualizado] = await transacao
+      .update(pedidos)
+      .set({ status: dados.novoStatus, motivoCancelamento: dados.motivo })
+      .where(and(eq(pedidos.id, dados.pedidoId), eq(pedidos.empresaId, dados.empresaId), eq(pedidos.status, dados.statusEsperado)))
+      .returning();
+
+    if (!atualizado) {
+      const [atual] = await transacao
+        .select({ status: pedidos.status })
+        .from(pedidos)
+        .where(and(eq(pedidos.id, dados.pedidoId), eq(pedidos.empresaId, dados.empresaId)))
+        .limit(1);
+      return { tipo: "status-mudou", statusAtual: atual?.status ?? null };
+    }
+
+    await transacao.insert(historicoStatusPedido).values({
+      pedidoId: dados.pedidoId,
+      status: dados.novoStatus,
+      motivo: dados.motivo,
+      operadorUsuarioId: dados.operadorUsuarioId,
+    });
+
+    return { tipo: "alterado", pedido: atualizado };
+  });
+}
+
+export async function contarPedidosDaEmpresa(banco: Banco, empresaId: string): Promise<number> {
+  const [linha] = await banco.select({ total: count() }).from(pedidos).where(eq(pedidos.empresaId, empresaId));
+  return linha?.total ?? 0;
 }
 
 export type { StatusPedido };

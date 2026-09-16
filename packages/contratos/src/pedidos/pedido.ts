@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { empresaPublicaSchema } from "../catalogo/catalogo-publico.ts";
 import { participanteConversaSchema } from "../conversas/conversa.ts";
+import { eventoStatusPedidoSchema, statusPedidoSchema } from "./status-pedido.ts";
 
 /*
  * PEDIDO JAA: domínio ÚNICO, qualquer que seja a origem (hoje, a conversa com a empresa; no futuro,
@@ -12,21 +13,6 @@ import { participanteConversaSchema } from "../conversas/conversa.ts";
 export const QUANTIDADE_MAXIMA_POR_ITEM = 99;
 export const MAXIMO_ITENS_POR_PEDIDO = 30;
 export const TOTAL_MAXIMO_PEDIDO_CENTAVOS = 999_999_999;
-
-// Fluxo operacional aprovado; nesta fase o pedido nasce em "recebido" e ainda não há transições.
-export const statusPedidoSchema = z.enum(["recebido", "confirmado", "em_preparacao", "pronto", "saiu_para_entrega", "em_rota", "entregue"]);
-
-export type StatusPedido = z.infer<typeof statusPedidoSchema>;
-
-export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
-  recebido: "Pedido recebido",
-  confirmado: "Confirmado",
-  em_preparacao: "Em preparação",
-  pronto: "Pronto",
-  saiu_para_entrega: "Saiu para entrega",
-  em_rota: "Em rota",
-  entregue: "Entregue",
-};
 
 export const origemPedidoSchema = z.enum(["conversa"]);
 
@@ -98,11 +84,15 @@ export const pedidoSchema = z.object({
   // Dados públicos do cliente (a empresa precisa saber de quem é o pedido).
   cliente: participanteConversaSchema,
   status: statusPedidoSchema,
+  // Preenchido só quando a empresa cancela (o cliente vê o motivo; nunca quem operou).
+  motivoCancelamento: z.string().nullable(),
   formaPagamentoNaEntrega: formaPagamentoEntregaSchema,
   // Só no dinheiro com troco; sempre > total. Cartão nunca tem troco.
   trocoParaCentavos: z.number().int().nullable(),
   totalCentavos: z.number().int(),
   itens: z.array(itemPedidoSchema).min(1),
+  // Append-only, em ordem cronológica: só o que REALMENTE aconteceu (começa em "recebido").
+  historico: z.array(eventoStatusPedidoSchema).min(1),
   criadoEm: z.iso.datetime(),
   atualizadoEm: z.iso.datetime(),
 });
