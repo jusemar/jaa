@@ -71,6 +71,13 @@
       "when": 1789486879296,
       "tag": "0009_operador_das_mensagens",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789517773319,
+      "tag": "0010_pedidos_e_itens",
+      "breakpoints": true
     }
   ]
 }

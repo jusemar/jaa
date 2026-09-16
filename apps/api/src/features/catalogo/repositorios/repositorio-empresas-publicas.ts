@@ -33,6 +33,17 @@ export async function buscarEmpresaPublicaPorIdentidade(banco: Banco, identidade
   return empresa ?? null;
 }
 
+// Dados públicos a partir do id interno da empresa (ex.: empresa de um pedido).
+export async function buscarEmpresaPublicaPorId(banco: Banco, empresaId: string): Promise<EmpresaPublicaRegistro | null> {
+  const [empresa] = await banco
+    .select(colunasEmpresaPublica)
+    .from(identidades)
+    .innerJoin(empresas, eq(empresas.id, identidades.empresaId))
+    .where(and(eq(empresas.id, empresaId), eq(identidades.tipo, "empresarial"), empresaPublicamenteDisponivel))
+    .limit(1);
+  return empresa ?? null;
+}
+
 // Escapa curingas do ILIKE: a busca é por texto literal.
 const literal = (texto: string) => texto.replace(/[\\%_]/g, (caractere) => `\\${caractere}`);
 

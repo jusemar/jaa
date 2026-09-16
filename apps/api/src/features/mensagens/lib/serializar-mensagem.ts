@@ -13,6 +13,8 @@ export function serializarMensagem(mensagem: MensagemRegistro): Mensagem {
     tipo: mensagem.tipo,
     // Tombstone: nunca entrega conteúdo, referência ou sinal de edição (o conteúdo já foi apagado no banco).
     conteudo: excluida ? "" : mensagem.conteudo,
+    // Tombstone não entrega nem o resumo do pedido.
+    pedido: excluida ? null : mensagem.pedido,
     criadoEm: mensagem.criadoEm.toISOString(),
     editadaEm: excluida ? null : (mensagem.editadaEm?.toISOString() ?? null),
     excluidaEm: mensagem.excluidaParaTodosEm?.toISOString() ?? null,

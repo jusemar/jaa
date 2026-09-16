@@ -7,6 +7,7 @@ import { registrarRotaTesteProtegido } from "./features/autenticacao/rotas/rotas
 import { registrarRotasCatalogoPublico } from "./features/catalogo/rotas/rotas-catalogo-publico.js";
 import { registrarRotasConversas } from "./features/conversas/rotas/rotas-conversas.js";
 import { registrarRotasEmpresas } from "./features/empresas/rotas/rotas-empresas.js";
+import { registrarRotasPedidos } from "./features/pedidos/rotas/rotas-pedidos.js";
 import { registrarRotasProdutosAdministracao } from "./features/produtos/rotas/rotas-produtos-administracao.js";
 import { registrarRotasIdentidades } from "./features/identidades/rotas/rotas-identidades.js";
 import type { CanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
@@ -49,6 +50,7 @@ export async function criarAplicacao({ ambiente, banco, autenticacao, eventosMen
   registrarRotasEmpresas(servidor, { banco, autenticacao });
   registrarRotasProdutosAdministracao(servidor, { banco, autenticacao });
   registrarRotasCatalogoPublico(servidor, { banco, autenticacao });
+  registrarRotasPedidos(servidor, { banco, autenticacao, eventosMensagens });
   registrarRotasConversas(servidor, { banco, autenticacao });
   registrarRotasMensagens(servidor, { banco, autenticacao, eventosMensagens });
 

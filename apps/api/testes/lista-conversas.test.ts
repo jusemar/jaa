@@ -333,7 +333,7 @@ describe("isolamento e privacidade", () => {
     for (const item of json.conversas as ItemListaConversas[]) {
       assert.deepEqual(Object.keys(item).sort(), ["id", "naoLidas", "outraIdentidade", "tipo", "ultimaMensagem"]);
       assert.deepEqual(Object.keys(item.outraIdentidade).sort(), ["identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
-      assert.deepEqual(Object.keys(item.ultimaMensagem).sort(), ["conteudo", "conversaId", "criadoEm", "editadaEm", "estado", "excluidaEm", "id", "mensagemRespondida", "remetenteIdentidadeId", "tipo"]);
+      assert.deepEqual(Object.keys(item.ultimaMensagem).sort(), ["conteudo", "conversaId", "criadoEm", "editadaEm", "estado", "excluidaEm", "id", "mensagemRespondida", "pedido", "remetenteIdentidadeId", "tipo"]);
     }
 
     const contas = await banco.select({ id: users.id, email: users.email }).from(users).where(inArray(users.phoneNumber, TELEFONES_TESTE));

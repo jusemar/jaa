@@ -1,10 +1,23 @@
-import type { EmpresaPublica, ProdutoPublico } from "@jaa/contratos";
+"use client";
+
+import { QUANTIDADE_MAXIMA_POR_ITEM, type EmpresaPublica, type ProdutoPublico } from "@jaa/contratos";
+import { useState } from "react";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 
 // Interface TÉCNICA de CLIENTE: catálogo da empresa e detalhe do produto. Somente leitura (sem carrinho
 // nem administração). Não é o design final.
 
-export function ListaCatalogo({ empresa, produtos, aoVer }: { empresa: EmpresaPublica; produtos: ProdutoPublico[]; aoVer: (produto: ProdutoPublico) => void }) {
+export function ListaCatalogo({
+  empresa,
+  produtos,
+  aoVer,
+  aoAdicionar,
+}: {
+  empresa: EmpresaPublica;
+  produtos: ProdutoPublico[];
+  aoVer: (produto: ProdutoPublico) => void;
+  aoAdicionar?: (produto: ProdutoPublico) => void;
+}) {
   return (
     <div className="flex flex-col gap-2">
       <h3 className="text-sm font-semibold">Produtos — {empresa.nome}</h3>
@@ -20,9 +33,16 @@ export function ListaCatalogo({ empresa, produtos, aoVer }: { empresa: EmpresaPu
                   {formatarPrecoCentavos(produto.precoCentavos)}
                 </span>
               </span>
-              <button type="button" onClick={() => aoVer(produto)} className="shrink-0 rounded border px-2 py-1 text-xs">
-                Ver
-              </button>
+              <span className="flex shrink-0 items-center gap-1">
+                <button type="button" onClick={() => aoVer(produto)} className="rounded border px-2 py-1 text-xs">
+                  Ver
+                </button>
+                {aoAdicionar && (
+                  <button type="button" aria-label={`Adicionar ${produto.nome}`} onClick={() => aoAdicionar(produto)} className="rounded border px-2 py-1 text-xs">
+                    Adicionar
+                  </button>
+                )}
+              </span>
             </li>
           ))}
         </ol>
@@ -31,7 +51,17 @@ export function ListaCatalogo({ empresa, produtos, aoVer }: { empresa: EmpresaPu
   );
 }
 
-export function DetalheProdutoCatalogo({ empresa, produto, aoVoltar }: { empresa: EmpresaPublica; produto: ProdutoPublico; aoVoltar: () => void }) {
+export function DetalheProdutoCatalogo({
+  empresa,
+  produto,
+  aoVoltar,
+  aoAdicionar,
+}: {
+  empresa: EmpresaPublica;
+  produto: ProdutoPublico;
+  aoVoltar: () => void;
+  aoAdicionar?: (produto: ProdutoPublico, quantidade: number) => void;
+}) {
   return (
     <article aria-label="Detalhe do produto" className="flex flex-col gap-2 text-sm">
       <button type="button" onClick={aoVoltar} className="self-start text-xs underline">
@@ -56,6 +86,32 @@ export function DetalheProdutoCatalogo({ empresa, produto, aoVoltar }: { empresa
       <p data-disponibilidade className="text-xs text-emerald-700">
         Disponível
       </p>
+      {aoAdicionar && <AdicionarAoCarrinho produto={produto} aoAdicionar={aoAdicionar} />}
     </article>
+  );
+}
+
+// Quantidade (inteira, de 1 ao limite) antes de adicionar ao carrinho.
+function AdicionarAoCarrinho({ produto, aoAdicionar }: { produto: ProdutoPublico; aoAdicionar: (produto: ProdutoPublico, quantidade: number) => void }) {
+  const [quantidade, setQuantidade] = useState(1);
+
+  return (
+    <span className="flex items-center gap-2">
+      <label className="flex items-center gap-1 text-xs">
+        Quantidade
+        <input
+          name="quantidadeProduto"
+          type="number"
+          min={1}
+          max={QUANTIDADE_MAXIMA_POR_ITEM}
+          value={quantidade}
+          onChange={(evento) => setQuantidade(Math.min(Math.max(Math.trunc(Number(evento.target.value) || 1), 1), QUANTIDADE_MAXIMA_POR_ITEM))}
+          className="w-16 rounded border border-zinc-300 px-2 py-1"
+        />
+      </label>
+      <button type="button" onClick={() => aoAdicionar(produto, quantidade)} className="rounded bg-black px-3 py-1.5 text-xs text-white">
+        Adicionar ao carrinho
+      </button>
+    </span>
   );
 }

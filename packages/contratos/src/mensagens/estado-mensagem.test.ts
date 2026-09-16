@@ -36,7 +36,7 @@ describe("mensagemSchema", () => {
   it("exige estado", () => {
     const mensagem = { id: uuid, conversaId: uuid, remetenteIdentidadeId: uuid, tipo: "texto", conteudo: "oi", criadoEm: "2026-09-15T12:00:00.000Z" };
     assert.equal(mensagemSchema.safeParse(mensagem).success, false);
-    assert.equal(mensagemSchema.safeParse({ ...mensagem, estado: "entregue", mensagemRespondida: null, editadaEm: null, excluidaEm: null }).success, true);
+    assert.equal(mensagemSchema.safeParse({ ...mensagem, estado: "entregue", mensagemRespondida: null, editadaEm: null, excluidaEm: null, pedido: null }).success, true);
   });
 });
 

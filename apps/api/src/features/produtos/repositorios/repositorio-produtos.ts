@@ -1,7 +1,7 @@
 import type { Banco } from "@jaa/banco";
 import { produtos } from "@jaa/banco/schema";
 import type { DisponibilidadeProduto } from "@jaa/contratos";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 export type ProdutoRegistro = typeof produtos.$inferSelect;
 
@@ -71,4 +71,13 @@ export async function buscarProdutoDisponivelDaEmpresa(banco: Banco, empresaId: 
     .where(and(eq(produtos.empresaId, empresaId), eq(produtos.id, produtoId), eq(produtos.disponibilidade, "disponivel")))
     .limit(1);
   return produto ?? null;
+}
+
+// Produtos DISPONÍVEIS desta empresa entre os ids pedidos (base do recálculo de preços do pedido).
+export async function listarProdutosDisponiveisPorIds(banco: Banco, empresaId: string, produtoIds: string[]): Promise<ProdutoRegistro[]> {
+  if (produtoIds.length === 0) return [];
+  return banco
+    .select()
+    .from(produtos)
+    .where(and(eq(produtos.empresaId, empresaId), eq(produtos.disponibilidade, "disponivel"), inArray(produtos.id, produtoIds)));
 }

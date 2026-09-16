@@ -30,6 +30,7 @@ function mensagem(n: number, remetente: string, criadoEm: string, estado: Mensag
     mensagemRespondida: null,
     editadaEm: null,
     excluidaEm: null,
+    pedido: null,
   };
 }
 
@@ -190,6 +191,41 @@ describe("exclusão no balão", () => {
     const marcacao = balao(resposta);
     const referencia = marcacao.slice(marcacao.indexOf("data-referencia-resposta"), marcacao.indexOf("data-conteudo"));
     assert.ok(texto(referencia).includes("VocêMensagem excluída"));
+  });
+});
+
+describe("mensagem de pedido no balão", () => {
+  const noop = () => {};
+  const pedido = mensagem(9, EU, ha(1));
+  const comPedido: Mensagem = {
+    ...pedido,
+    tipo: "pedido",
+    conteudo: "",
+    pedido: {
+      id: "dddddddd-0000-4000-8000-000000000000",
+      status: "recebido",
+      formaPagamentoNaEntrega: "dinheiro",
+      trocoParaCentavos: null,
+      totalCentavos: 9180,
+      itens: [{ nomeProduto: "Pizza Calabresa", quantidade: 2, subtotalCentavos: 7980 }, { nomeProduto: "Refrigerante 2L", quantidade: 1, subtotalCentavos: 1200 }],
+    },
+  };
+
+  it("exibe o card do Pedido (dados do próprio pedido, não texto copiado)", () => {
+    const marcacao = balao(comPedido);
+    assert.ok(marcacao.includes('data-card-pedido="dddddddd-0000-4000-8000-000000000000"'));
+    const conteudo = texto(marcacao).replace(/ /g, " ");
+    for (const esperado of ["2× Pizza Calabresa", "Total: R$ 91,80", "Pagamento: Dinheiro na entrega", "Status: Pedido recebido", "Ver pedido"]) {
+      assert.ok(conteudo.includes(esperado), esperado);
+    }
+  });
+
+  it("card de pedido não é texto: não oferece editar nem responder", () => {
+    const marcacao = balao(comPedido, noop, noop);
+    assert.ok(!marcacao.includes(">Editar<"));
+    assert.ok(!marcacao.includes(">Responder<"));
+    // A mesma mensagem como texto continua com as ações normais.
+    assert.ok(balao(mensagem(9, EU, ha(1)), noop, noop).includes(">Editar<"));
   });
 });
 

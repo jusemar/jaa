@@ -6,7 +6,16 @@ import { obterCatalogo, obterProdutoDoCatalogo } from "../lib/api-catalogo";
 import { DetalheProdutoCatalogo, ListaCatalogo } from "./catalogo-apresentacao";
 
 // Catálogo aberto a partir de uma conversa com empresa. Usa a consulta PÚBLICA do mesmo domínio Produto.
-export function CatalogoDaEmpresa({ identidadeEmpresaId, aoFechar }: { identidadeEmpresaId: string; aoFechar: () => void }) {
+export function CatalogoDaEmpresa({
+  identidadeEmpresaId,
+  aoFechar,
+  aoAdicionarAoCarrinho,
+}: {
+  identidadeEmpresaId: string;
+  aoFechar: () => void;
+  // Ausente quando quem olha é a própria empresa (não faz pedido de si mesma).
+  aoAdicionarAoCarrinho?: (empresa: CatalogoPublico["empresa"], produto: ProdutoPublico, quantidade: number) => void;
+}) {
   const [catalogo, setCatalogo] = useState<CatalogoPublico | null>(null);
   const [produto, setProduto] = useState<ProdutoPublico | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -40,8 +49,22 @@ export function CatalogoDaEmpresa({ identidadeEmpresaId, aoFechar }: { identidad
         Fechar produtos
       </button>
       {!catalogo && !erro && <p className="text-sm text-zinc-500">Carregando produtos…</p>}
-      {catalogo && !produto && <ListaCatalogo empresa={catalogo.empresa} produtos={catalogo.produtos} aoVer={(p) => void ver(p)} />}
-      {catalogo && produto && <DetalheProdutoCatalogo empresa={catalogo.empresa} produto={produto} aoVoltar={() => setProduto(null)} />}
+      {catalogo && !produto && (
+        <ListaCatalogo
+          empresa={catalogo.empresa}
+          produtos={catalogo.produtos}
+          aoVer={(p) => void ver(p)}
+          {...(aoAdicionarAoCarrinho ? { aoAdicionar: (p: ProdutoPublico) => aoAdicionarAoCarrinho(catalogo.empresa, p, 1) } : {})}
+        />
+      )}
+      {catalogo && produto && (
+        <DetalheProdutoCatalogo
+          empresa={catalogo.empresa}
+          produto={produto}
+          aoVoltar={() => setProduto(null)}
+          {...(aoAdicionarAoCarrinho ? { aoAdicionar: (p: ProdutoPublico, quantidade: number) => aoAdicionarAoCarrinho(catalogo.empresa, p, quantidade) } : {})}
+        />
+      )}
       {erro && (
         <p role="alert" className="text-sm text-red-600">
           {erro}

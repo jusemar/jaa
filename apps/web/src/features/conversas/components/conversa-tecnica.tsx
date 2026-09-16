@@ -14,6 +14,8 @@ import {
   type ExclusaoParaMim,
   type Mensagem,
   type ParticipanteConversa,
+  type Pedido,
+  type TipoIdentidade,
 } from "@jaa/contratos";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
@@ -39,6 +41,11 @@ import {
 } from "../lib/estados-mensagens";
 import { resumirConteudoParaPrevia, rotuloAutorResposta } from "../lib/respostas";
 import { CatalogoDaEmpresa } from "@/features/catalogo/components/catalogo-da-empresa";
+import { PainelCarrinho, type ConfirmacaoPedido } from "@/features/carrinho/components/painel-carrinho";
+import { useCarrinho } from "@/features/carrinho/hooks/use-carrinho";
+import { itensParaPedido, quantidadeTotal, type Carrinho } from "@/features/carrinho/lib/carrinho";
+import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
+import { criarPedido, obterPedido } from "@/features/pedidos/lib/api-pedidos";
 import { AcoesMidiaDesabilitadas } from "./acoes-midia-desabilitadas";
 import { BalaoMensagem } from "./balao-mensagem";
 import { BarraContextoCompositor } from "./barra-contexto-compositor";
@@ -51,17 +58,23 @@ import { PreviaRespostaCompositor, type RespostaEmComposicao } from "./previa-re
 // A referência de resposta faz parte da tentativa: reenviar reutiliza idCliente, conteúdo e referência.
 type TentativaEnvio = { idCliente: string; conteudo: string; mensagemRespondidaId?: string };
 
+// Pedido a criar; reenviar a mesma confirmação reutiliza idCliente (idempotência imposta pela API).
+type TentativaPedido = { idCliente: string; assinatura: string };
+
 // Aberta pela lista ou pelo @usuario; a autorização de leitura/envio continua sendo da API.
 export type ConversaAberta = { id: string; outraIdentidade: ParticipanteConversa };
 
 export function ConversaTecnica({
   identidadeId,
+  tipoIdentidade = "pessoal",
   conversa,
   aoMensagemConfirmada,
   aoMensagemAtualizada,
   aoMensagemExcluidaParaMim,
 }: {
   identidadeId: string;
+  // Só identidade PESSOAL compra; a empresa participa da conversa, não faz pedido de si mesma.
+  tipoIdentidade?: TipoIdentidade;
   conversa: ConversaAberta;
   // A resposta HTTP do envio também atualiza a lista, mesmo sem realtime.
   aoMensagemConfirmada: (mensagem: Mensagem) => void;
@@ -90,6 +103,17 @@ export function ConversaTecnica({
   const [ocupado, setOcupado] = useState(false);
   // Catálogo (consulta de cliente) aberto dentro da conversa com uma empresa.
   const [catalogoAberto, setCatalogoAberto] = useState(false);
+  // Carrinho + pedido: só existem quando uma pessoa conversa com uma empresa.
+  const podeComprar = tipoIdentidade === "pessoal" && conversa.outraIdentidade.tipo === "empresarial";
+  const { carrinho, adicionar: adicionarAoCarrinho, substituirPorEmpresa, alterarQuantidade, remover, limpar } = useCarrinho(identidadeId);
+  const [carrinhoAberto, setCarrinhoAberto] = useState(false);
+  // Carrinho aberto de OUTRA empresa: pergunta antes de substituir; nunca troca em silêncio.
+  const [trocaDeEmpresa, setTrocaDeEmpresa] = useState<{ empresa: Carrinho["empresa"]; produto: Parameters<typeof adicionarAoCarrinho>[1]; quantidade: number; nomeAtual: string } | null>(null);
+  const [tentativaPedido, setTentativaPedido] = useState<TentativaPedido | null>(null);
+  const [enviandoPedido, setEnviandoPedido] = useState(false);
+  const [erroPedido, setErroPedido] = useState<string | null>(null);
+  const [avisoPedido, setAvisoPedido] = useState<string | null>(null);
+  const [pedidoAberto, setPedidoAberto] = useState<Pedido | null>(null);
   const atividade = useAtividadeConversa({ conversaId: conversa.id, outraIdentidadeId: conversa.outraIdentidade.identidadeId });
   const listaMensagensRef = useRef<HTMLOListElement>(null);
   const ultimaMensagemId = mensagens.at(-1)?.id;
@@ -332,7 +356,76 @@ export function ConversaTecnica({
     campoMensagemRef.current?.focus();
   }
 
+  function adicionarProduto(empresa: Carrinho["empresa"], produto: Parameters<typeof adicionarAoCarrinho>[1], quantidade: number) {
+    setErroPedido(null);
+    setAvisoPedido(null);
+    const resultado = adicionarAoCarrinho(empresa, produto, quantidade);
+    if (resultado.tipo === "outra-empresa") {
+      setTrocaDeEmpresa({ empresa, produto, quantidade, nomeAtual: resultado.empresaAtual.nome });
+      return;
+    }
+    if (resultado.tipo === "limite-de-itens") {
+      setErroPedido("O carrinho atingiu o limite de produtos diferentes.");
+      return;
+    }
+    setAvisoPedido(`${produto.nome} adicionado ao carrinho.`);
+    setCarrinhoAberto(true);
+  }
+
+  function confirmarTrocaDeEmpresa() {
+    if (!trocaDeEmpresa) return;
+    substituirPorEmpresa(trocaDeEmpresa.empresa, trocaDeEmpresa.produto, trocaDeEmpresa.quantidade);
+    setTrocaDeEmpresa(null);
+    setCarrinhoAberto(true);
+  }
+
+  async function confirmarPedido(confirmacao: ConfirmacaoPedido) {
+    if (!carrinho) return;
+    const itens = itensParaPedido(carrinho);
+    const assinatura = JSON.stringify({ itens, confirmacao });
+    // Mesmo conteúdo = mesma tentativa: um reenvio após falha de rede não cria um segundo pedido.
+    const tentativa = tentativaPedido && tentativaPedido.assinatura === assinatura ? tentativaPedido : { idCliente: crypto.randomUUID(), assinatura };
+    setTentativaPedido(tentativa);
+    setErroPedido(null);
+    setAvisoPedido(null);
+    setEnviandoPedido(true);
+    try {
+      const resultado = await criarPedido({
+        idCliente: tentativa.idCliente,
+        empresaIdentidadeId: conversa.outraIdentidade.identidadeId,
+        conversaId: conversa.id,
+        itens,
+        pagamento:
+          confirmacao.forma === "dinheiro"
+            ? { forma: "dinheiro", ...(confirmacao.trocoParaCentavos === null ? {} : { trocoParaCentavos: confirmacao.trocoParaCentavos }) }
+            : { forma: "cartao" },
+      });
+      if (!resultado.ok) {
+        // Falha de rede/servidor: mantém a tentativa para reenviar com o mesmo idCliente.
+        setErroPedido(resultado.status === 0 || resultado.status >= 500 ? "Falha ao enviar o pedido. Confirme de novo para tentar sem duplicar." : resultado.mensagem);
+        return;
+      }
+      limpar();
+      setTentativaPedido(null);
+      setCarrinhoAberto(false);
+      setAvisoPedido("Pedido enviado para a empresa.");
+    } finally {
+      setEnviandoPedido(false);
+    }
+  }
+
+  async function abrirPedido(pedidoId: string) {
+    setErroPedido(null);
+    const resultado = await obterPedido(pedidoId);
+    if (!resultado.ok) {
+      setErroPedido(resultado.mensagem);
+      return;
+    }
+    setPedidoAberto(resultado.dados);
+  }
+
   const outro = conversa.outraIdentidade;
+  const itensNoCarrinho = quantidadeTotal(carrinho);
 
   return (
     <section aria-label="Conversa" className="flex flex-col gap-3">
@@ -342,13 +435,63 @@ export function ConversaTecnica({
         digitando={atividade.outraDigitando}
         acoes={
           outro.tipo === "empresarial" && (
-            <button type="button" onClick={() => setCatalogoAberto((aberto) => !aberto)} className="shrink-0 rounded border px-2 py-1 text-xs">
-              {catalogoAberto ? "Ocultar produtos" : "Ver produtos"}
-            </button>
+            <span className="flex shrink-0 items-center gap-1">
+              <button type="button" onClick={() => setCatalogoAberto((aberto) => !aberto)} className="rounded border px-2 py-1 text-xs">
+                {catalogoAberto ? "Ocultar produtos" : "Ver produtos"}
+              </button>
+              {podeComprar && itensNoCarrinho > 0 && (
+                <button type="button" data-abrir-carrinho onClick={() => setCarrinhoAberto((aberto) => !aberto)} className="rounded border px-2 py-1 text-xs">
+                  {carrinhoAberto ? "Ocultar carrinho" : `Carrinho (${itensNoCarrinho})`}
+                </button>
+              )}
+            </span>
           )
         }
       />
-      {catalogoAberto && outro.tipo === "empresarial" && <CatalogoDaEmpresa identidadeEmpresaId={outro.identidadeId} aoFechar={() => setCatalogoAberto(false)} />}
+      {catalogoAberto && outro.tipo === "empresarial" && (
+        <CatalogoDaEmpresa
+          identidadeEmpresaId={outro.identidadeId}
+          aoFechar={() => setCatalogoAberto(false)}
+          {...(podeComprar ? { aoAdicionarAoCarrinho: adicionarProduto } : {})}
+        />
+      )}
+      {trocaDeEmpresa && (
+        <div role="alertdialog" aria-label="Trocar de empresa" className="flex flex-col gap-2 rounded border border-amber-500 bg-amber-50 p-3 text-sm">
+          <p>
+            Seu carrinho tem produtos de {trocaDeEmpresa.nomeAtual}. Um pedido é de uma empresa só. Substituir pelo carrinho de {trocaDeEmpresa.empresa.nome}?
+          </p>
+          <span className="flex gap-2">
+            <button type="button" onClick={confirmarTrocaDeEmpresa} className="rounded bg-black px-3 py-1.5 text-xs text-white">
+              Substituir carrinho
+            </button>
+            <button type="button" onClick={() => setTrocaDeEmpresa(null)} className="rounded border px-3 py-1.5 text-xs">
+              Manter carrinho atual
+            </button>
+          </span>
+        </div>
+      )}
+      {carrinhoAberto && carrinho && carrinho.itens.length > 0 && (
+        <PainelCarrinho
+          carrinho={carrinho}
+          enviando={enviandoPedido}
+          erro={erroPedido}
+          aoAlterarQuantidade={alterarQuantidade}
+          aoRemover={remover}
+          aoConfirmar={(confirmacao) => void confirmarPedido(confirmacao)}
+          aoFechar={() => setCarrinhoAberto(false)}
+        />
+      )}
+      {pedidoAberto && <DetalhePedido pedido={pedidoAberto} aoFechar={() => setPedidoAberto(null)} />}
+      {avisoPedido && (
+        <p role="status" className="text-sm text-emerald-700">
+          {avisoPedido}
+        </p>
+      )}
+      {erroPedido && !carrinhoAberto && (
+        <p role="alert" className="text-sm text-red-600">
+          {erroPedido}
+        </p>
+      )}
       <div className="flex flex-col gap-2">
         {proximoCursor && (
           <button type="button" className="self-start text-sm underline" onClick={() => void carregarAnteriores()}>
@@ -367,6 +510,7 @@ export function ConversaTecnica({
               aoEditar={iniciarEdicao}
               aoExcluirParaMim={(alvo) => void excluirParaMim(alvo)}
               aoExcluirParaTodos={(alvo) => void excluirParaTodos(alvo)}
+              aoAbrirPedido={(pedidoId) => void abrirPedido(pedidoId)}
             />
           ))}
         </ol>

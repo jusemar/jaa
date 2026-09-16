@@ -26,6 +26,7 @@ function mensagem(conversa: string, n: number, conteudo = `m${n}`): Mensagem {
     mensagemRespondida: null,
     editadaEm: null,
     excluidaEm: null,
+    pedido: null,
   };
 }
 

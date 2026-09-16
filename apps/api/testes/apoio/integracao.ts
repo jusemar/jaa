@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { criarConexaoBanco } from "@jaa/banco";
-import { conversas, empresas, identidades, membrosEmpresa, mensagens, participantesConversa, produtos, rateLimits, users, verifications } from "@jaa/banco/schema";
+import { conversas, empresas, identidades, membrosEmpresa, mensagens, participantesConversa, pedidos, produtos, rateLimits, users, verifications } from "@jaa/banco/schema";
 import { CABECALHO_IDENTIDADE_ATUANTE, type Mensagem, type PaginaConversas, type PaginaMensagens } from "@jaa/contratos";
 import { betterAuth } from "better-auth";
 import { testUtils } from "better-auth/plugins";
@@ -75,11 +75,14 @@ export function criarAmbienteIntegracao({ telefones, prefixoIp }: { telefones: s
       .select({ id: participantesConversa.conversaId })
       .from(participantesConversa)
       .where(inArray(participantesConversa.identidadeId, identidadesTeste));
+    // Ordem: mensagens (referenciam pedidos) → pedidos (itens em cascata) → conversas → produtos → …
     await banco.delete(mensagens).where(inArray(mensagens.conversaId, conversasTeste));
+    await banco.delete(pedidos).where(inArray(pedidos.clienteIdentidadeId, identidadesTeste));
     await banco.delete(conversas).where(inArray(conversas.id, conversasTeste));
     // Empresas das contas de teste: identidade empresarial primeiro (FK), depois a empresa (membros em cascata).
     const idsEmpresas = (await empresasTeste).map((linha) => linha.id);
     if (idsEmpresas.length > 0) {
+      await banco.delete(pedidos).where(inArray(pedidos.empresaId, idsEmpresas));
       await banco.delete(produtos).where(inArray(produtos.empresaId, idsEmpresas));
       await banco.delete(identidades).where(inArray(identidades.empresaId, idsEmpresas));
       await banco.delete(empresas).where(inArray(empresas.id, idsEmpresas));

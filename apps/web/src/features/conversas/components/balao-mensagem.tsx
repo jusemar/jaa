@@ -1,6 +1,7 @@
 import type { EstadoMensagem, Mensagem } from "@jaa/contratos";
 import { formatarDataHoraCompleta, formatarHorarioMensagem } from "../lib/horarios";
 import { rotuloAutorResposta } from "../lib/respostas";
+import { CardPedido } from "@/features/pedidos/components/apresentacao-pedido";
 import { MenuMensagem, type AcaoMensagem } from "./menu-mensagem";
 import { ReferenciaResposta } from "./referencia-resposta";
 
@@ -18,6 +19,7 @@ export function BalaoMensagem({
   aoEditar,
   aoExcluirParaMim,
   aoExcluirParaTodos,
+  aoAbrirPedido,
 }: {
   mensagem: Mensagem;
   identidadeAtualId: string;
@@ -26,20 +28,23 @@ export function BalaoMensagem({
   aoEditar?: (mensagem: Mensagem) => void;
   aoExcluirParaMim?: (mensagem: Mensagem) => void;
   aoExcluirParaTodos?: (mensagem: Mensagem) => void;
+  aoAbrirPedido?: (pedidoId: string) => void;
 }) {
   const propria = mensagem.remetenteIdentidadeId === identidadeAtualId;
   const excluida = mensagem.excluidaEm !== null;
   const referencia = excluida ? null : mensagem.mensagemRespondida;
   // Só o autor edita ou exclui para todos; tombstone só pode ser escondido "para mim" (a API também impõe).
   const acoes: AcaoMensagem[] = [];
-  if (propria && !excluida && aoEditar) acoes.push({ rotulo: "Editar", executar: () => aoEditar(mensagem) });
+  const ehPedido = mensagem.tipo === "pedido" && mensagem.pedido !== null;
+  // Card de pedido não é texto: não se edita nem se responde (o pedido em si tem sua própria tela).
+  if (propria && !excluida && !ehPedido && aoEditar) acoes.push({ rotulo: "Editar", executar: () => aoEditar(mensagem) });
   if (aoExcluirParaMim) acoes.push({ rotulo: "Excluir para mim", executar: () => aoExcluirParaMim(mensagem), perigosa: true });
   if (propria && !excluida && aoExcluirParaTodos) {
     acoes.push({ rotulo: "Excluir para todos", executar: () => aoExcluirParaTodos(mensagem), perigosa: true });
   }
   const menu = <MenuMensagem acoes={acoes} />;
 
-  const acaoResponder = aoResponder && !excluida && (
+  const acaoResponder = aoResponder && !excluida && !ehPedido && (
     <button
       type="button"
       aria-label="Responder"
@@ -77,6 +82,8 @@ export function BalaoMensagem({
           <span data-conteudo-excluido className="italic text-zinc-500">
             Mensagem excluída
           </span>
+        ) : ehPedido && mensagem.pedido ? (
+          <CardPedido pedido={mensagem.pedido} aoAbrir={(pedidoId) => aoAbrirPedido?.(pedidoId)} />
         ) : (
           <span data-conteudo className="whitespace-pre-wrap [overflow-wrap:anywhere]">
             {mensagem.conteudo}

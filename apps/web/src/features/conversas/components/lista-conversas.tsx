@@ -75,6 +75,11 @@ export function ListaConversas(props: {
                   <span data-previa className="truncate text-zinc-600">
                     {ultimaMensagem.excluidaEm ? (
                       <span className="italic">Mensagem excluída</span>
+                    ) : ultimaMensagem.tipo === "pedido" ? (
+                      <>
+                        {autor}
+                        <span>Pedido</span>
+                      </>
                     ) : (
                       <>
                         {autor}

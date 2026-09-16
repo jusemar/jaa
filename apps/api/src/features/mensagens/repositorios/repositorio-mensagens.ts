@@ -1,13 +1,16 @@
 import type { Banco } from "@jaa/banco";
 import { mensagens, mensagensExcluidasParaIdentidade } from "@jaa/banco/schema";
-import type { EstadoMensagem, MensagemRespondida } from "@jaa/contratos";
+import type { EstadoMensagem, MensagemRespondida, ResumoPedido } from "@jaa/contratos";
 import { and, desc, eq, getTableColumns, isNull, lt, sql, type SQL } from "drizzle-orm";
+import { resumoPedidoSql } from "../../pedidos/repositorios/resumo-pedido-sql.js";
 import { estadoMensagemSql } from "./estado-mensagem-sql.js";
 import { mensagemRespondidaSql, referenciaNaConversaSql } from "./mensagem-respondida-sql.js";
 
 export type MensagemRegistro = typeof mensagens.$inferSelect & {
   estado: EstadoMensagem;
   mensagemRespondida: MensagemRespondida | null;
+  // Card de pedido: resumo lido do Pedido referenciado (null nas mensagens de texto).
+  pedido: ResumoPedido | null;
 };
 
 // Colunas da mensagem + dados derivados (estado e referência da resposta), usadas em toda leitura.
@@ -15,6 +18,7 @@ export const colunasMensagemCompleta = {
   ...getTableColumns(mensagens),
   estado: estadoMensagemSql(),
   mensagemRespondida: mensagemRespondidaSql(),
+  pedido: resumoPedidoSql(),
 };
 
 const CODIGO_VIOLACAO_FK = "23503";
@@ -76,7 +80,7 @@ export async function inserirMensagemTexto(
     .onConflictDoNothing({ target: [mensagens.remetenteIdentidadeId, mensagens.idCliente] })
     .returning();
 
-  return mensagem ? { ...mensagem, estado: "enviada", mensagemRespondida } : null;
+  return mensagem ? { ...mensagem, estado: "enviada", mensagemRespondida, pedido: null } : null;
 }
 
 export async function buscarMensagemPorIdCliente(

@@ -114,6 +114,7 @@ export function MensageiroTecnico({ identidadeId, tipoIdentidade = "pessoal" }: 
         <ConversaTecnica
           key={conversaAberta.id}
           identidadeId={identidadeId}
+          tipoIdentidade={tipoIdentidade}
           conversa={conversaAberta}
           aoMensagemConfirmada={lista.registrarMensagem}
           aoMensagemAtualizada={lista.registrarAtualizacao}

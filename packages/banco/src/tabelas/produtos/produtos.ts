@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { empresas } from "../empresas/empresas.js";
 
 // "indisponivel": continua existindo e administrável; futuramente não entra em pedidos novos.
@@ -36,6 +36,8 @@ export const produtos = pgTable(
   (tabela) => [
     // Listagem administrativa (e futura consulta pública) sempre filtra por empresa.
     index("produtos_empresa_id_criado_em_idx").on(tabela.empresaId, tabela.criadoEm),
+    // Alvo da FK composta dos itens de pedido: o produto do item é da mesma empresa do pedido.
+    uniqueIndex("produtos_empresa_id_id_unico").on(tabela.empresaId, tabela.id),
     // Mantidos em sincronia com os schemas de @jaa/contratos (produtos/produto.ts).
     check("produtos_nome_valido", sql`char_length(${tabela.nome}) between 1 and 120 and ${tabela.nome} = btrim(${tabela.nome})`),
     check(

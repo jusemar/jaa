@@ -31,9 +31,9 @@ O Jaa **não deve nascer como marketplace com um chat anexado**. O núcleo do pr
 
 ## Estado atual
 
-A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa") e **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa").
+A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa") e **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa").
 
-Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, carrinho, pedidos, pagamento, logística, rastreamento, entregadores, loja pública funcional, administração de produtos no Mobile, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
+Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, **transições de status do pedido** (o pedido nasce e permanece em `recebido`), pagamento dentro do Jaa, logística, rastreamento, entregadores, loja pública funcional, administração de produtos no Mobile, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
 
 ## FASE 1: MENSAGERIA
 
@@ -122,7 +122,7 @@ O acompanhamento deverá permitir a evolução de estados como:
 PEDIDO RECEBIDO → CONFIRMADO → EM PREPARAÇÃO → PRONTO → SAIU PARA ENTREGA → EM ROTA → ENTREGUE
 ```
 
-Esse fluxo será refinado na etapa de pedidos. Pedidos poderão surgir da conversa ou da loja pública, sempre no mesmo domínio.
+A criação do pedido pela conversa já está implementada (seção 7, "Carrinho e Pedido Jaa"): o enum de status já modela o fluxo inteiro, mas **nenhuma transição existe ainda**. Pedidos poderão surgir da conversa ou da loja pública, sempre no mesmo domínio.
 
 Quando a modalidade logística permitir, o acompanhamento poderá incluir a localização do entregador no mapa em tempo real e a previsão de chegada (seção 16).
 
@@ -135,7 +135,7 @@ Ao criar o pedido (etapa futura), o cliente informa a **forma pretendida de paga
 - **DINHEIRO**: pode informar **"troco para"** (ex.: total R$ 9,00, troco para R$ 10,00) para a empresa/entregador levar troco. O valor usa a mesma representação monetária segura (centavos inteiros);
 - **CARTÃO**: registra apenas "Pagamento na entrega: Cartão". **Nunca** pedir número, validade, CVV, senha, token ou qualquer credencial financeira; o pagamento é presencial, com a solução da própria empresa/entregador.
 
-Nada disso existe no banco ainda: será modelado junto com o domínio Pedido.
+Isso já está modelado e implementado na criação do pedido (seção 7, "Carrinho e Pedido Jaa").
 
 ---
 
@@ -544,12 +544,11 @@ notificacoes
 bloqueios
 ```
 
+Domínios já existentes da Fase 2: `empresas`, `catalogo`, `produtos` e `pedidos` (criação do pedido na conversa).
+
 Domínios futuros poderão incluir:
 
 ```text
-organizacoes
-catalogo
-pedidos
 pagamentos
 entregas
 localizacao
@@ -901,7 +900,40 @@ O compositor mostra Foto, Vídeo, Áudio e Documento **desabilitados** ("Em brev
 - mesmo domínio Produto da administração (nada é copiado para "produto do chat"); a futura `/loja/<slug>` reusa a mesma consulta, resolvendo a empresa pelo slug;
 - `GET /descoberta/empresas?busca=` é uma descoberta TÉCNICA autenticada e temporária (não é o "Encontrar"); lista só empresas ativas. Pendente antes de abrir ao público: rate limit e cache.
 
-Web: "Agindo como" passou a guiar o mensageiro; na conversa com empresa há **Ver produtos** (lista → detalhe, com **imagem "Em breve" desabilitada**), sem carrinho. **Mobile**: o fluxo de cliente (conversar com empresa e ver catálogo) depende da autenticação mobile, que ainda não existe; contratos e API já são reutilizáveis por ele, e o Mobile continua sem qualquer administração de produtos.
+Web: "Agindo como" passou a guiar o mensageiro; na conversa com empresa há **Ver produtos** (lista → detalhe, com **imagem "Em breve" desabilitada**) e, para o cliente, **Adicionar ao carrinho** (seção "Carrinho e Pedido Jaa"). **Mobile**: o fluxo de cliente (conversar com empresa e ver catálogo) depende da autenticação mobile, que ainda não existe; contratos e API já são reutilizáveis por ele, e o Mobile continua sem qualquer administração de produtos.
+
+## Carrinho e Pedido Jaa (Fase 2 — criação do pedido na conversa)
+
+Fluxo implementado: cliente → conversa com a empresa → **Ver produtos** → adiciona ao carrinho (com quantidade) → revisa o carrinho → informa como vai pagar **na entrega** → confirma → **Pedido Jaa criado** → a empresa recebe o pedido na própria conversa.
+
+**1. Um único domínio de Pedido.** Não existem "pedido do chat", "pedido da loja" nem "pedido do app": tabelas `pedidos` + `itens_pedido` servem a todas as origens. A origem é **atributo** (`origem`, hoje só `conversa`, com `conversa_id` exigido por CHECK), não um sistema paralelo. A loja pública e o feed entrarão como novas origens, sem domínio novo.
+
+**2. Pagamento é NA ENTREGA; o Jaa não processa pagamento.** Nenhum gateway, cobrança, split, carteira ou saldo. O pedido só registra a **instrução** de pagamento combinada entre cliente e empresa.
+
+**3. Formas: DINHEIRO ou CARTÃO na entrega** (`forma_pagamento_entrega`). Nada além disso nesta etapa (sem Pix, sem online).
+
+**4. Troco só existe no DINHEIRO.** `troco_para_centavos` é preenchido apenas quando o cliente diz que precisa de troco; a pergunta "Troco para quanto?" só aparece no dinheiro e só depois dessa escolha.
+
+**5. Sem troco quando não é preciso.** Dinheiro sem troco grava `NULL`. Troco **igual** ao total é normalizado para `NULL` (não é troco); troco **menor** que o total é recusado (`PAGAMENTO_INVALIDO`).
+
+**6. CARTÃO nunca tem troco.** O contrato do cartão é `.strict()` (troco no corpo = 400) e o CHECK `pedidos_troco_por_forma` impede a linha no banco.
+
+**7. Nenhuma credencial financeira.** É proibido pedir, trafegar, exibir ou armazenar número, nome impresso, validade, CVV, senha, token ou qualquer dado de cartão. O pagamento é presencial, com a solução da própria empresa.
+
+**8. O servidor é a autoridade do dinheiro.** O cliente envia só `produtoId` + `quantidade`; a API relê preço e disponibilidade no banco, recalcula subtotais e total em **centavos inteiros** e recusa produto indisponível, de outra empresa, inexistente ou repetido (`ITENS_INVALIDOS`). O carrinho do navegador é interface: nunca autoridade comercial. Segunda linha de defesa no banco: CHECK `itens_pedido_subtotal_coerente` (`subtotal = preço × quantidade`) e limites de quantidade/preço/total.
+
+**9. Itens são SNAPSHOT.** `itens_pedido` guarda nome, preço unitário, quantidade e subtotal **no momento do pedido**; mudar o preço do produto depois não altera pedido nenhum. `produto_id` é referência auxiliar (`ON DELETE SET NULL`), não a fonte do valor.
+
+**10. O carrinho é de UMA empresa só.** Produto de outra empresa exige **substituição explícita** confirmada pelo cliente — nunca troca silenciosa. O carrinho é persistido por identidade no navegador (sobrevive a recarregar e navegar) e some ao confirmar o pedido.
+
+Modelagem e garantias:
+
+- `pedidos`: `empresa_id`, `cliente_identidade_id`, `conversa_id` (FK composta `(conversa_id, cliente_identidade_id)` → `participantes_conversa`: o banco exige que o cliente participe da conversa), `status` (`status_pedido` já com `recebido → confirmado → em_preparacao → pronto → saiu_para_entrega → em_rota → entregue`; **default `recebido`, sem nenhuma transição implementada**), forma de pagamento, troco, `total_centavos`, `id_cliente`;
+- **criação atômica**: pedido + itens + mensagem do card em **uma transação**; ou tudo existe, ou nada existe (evento realtime só depois do commit);
+- **idempotência** igual à das mensagens: `id_cliente` único por identidade (`pedidos_id_cliente_por_identidade_unico`). Repetir a mesma tentativa devolve **200** com o mesmo pedido (sem segundo card, sem segundo evento); a mesma chave com conteúdo diferente é **409 `ID_CLIENTE_REUTILIZADO`**;
+- **card na conversa sem duplicar dados**: `mensagens.tipo` ganhou `pedido` e a coluna `pedido_id` (CHECK `mensagens_pedido_por_tipo`: tipo `pedido` ⇔ `pedido_id` presente, conteúdo vazio). O card lê o Pedido real (resumo em subconsulta JSON), então realtime, não lidas, notificações e exclusão continuam valendo sem regra nova. Card não é texto: não se edita nem responde;
+- **API**: `POST /pedidos` (só identidade **pessoal**; empresarial = 403) e `GET /pedidos/:pedidoId`, visível **apenas** ao cliente dono e a quem opera a empresa do pedido — qualquer outra identidade recebe 404 (não revela existência);
+- Web (técnica): "Adicionar" na lista/detalhe do catálogo, painel **Carrinho** (quantidade, remover, total, forma de pagamento, troco), confirmação, **card do pedido** no balão e **Ver pedido**. **Mobile**: nada de carrinho/pedido ainda (depende da autenticação mobile); contratos e API são reutilizáveis por ele.
 
 ## Presença e digitando (Fase 1)
 

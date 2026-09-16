@@ -44,6 +44,7 @@ describe("itemListaConversasSchema", () => {
       conteudo: "oi",
       criadoEm: "2026-09-15T12:00:00.000Z",
       estado: "enviada",
+      pedido: null,
       mensagemRespondida: null,
       editadaEm: null,
       excluidaEm: null,
