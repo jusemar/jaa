@@ -4,7 +4,9 @@ import {
   EVENTO_ENTREGA_ATUALIZADA,
   EVENTO_SAIDA_ATUALIZADA,
   EVENTO_SITUACAO_OPERACIONAL,
+  EVENTO_VINCULO_ENTREGADOR,
   eventoSaidaAtualizadaSchema,
+  eventoVinculoEntregadorSchema,
   eventoSituacaoOperacionalSchema,
   paradasAtivas,
   ROTULO_PAGAMENTO_ENTREGA,
@@ -157,6 +159,24 @@ export function AreaMinhasEntregas() {
       const atualizada = resultado.data.saida;
       setSaidas((atuais) => (atuais.some((item) => item.id === atualizada.id) ? atuais.map((item) => (item.id === atualizada.id ? atualizada : item)) : [atualizada, ...atuais]));
     };
+    /*
+     * Convite/vínculo de entregador mudou (a empresa convidou, ativou ou desativou). É o que faz o
+     * convite aparecer na hora — antes ele era gravado e ninguém avisava quem estava conectado.
+     */
+    const aoVinculo = (evento: unknown) => {
+      const resultado = eventoVinculoEntregadorSchema.safeParse(evento);
+      if (!resultado.success) return;
+      const { convite, vinculo } = resultado.data;
+      setConvites((atuais) => {
+        const semEle = atuais.filter((item) => item.id !== (convite?.id ?? vinculo?.id));
+        return convite ? [convite, ...semEle] : semEle;
+      });
+      setVinculos((atuais) => {
+        const semEle = atuais.filter((item) => item.id !== vinculo?.id);
+        return vinculo ? [vinculo, ...semEle] : semEle;
+      });
+    };
+
     // Minha própria situação mudou (entrei/saí da base, a fila andou, peguei uma saída).
     const aoAtualizarSituacao = (evento: unknown) => {
       const resultado = eventoSituacaoOperacionalSchema.safeParse(evento);
@@ -165,10 +185,12 @@ export function AreaMinhasEntregas() {
     socket.on(EVENTO_ENTREGA_ATUALIZADA, aoAtualizar);
     socket.on(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
     socket.on(EVENTO_SITUACAO_OPERACIONAL, aoAtualizarSituacao);
+    socket.on(EVENTO_VINCULO_ENTREGADOR, aoVinculo);
     return () => {
       socket.off(EVENTO_ENTREGA_ATUALIZADA, aoAtualizar);
       socket.off(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
       socket.off(EVENTO_SITUACAO_OPERACIONAL, aoAtualizarSituacao);
+      socket.off(EVENTO_VINCULO_ENTREGADOR, aoVinculo);
     };
   }, [aplicarSituacao]);
 
@@ -186,26 +208,12 @@ export function AreaMinhasEntregas() {
   if (entregas.length === 0 && convites.length === 0 && vinculos.length === 0 && saidas.length === 0) return null;
 
   return (
-    <section aria-label="Minhas entregas" className="flex flex-col gap-3 rounded border border-zinc-200 p-3">
-      <h2 className="text-base font-semibold">Minhas entregas</h2>
+    <div className="flex flex-col gap-3">
+      {/* CONVITES PARA ENTREGAR: proposta de vínculo — não é trabalho atribuído. */}
+      <ConvitesParaEntregar convites={convites} aoResponder={(convite, resposta) => void responder(convite, resposta)} />
 
-      {convites.length > 0 && (
-        <ol aria-label="Convites de entrega" className="flex flex-col gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm">
-          {convites.map((convite) => (
-            <li key={convite.id} data-convite={convite.id} className="flex flex-wrap items-center justify-between gap-2">
-              <span>{convite.empresa.nome} convidou você para ser entregador.</span>
-              <span className="flex gap-2">
-                <button type="button" data-aceitar-convite onClick={() => void responder(convite, "aceitar")} className="rounded bg-black px-2 py-1 text-xs text-white">
-                  Aceitar
-                </button>
-                <button type="button" onClick={() => void responder(convite, "recusar")} className="rounded border px-2 py-1 text-xs">
-                  Recusar
-                </button>
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
+      <section aria-label="Minhas entregas" className="flex flex-col gap-3 rounded-jaa border border-borda p-3">
+      <h2 className="text-base font-semibold">Minhas entregas</h2>
 
       <EmpresasEmQueTrabalho vinculos={vinculos} ocupado={ocupado} aoAlterarDisponibilidade={(vinculo, disponivel) => void alterarDisponibilidade(vinculo, disponivel)} />
 
@@ -213,7 +221,7 @@ export function AreaMinhasEntregas() {
 
       {/* Saídas: os pedidos que ele leva juntos, na sequência que pode reordenar. */}
       {saidas.map((saida) => (
-        <div key={saida.id} data-saida={saida.id} className="flex flex-col gap-2 rounded border border-zinc-200 p-2">
+        <div key={saida.id} data-saida={saida.id} className="flex flex-col gap-2 rounded-jaa border border-borda p-2">
           <p className="text-sm font-medium">
             Saída — {saida.empresa.nome} · {paradasAtivas(saida).length} {paradasAtivas(saida).length === 1 ? "entrega" : "entregas"}
           </p>
@@ -225,10 +233,50 @@ export function AreaMinhasEntregas() {
       <ListaMinhasEntregas entregas={entregas} />
 
       {erro && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-perigo">
           {erro}
         </p>
       )}
+      </section>
+    </div>
+  );
+}
+
+/**
+ * CONVITES PARA ENTREGAR: área própria, separada do trabalho. Aceitar aqui cria o vínculo — e NÃO
+ * deixa a pessoa disponível: quem decide aceitar entregas agora é ela, em "Empresas em que trabalho".
+ */
+export function ConvitesParaEntregar({
+  convites,
+  aoResponder,
+}: {
+  convites: ConviteEntregador[];
+  aoResponder: (convite: ConviteEntregador, resposta: "aceitar" | "recusar") => void;
+}) {
+  if (convites.length === 0) return null;
+
+  return (
+    <section aria-label="Convites para entregar" className="flex flex-col gap-2 rounded-jaa border border-ouro/60 bg-aviso/5 p-3">
+      <h2 className="text-base font-semibold">Convites para entregar</h2>
+      <ol aria-label="Convites de entrega" className="flex flex-col gap-2 text-sm">
+        {convites.map((convite) => (
+          <li key={convite.id} data-convite={convite.id} className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex min-w-0 flex-col">
+              <span className="font-medium">{convite.empresa.nome}</span>
+              <span className="text-xs text-conteudo-suave">convidou você para ser entregador da empresa.</span>
+            </span>
+            <span className="flex gap-2">
+              <button type="button" data-aceitar-convite onClick={() => aoResponder(convite, "aceitar")} className="rounded bg-marca px-3 py-1.5 text-xs text-white">
+                Aceitar
+              </button>
+              <button type="button" data-recusar-convite onClick={() => aoResponder(convite, "recusar")} className="rounded-jaa border px-3 py-1.5 text-xs">
+                Recusar
+              </button>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className="text-xs text-conteudo-suave">Aceitar cria o vínculo. Você só passa a receber entregas quando ficar disponível.</p>
     </section>
   );
 }
@@ -250,17 +298,17 @@ export function EmpresasEmQueTrabalho({
   if (vinculos.length === 0) return null;
 
   return (
-    <ol aria-label="Empresas em que trabalho" className="flex flex-col divide-y divide-zinc-200 rounded border border-zinc-200 text-sm">
+    <ol aria-label="Empresas em que trabalho" className="flex flex-col divide-y divide-borda rounded-jaa border border-borda text-sm">
       {vinculos.map((vinculo) => (
         <li key={vinculo.id} data-vinculo={vinculo.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
           <span className="flex min-w-0 flex-col">
             <span className="font-medium">{vinculo.empresa.nome}</span>
             {entregadorPodeEscolherDisponibilidade(vinculo.status) ? (
-              <span data-disponibilidade={vinculo.disponivel ? "disponivel" : "indisponivel"} className={`text-xs ${vinculo.disponivel ? "text-emerald-700" : "text-zinc-600"}`}>
+              <span data-disponibilidade={vinculo.disponivel ? "disponivel" : "indisponivel"} className={`text-xs ${vinculo.disponivel ? "text-marca" : "text-conteudo-suave"}`}>
                 {rotuloDisponibilidade(vinculo.disponivel)}
               </span>
             ) : (
-              <span data-vinculo-status={vinculo.status} className="text-xs text-zinc-600">
+              <span data-vinculo-status={vinculo.status} className="text-xs text-conteudo-suave">
                 {ROTULO_STATUS_ENTREGADOR[vinculo.status]}
               </span>
             )}
@@ -271,7 +319,7 @@ export function EmpresasEmQueTrabalho({
               data-alternar-disponibilidade
               disabled={ocupado}
               onClick={() => aoAlterarDisponibilidade(vinculo, !vinculo.disponivel)}
-              className="shrink-0 rounded border px-2 py-1 text-xs disabled:opacity-50"
+              className="shrink-0 rounded-jaa border px-2 py-1 text-xs disabled:opacity-50"
             >
               {vinculo.disponivel ? "Ficar indisponível" : "Ficar disponível"}
             </button>
@@ -283,19 +331,19 @@ export function EmpresasEmQueTrabalho({
 }
 
 export function ListaMinhasEntregas({ entregas }: { entregas: EntregaAtribuida[] }) {
-  if (entregas.length === 0) return <p className="text-sm text-zinc-500">Nenhuma entrega atribuída a você agora.</p>;
+  if (entregas.length === 0) return <p className="text-sm text-conteudo-suave">Nenhuma entrega atribuída a você agora.</p>;
 
   return (
-    <ol aria-label="Entregas atribuídas" className="flex flex-col divide-y divide-zinc-200 rounded border border-zinc-200 text-sm">
+    <ol aria-label="Entregas atribuídas" className="flex flex-col divide-y divide-borda rounded-jaa border border-borda text-sm">
       {entregas.map((entrega) => (
         <li key={entrega.pedidoId} data-entrega={entrega.pedidoId} className="flex flex-col gap-0.5 px-3 py-2">
           <span className="font-medium">{entrega.empresa.nome}</span>
           <span className="text-xs">{formatarEnderecoResumido(entrega.destino)}</span>
-          <span className="text-xs text-zinc-600">
+          <span className="text-xs text-conteudo-suave">
             {entrega.destino.bairro}, {entrega.destino.cidade}/{entrega.destino.uf} · CEP {formatarCep(entrega.destino.cep)}
           </span>
-          {entrega.destino.pontoReferencia && <span className="text-xs text-zinc-600">Referência: {entrega.destino.pontoReferencia}</span>}
-          <span className="text-xs text-zinc-600">Cliente: {entrega.cliente.nomeExibicao}</span>
+          {entrega.destino.pontoReferencia && <span className="text-xs text-conteudo-suave">Referência: {entrega.destino.pontoReferencia}</span>}
+          <span className="text-xs text-conteudo-suave">Cliente: {entrega.cliente.nomeExibicao}</span>
           <span className="text-xs">
             {entrega.itens.map((item) => `${item.quantidade}× ${item.nomeProduto}`).join(", ")} · {formatarPrecoCentavos(entrega.totalCentavos)}
           </span>
@@ -305,10 +353,10 @@ export function ListaMinhasEntregas({ entregas }: { entregas: EntregaAtribuida[]
             {entrega.trocoParaCentavos !== null && ` · Troco para ${formatarPrecoCentavos(entrega.trocoParaCentavos)}`}
           </span>
           <span className="flex flex-wrap items-center gap-2">
-            <span data-status-entrega={entrega.status} className="text-xs text-zinc-600">
+            <span data-status-entrega={entrega.status} className="text-xs text-conteudo-suave">
               {ROTULO_STATUS_PEDIDO[entrega.status]}
             </span>
-            <span data-ponto-entrega className="text-xs text-emerald-700">
+            <span data-ponto-entrega className="text-xs text-marca">
               📍 Ponto de entrega confirmado
             </span>
             {/* Usa o ponto SNAPSHOT do pedido; navegação por rota é etapa futura. */}
@@ -317,7 +365,7 @@ export function ListaMinhasEntregas({ entregas }: { entregas: EntregaAtribuida[]
               href={`https://www.openstreetmap.org/?mlat=${entrega.destino.latitude}&mlon=${entrega.destino.longitude}#map=18/${entrega.destino.latitude}/${entrega.destino.longitude}`}
               target="_blank"
               rel="noreferrer"
-              className="rounded border px-2 py-0.5 text-xs"
+              className="rounded-jaa border px-2 py-0.5 text-xs"
             >
               Abrir no mapa
             </a>

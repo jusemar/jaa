@@ -5,9 +5,14 @@ import { CardPedido } from "@/features/pedidos/components/apresentacao-pedido";
 import { MenuMensagem, type AcaoMensagem } from "./menu-mensagem";
 import { ReferenciaResposta } from "./referencia-resposta";
 
-// Interface TÉCNICA: cada mensagem carrega o SEU horário (criadoEm do servidor) no canto inferior
-// direito do balão; nas próprias, o estado fica junto ao horário. Respostas mostram a referência
-// compacta no topo do balão, com os dados vindos da API (sem depender da original estar carregada).
+/*
+ * BALÃO no padrão da referência de UI/UX aprovada: cantos arredondados com UM canto "preso" do lado
+ * de quem falou, horário dentro do balão no canto inferior direito e, nas próprias, o estado (✓/✓✓)
+ * ao lado do horário. Enviadas em jade; recebidas em branco.
+ *
+ * As ações (responder, ⋯) ficam fora do balão e só aparecem no hover/foco da linha: no protótipo elas
+ * não existiam, e deixá-las sempre visíveis polui uma tela que é, antes de tudo, de leitura.
+ */
 
 const ROTULO_ESTADO: Record<EstadoMensagem, string> = { enviada: "Enviada", entregue: "Entregue", lida: "Lida" };
 
@@ -50,7 +55,7 @@ export function BalaoMensagem({
       aria-label="Responder"
       title="Responder"
       onClick={() => aoResponder(mensagem)}
-      className="shrink-0 self-center rounded px-1.5 text-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 focus:text-zinc-700"
+      className="shrink-0 self-center rounded-full px-2 py-1 text-sm text-conteudo-suave/60 opacity-0 transition-opacity hover:bg-superficie-suave hover:text-conteudo focus-visible:opacity-100 group-hover:opacity-100"
     >
       ↩
     </button>
@@ -62,24 +67,34 @@ export function BalaoMensagem({
       data-propria={propria}
       data-resposta={referencia !== null}
       data-excluida={excluida}
-      className={`flex items-end gap-1 ${propria ? "justify-end" : "justify-start"}`}
+      className={`mensagem-entrando group flex items-end gap-1 ${propria ? "justify-end" : "justify-start"}`}
     >
       {propria && menu}
       {propria && acaoResponder}
-      <div className={`min-w-0 max-w-[80%] rounded-lg px-3 py-1.5 ${propria ? "bg-emerald-100" : "bg-zinc-100"}`}>
+
+      <div
+        className={`relative min-w-0 max-w-[82%] px-3.5 pb-5 pt-2.5 text-[0.91rem] leading-[1.45] shadow-balao md:max-w-[min(68%,38rem)] ${
+          propria
+            ? "rounded-[1.15rem_1.15rem_0.3rem_1.15rem] bg-mensagem-enviada text-mensagem-enviada-conteudo"
+            : "rounded-[1.15rem_1.15rem_1.15rem_0.3rem] bg-mensagem-recebida text-conteudo"
+        }`}
+      >
         <span className="sr-only">{propria ? "Você" : nomeRemetente}: </span>
+
         {referencia && (
-          <div className="mb-1">
+          <div className="mb-1.5">
             <ReferenciaResposta
               nomeAutor={rotuloAutorResposta(referencia.remetente.identidadeId, referencia.remetente.nomeExibicao, identidadeAtualId)}
               previaConteudo={referencia.previaConteudo}
               conteudoTruncado={referencia.conteudoTruncado}
               excluida={referencia.excluida}
+              emBalaoProprio={propria}
             />
           </div>
         )}
+
         {excluida ? (
-          <span data-conteudo-excluido className="italic text-zinc-500">
+          <span data-conteudo-excluido className="italic opacity-70">
             Mensagem excluída
           </span>
         ) : ehPedido && mensagem.pedido ? (
@@ -89,7 +104,8 @@ export function BalaoMensagem({
             {mensagem.conteudo}
           </span>
         )}
-        <span data-rodape className="float-right ml-3 mt-1.5 inline-flex items-center gap-1 text-[11px] leading-none text-zinc-500">
+
+        <span data-rodape className="absolute bottom-1.5 right-3 flex items-center gap-1 text-[0.61rem] leading-none opacity-70">
           {mensagem.editadaEm && !excluida && (
             <span data-editada title={`Editada em ${formatarDataHoraCompleta(mensagem.editadaEm)}`} className="italic">
               editada
@@ -99,18 +115,13 @@ export function BalaoMensagem({
             {formatarHorarioMensagem(mensagem.criadoEm)}
           </time>
           {propria && !excluida && (
-            <span
-              data-estado={mensagem.estado}
-              role="img"
-              aria-label={ROTULO_ESTADO[mensagem.estado]}
-              title={ROTULO_ESTADO[mensagem.estado]}
-              className={mensagem.estado === "lida" ? "text-blue-600" : undefined}
-            >
+            <span data-estado={mensagem.estado} role="img" aria-label={ROTULO_ESTADO[mensagem.estado]} title={ROTULO_ESTADO[mensagem.estado]} className={mensagem.estado === "lida" ? "opacity-100" : undefined}>
               {mensagem.estado === "enviada" ? "✓" : "✓✓"}
             </span>
           )}
         </span>
       </div>
+
       {!propria && acaoResponder}
       {!propria && menu}
     </li>

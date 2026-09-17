@@ -25,7 +25,7 @@ function LinhaPagamento({ pedido }: { pedido: Pick<Pedido, "formaPagamentoNaEntr
       {pedido.trocoParaCentavos !== null && (
         <p data-troco className="text-xs">
           Troco para: {formatarPrecoCentavos(pedido.trocoParaCentavos)}
-          {troco !== null && troco > 0 && <span className="text-zinc-500"> (levar {formatarPrecoCentavos(troco)} de troco)</span>}
+          {troco !== null && troco > 0 && <span className="text-conteudo-suave"> (levar {formatarPrecoCentavos(troco)} de troco)</span>}
         </p>
       )}
     </>
@@ -34,8 +34,13 @@ function LinhaPagamento({ pedido }: { pedido: Pick<Pedido, "formaPagamentoNaEntr
 
 export function CardPedido({ pedido, aoAbrir }: { pedido: ResumoPedido; aoAbrir: (pedidoId: string) => void }) {
   return (
-    <div data-card-pedido={pedido.id} className="flex min-w-0 flex-col gap-1 rounded border border-emerald-600 bg-white/70 p-2 text-left">
-      <p className="text-xs font-semibold text-emerald-800">Pedido</p>
+    /*
+     * O card tem SEMPRE fundo claro e texto escuro, inclusive dentro de um balão próprio (que é
+     * jade com texto quase branco). Herdar a cor do balão deixava o conteúdo do pedido branco sobre
+     * verde-claro, praticamente ilegível. Quem identifica "fui eu que enviei" é o balão em volta.
+     */
+    <div data-card-pedido={pedido.id} className="flex min-w-0 flex-col gap-1 rounded-jaa border border-marca/40 bg-mensagem-recebida p-2 text-left text-conteudo shadow-balao">
+      <p className="text-xs font-semibold text-marca">Pedido</p>
       <ul className="text-xs">
         {pedido.itens.map((item) => (
           <li key={item.nomeProduto}>
@@ -47,10 +52,10 @@ export function CardPedido({ pedido, aoAbrir }: { pedido: ResumoPedido; aoAbrir:
         Total: {formatarPrecoCentavos(pedido.totalCentavos)}
       </p>
       <LinhaPagamento pedido={pedido} />
-      <p data-status-pedido={pedido.status} className="text-xs text-zinc-600">
+      <p data-status-pedido={pedido.status} className="text-xs text-conteudo-suave">
         Status: {ROTULO_STATUS_PEDIDO[pedido.status]}
       </p>
-      <button type="button" onClick={() => aoAbrir(pedido.id)} className="self-start rounded border px-2 py-0.5 text-xs">
+      <button type="button" onClick={() => aoAbrir(pedido.id)} className="self-start rounded-full border border-borda px-2.5 py-0.5 text-xs font-medium text-marca hover:bg-marca-suave">
         Ver pedido
       </button>
     </div>
@@ -68,10 +73,10 @@ export function TimelinePedido({ pedido }: { pedido: Pick<Pedido, "status" | "hi
   return (
     <ol aria-label="Acompanhamento do pedido" className="flex flex-col gap-0.5 text-xs">
       {etapas.map((etapa) => (
-        <li key={etapa.status} data-etapa={etapa.status} data-situacao={etapa.situacao} className={etapa.situacao === "futura" ? "text-zinc-400" : etapa.situacao === "atual" ? "font-semibold" : ""}>
+        <li key={etapa.status} data-etapa={etapa.status} data-situacao={etapa.situacao} className={etapa.situacao === "futura" ? "text-conteudo-suave/70" : etapa.situacao === "atual" ? "font-semibold" : ""}>
           <span aria-hidden>{marca[etapa.situacao]} </span>
           {ROTULO_STATUS_PEDIDO[etapa.status]}
-          {etapa.ocorridoEm && <span className="text-zinc-500"> — {formatarHorarioMensagem(etapa.ocorridoEm)}</span>}
+          {etapa.ocorridoEm && <span className="text-conteudo-suave"> — {formatarHorarioMensagem(etapa.ocorridoEm)}</span>}
         </li>
       ))}
     </ol>
@@ -86,7 +91,7 @@ export function TimelinePedido({ pedido }: { pedido: Pick<Pedido, "status" | "hi
 export function EnderecoDoPedido({ destino, aoVerNoMapa }: { destino: DestinoPedido | null; aoVerNoMapa?: ((destino: DestinoPedido) => void) | undefined }) {
   if (!destino) {
     return (
-      <p data-sem-destino className="text-xs text-zinc-500">
+      <p data-sem-destino className="text-xs text-conteudo-suave">
         Este pedido é anterior ao ponto de entrega confirmado.
       </p>
     );
@@ -96,13 +101,13 @@ export function EnderecoDoPedido({ destino, aoVerNoMapa }: { destino: DestinoPed
     <div data-destino-pedido className="flex flex-col gap-0.5 text-xs">
       <p className="font-medium">Entregar em</p>
       <p>{formatarEnderecoResumido(destino)}</p>
-      <p className="text-zinc-600">
+      <p className="text-conteudo-suave">
         {destino.bairro}, {destino.cidade}/{destino.uf} · CEP {formatarCep(destino.cep)}
       </p>
-      {destino.pontoReferencia && <p className="text-zinc-600">Referência: {destino.pontoReferencia}</p>}
-      <p data-ponto-confirmado className="text-emerald-700">📍 Ponto de entrega confirmado</p>
+      {destino.pontoReferencia && <p className="text-conteudo-suave">Referência: {destino.pontoReferencia}</p>}
+      <p data-ponto-confirmado className="text-marca">📍 Ponto de entrega confirmado</p>
       {aoVerNoMapa && (
-        <button type="button" data-ver-ponto-mapa onClick={() => aoVerNoMapa(destino)} className="self-start rounded border px-2 py-0.5">
+        <button type="button" data-ver-ponto-mapa onClick={() => aoVerNoMapa(destino)} className="self-start rounded-jaa border px-2 py-0.5">
           Ver ponto no mapa
         </button>
       )}
@@ -112,12 +117,12 @@ export function EnderecoDoPedido({ destino, aoVerNoMapa }: { destino: DestinoPed
 
 export function DetalhePedido({ pedido, aoFechar, acoes, aoVerPontoNoMapa }: { pedido: Pedido; aoFechar: () => void; acoes?: React.ReactNode; aoVerPontoNoMapa?: ((destino: DestinoPedido) => void) | undefined }) {
   return (
-    <article aria-label="Detalhe do pedido" className="flex flex-col gap-1 rounded border border-zinc-200 bg-white p-3 text-sm">
+    <article aria-label="Detalhe do pedido" className="flex flex-col gap-1 rounded-jaa border border-borda bg-superficie p-3 text-sm">
       <button type="button" onClick={aoFechar} className="self-end text-xs underline">
         Fechar pedido
       </button>
       <h3 className="font-semibold">Pedido — {pedido.empresa.nome}</h3>
-      <p className="text-xs text-zinc-500">Cliente: {pedido.cliente.nomeExibicao}</p>
+      <p className="text-xs text-conteudo-suave">Cliente: {pedido.cliente.nomeExibicao}</p>
       <ol aria-label="Itens do pedido" className="flex flex-col gap-0.5 text-xs">
         {pedido.itens.map((item) => (
           <li key={item.id}>
@@ -132,7 +137,7 @@ export function DetalhePedido({ pedido, aoFechar, acoes, aoVerPontoNoMapa }: { p
       <LinhaPagamento pedido={pedido} />
       <p data-status-pedido={pedido.status}>Status: {ROTULO_STATUS_PEDIDO[pedido.status]}</p>
       {pedido.motivoCancelamento && (
-        <p data-motivo-cancelamento className="text-xs text-red-700">
+        <p data-motivo-cancelamento className="text-xs text-perigo">
           Motivo do cancelamento: {pedido.motivoCancelamento}
         </p>
       )}

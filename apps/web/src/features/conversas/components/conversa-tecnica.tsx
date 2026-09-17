@@ -6,8 +6,6 @@ import {
   EVENTO_MENSAGEM_NOVA,
   EVENTO_MENSAGENS_ENTREGUES,
   EVENTO_MENSAGENS_LIDAS,
-  EVENTO_PEDIDO_FILA,
-  eventoPedidoFilaSchema,
   eventoMensagemAtualizadaSchema,
   eventoMensagemExcluidaParaMimSchema,
   eventoMensagemNovaSchema,
@@ -17,11 +15,10 @@ import {
   type Mensagem,
   type ParticipanteConversa,
   type EnderecoCliente,
-  type FilaDoPedido,
   type Pedido,
   type TipoIdentidade,
 } from "@jaa/contratos";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { useAtividadeConversa } from "../hooks/use-atividade-conversa";
 import { useDocumentoVisivel } from "../hooks/use-documento-visivel";
@@ -44,14 +41,14 @@ import {
   atualizarPedidoNasMensagens,
   ultimaMensagemRecebida,
 } from "../lib/estados-mensagens";
+import { mesmoDia, rotuloDoDia } from "../lib/horarios";
 import { resumirConteudoParaPrevia, rotuloAutorResposta } from "../lib/respostas";
 import { CatalogoDaEmpresa } from "@/features/catalogo/components/catalogo-da-empresa";
 import { PainelCarrinho, type ConfirmacaoPedido } from "@/features/carrinho/components/painel-carrinho";
 import { EtapaEnderecoEntrega } from "@/features/enderecos/components/etapa-endereco-entrega";
 import { useCarrinho } from "@/features/carrinho/hooks/use-carrinho";
 import { itensParaPedido, quantidadeTotal, type Carrinho } from "@/features/carrinho/lib/carrinho";
-import { FilaDoCliente } from "@/features/entregas/components/saida-apresentacao";
-import { obterFilaDoPedido } from "@/features/entregas/lib/api-entregas";
+import { AcompanhamentoDoPedido } from "@/features/entregas/components/acompanhamento-cliente";
 import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
 import { useStatusPedido } from "@/features/pedidos/hooks/use-status-pedido";
 import { criarPedido, obterPedido } from "@/features/pedidos/lib/api-pedidos";
@@ -61,8 +58,14 @@ import { BarraContextoCompositor } from "./barra-contexto-compositor";
 import { CabecalhoConversa } from "./cabecalho-conversa";
 import { PreviaRespostaCompositor, type RespostaEmComposicao } from "./previa-resposta-compositor";
 
-// Interface TÉCNICA e TEMPORÁRIA para comprovar o núcleo de mensagens 1:1. Não é o design do Jaa.
-// Autorização, remetente, persistência e idempotência são impostos pela API.
+/*
+ * A CONVERSA ABERTA: cabeçalho fixo, mensagens rolando no meio e compositor embaixo — o formato da
+ * referência de UI/UX aprovada. Autorização, remetente, persistência e idempotência continuam sendo
+ * impostos pela API; esta camada só apresenta.
+ *
+ * Os painéis de comércio (catálogo, carrinho, endereço, pedido) abrem entre o cabeçalho e as
+ * mensagens, com rolagem própria: eles nunca empurram o compositor para fora da tela.
+ */
 
 // A referência de resposta faz parte da tentativa: reenviar reutiliza idCliente, conteúdo e referência.
 type TentativaEnvio = { idCliente: string; conteudo: string; mensagemRespondidaId?: string };
@@ -77,6 +80,7 @@ export function ConversaTecnica({
   identidadeId,
   tipoIdentidade = "pessoal",
   conversa,
+  aoVoltar,
   aoMensagemConfirmada,
   aoMensagemAtualizada,
   aoMensagemExcluidaParaMim,
@@ -85,6 +89,8 @@ export function ConversaTecnica({
   // Só identidade PESSOAL compra; a empresa participa da conversa, não faz pedido de si mesma.
   tipoIdentidade?: TipoIdentidade;
   conversa: ConversaAberta;
+  // Só no celular: a conversa ocupa a tela toda e o cabeçalho ganha o caminho de volta para a lista.
+  aoVoltar?: () => void;
   // A resposta HTTP do envio também atualiza a lista, mesmo sem realtime.
   aoMensagemConfirmada: (mensagem: Mensagem) => void;
   // Idem para alterações (edição/exclusão) feitas por esta aba.
@@ -127,7 +133,6 @@ export function ConversaTecnica({
   const [avisoPedido, setAvisoPedido] = useState<string | null>(null);
   const [pedidoAberto, setPedidoAberto] = useState<Pedido | null>(null);
   // Posição do PRÓPRIO pedido na saída (situação + quantas entregas antes). Nunca a rota.
-  const [filaDoPedido, setFilaDoPedido] = useState<FilaDoPedido | null>(null);
   const atividade = useAtividadeConversa({ conversaId: conversa.id, outraIdentidadeId: conversa.outraIdentidade.identidadeId });
   const listaMensagensRef = useRef<HTMLOListElement>(null);
   const ultimaMensagemId = mensagens.at(-1)?.id;
@@ -239,18 +244,6 @@ export function ConversaTecnica({
       [conversa.id, pedidoAbertoId],
     ),
   );
-
-  useEffect(() => {
-    const socket = obterClienteRealtime();
-    const aoAtualizarFila = (evento: unknown) => {
-      const resultado = eventoPedidoFilaSchema.safeParse(evento);
-      if (resultado.success) setFilaDoPedido((atual) => (atual === null || atual.pedidoId === resultado.data.pedidoId ? resultado.data : atual));
-    };
-    socket.on(EVENTO_PEDIDO_FILA, aoAtualizarFila);
-    return () => {
-      socket.off(EVENTO_PEDIDO_FILA, aoAtualizarFila);
-    };
-  }, []);
 
   // Tudo que esta conversa exibe foi recebido por este cliente: confirma o recebimento (ENTREGUE).
   useEffect(() => {
@@ -471,155 +464,218 @@ export function ConversaTecnica({
 
   async function abrirPedido(pedidoId: string) {
     setErroPedido(null);
-    const [resultado, fila] = await Promise.all([obterPedido(pedidoId), obterFilaDoPedido(pedidoId)]);
+    // Fila e posição do entregador vêm do acompanhamento (componente próprio, com realtime e reconexão).
+    const resultado = await obterPedido(pedidoId);
     if (!resultado.ok) {
       setErroPedido(resultado.mensagem);
       return;
     }
     setPedidoAberto(resultado.dados);
-    setFilaDoPedido(fila.ok ? fila.dados : null);
   }
 
   const outro = conversa.outraIdentidade;
   const itensNoCarrinho = quantidadeTotal(carrinho);
 
+  const rotuloEnvio = editando ? "Salvar" : pendente && !ocupado ? "Reenviar" : "Enviar";
+
   return (
-    <section aria-label="Conversa" className="flex flex-col gap-3">
+    <section aria-label="Conversa" className="flex min-h-0 flex-1 flex-col bg-conversa-fundo">
       <CabecalhoConversa
         outraIdentidade={outro}
         presenca={atividade.presenca}
         digitando={atividade.outraDigitando}
+        {...(aoVoltar ? { aoVoltar } : {})}
         acoes={
           outro.tipo === "empresarial" && (
-            <span className="flex shrink-0 items-center gap-1">
-              <button type="button" onClick={() => setCatalogoAberto((aberto) => !aberto)} className="rounded border px-2 py-1 text-xs">
+            <>
+              <button
+                type="button"
+                onClick={() => setCatalogoAberto((aberto) => !aberto)}
+                className="min-h-9 rounded-full border border-borda px-3 text-xs font-medium hover:bg-superficie-suave"
+              >
                 {catalogoAberto ? "Ocultar produtos" : "Ver produtos"}
               </button>
               {podeComprar && itensNoCarrinho > 0 && (
-                <button type="button" data-abrir-carrinho onClick={() => setCarrinhoAberto((aberto) => !aberto)} className="rounded border px-2 py-1 text-xs">
+                <button
+                  type="button"
+                  data-abrir-carrinho
+                  onClick={() => setCarrinhoAberto((aberto) => !aberto)}
+                  className="min-h-9 rounded-full bg-[color-mix(in_oklab,var(--cor-ouro)_25%,var(--cor-superficie))] px-3 text-xs font-medium text-conteudo"
+                >
                   {carrinhoAberto ? "Ocultar carrinho" : `Carrinho (${itensNoCarrinho})`}
                 </button>
               )}
-            </span>
+            </>
           )
         }
       />
-      {catalogoAberto && outro.tipo === "empresarial" && (
-        <CatalogoDaEmpresa
-          identidadeEmpresaId={outro.identidadeId}
-          aoFechar={() => setCatalogoAberto(false)}
-          {...(podeComprar ? { aoAdicionarAoCarrinho: adicionarProduto } : {})}
-        />
-      )}
-      {trocaDeEmpresa && (
-        <div role="alertdialog" aria-label="Trocar de empresa" className="flex flex-col gap-2 rounded border border-amber-500 bg-amber-50 p-3 text-sm">
-          <p>
-            Seu carrinho tem produtos de {trocaDeEmpresa.nomeAtual}. Um pedido é de uma empresa só. Substituir pelo carrinho de {trocaDeEmpresa.empresa.nome}?
+
+      {/*
+        Painéis de comércio: rolam por conta própria e nunca empurram o compositor para fora da tela.
+        Sem nenhum deles aberto, o bloco fica vazio e some (empty:hidden).
+      */}
+      <div className="flex max-h-[55%] shrink-0 flex-col gap-3 overflow-y-auto border-b border-borda bg-superficie px-3 py-3 empty:hidden md:px-5">
+        {catalogoAberto && outro.tipo === "empresarial" && (
+          <CatalogoDaEmpresa
+            identidadeEmpresaId={outro.identidadeId}
+            aoFechar={() => setCatalogoAberto(false)}
+            {...(podeComprar ? { aoAdicionarAoCarrinho: adicionarProduto } : {})}
+          />
+        )}
+        {trocaDeEmpresa && (
+          <div role="alertdialog" aria-label="Trocar de empresa" className="flex flex-col gap-2 rounded-jaa border border-ouro/60 bg-[color-mix(in_oklab,var(--cor-ouro)_10%,var(--cor-superficie))] p-3 text-sm">
+            <p>
+              Seu carrinho tem produtos de {trocaDeEmpresa.nomeAtual}. Um pedido é de uma empresa só. Substituir pelo carrinho de {trocaDeEmpresa.empresa.nome}?
+            </p>
+            <span className="flex flex-wrap gap-2">
+              <button type="button" onClick={confirmarTrocaDeEmpresa} className="min-h-10 rounded-full bg-marca px-4 text-xs font-medium text-marca-conteudo">
+                Substituir carrinho
+              </button>
+              <button type="button" onClick={() => setTrocaDeEmpresa(null)} className="min-h-10 rounded-full border border-borda px-4 text-xs font-medium">
+                Manter carrinho atual
+              </button>
+            </span>
+          </div>
+        )}
+        {/* A etapa de endereço aparece ACIMA do carrinho: escolher destino não perde a forma de pagamento. */}
+        {carrinhoAberto && escolhendoEndereco && (
+          <EtapaEnderecoEntrega
+            aoSelecionar={(endereco) => {
+              setEnderecoEntrega(endereco);
+              setEscolhendoEndereco(false);
+            }}
+            aoVoltar={() => setEscolhendoEndereco(false)}
+          />
+        )}
+        {carrinhoAberto && carrinho && carrinho.itens.length > 0 && (
+          <PainelCarrinho
+            carrinho={carrinho}
+            endereco={enderecoEntrega}
+            enviando={enviandoPedido}
+            erro={erroPedido}
+            aoAlterarQuantidade={alterarQuantidade}
+            aoRemover={remover}
+            aoTrocarEndereco={() => setEscolhendoEndereco(true)}
+            aoConfirmar={(confirmacao) => void confirmarPedido(confirmacao)}
+            aoFechar={() => setCarrinhoAberto(false)}
+          />
+        )}
+        {pedidoAberto && (
+          <DetalhePedido
+            pedido={pedidoAberto}
+            aoFechar={() => setPedidoAberto(null)}
+            acoes={
+              <AcompanhamentoDoPedido
+                pedidoId={pedidoAberto.id}
+                {...(pedidoAberto.destino ? { destino: { latitude: pedidoAberto.destino.latitude, longitude: pedidoAberto.destino.longitude } } : {})}
+              />
+            }
+          />
+        )}
+        {avisoPedido && (
+          <p role="status" className="text-sm text-marca">
+            {avisoPedido}
           </p>
-          <span className="flex gap-2">
-            <button type="button" onClick={confirmarTrocaDeEmpresa} className="rounded bg-black px-3 py-1.5 text-xs text-white">
-              Substituir carrinho
-            </button>
-            <button type="button" onClick={() => setTrocaDeEmpresa(null)} className="rounded border px-3 py-1.5 text-xs">
-              Manter carrinho atual
-            </button>
-          </span>
-        </div>
-      )}
-      {/* A etapa de endereço aparece ACIMA do carrinho: escolher destino não perde a forma de pagamento. */}
-      {carrinhoAberto && escolhendoEndereco && (
-        <EtapaEnderecoEntrega
-          aoSelecionar={(endereco) => {
-            setEnderecoEntrega(endereco);
-            setEscolhendoEndereco(false);
-          }}
-          aoVoltar={() => setEscolhendoEndereco(false)}
-        />
-      )}
-      {carrinhoAberto && carrinho && carrinho.itens.length > 0 && (
-        <PainelCarrinho
-          carrinho={carrinho}
-          endereco={enderecoEntrega}
-          enviando={enviandoPedido}
-          erro={erroPedido}
-          aoAlterarQuantidade={alterarQuantidade}
-          aoRemover={remover}
-          aoTrocarEndereco={() => setEscolhendoEndereco(true)}
-          aoConfirmar={(confirmacao) => void confirmarPedido(confirmacao)}
-          aoFechar={() => setCarrinhoAberto(false)}
-        />
-      )}
-      {pedidoAberto && (
-        <DetalhePedido
-          pedido={pedidoAberto}
-          aoFechar={() => {
-            setPedidoAberto(null);
-            setFilaDoPedido(null);
-          }}
-          acoes={filaDoPedido && filaDoPedido.pedidoId === pedidoAberto.id ? <FilaDoCliente fila={filaDoPedido} /> : null}
-        />
-      )}
-      {avisoPedido && (
-        <p role="status" className="text-sm text-emerald-700">
-          {avisoPedido}
-        </p>
-      )}
-      {erroPedido && !carrinhoAberto && (
-        <p role="alert" className="text-sm text-red-600">
-          {erroPedido}
-        </p>
-      )}
-      <div className="flex flex-col gap-2">
+        )}
+        {erroPedido && !carrinhoAberto && (
+          <p role="alert" className="text-sm text-perigo">
+            {erroPedido}
+          </p>
+        )}
+      </div>
+
+      <ol
+        ref={listaMensagensRef}
+        aria-label="Mensagens"
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-4 md:px-[clamp(1rem,4vw,4.5rem)]"
+      >
         {proximoCursor && (
-          <button type="button" className="self-start text-sm underline" onClick={() => void carregarAnteriores()}>
-            Carregar anteriores
-          </button>
+          <li className="flex justify-center pb-2">
+            <button type="button" onClick={() => void carregarAnteriores()} className="min-h-9 rounded-full border border-borda bg-superficie px-4 text-xs font-medium hover:bg-superficie-suave">
+              Carregar anteriores
+            </button>
+          </li>
         )}
-        <ol ref={listaMensagensRef} aria-label="Mensagens" className="flex h-96 flex-col gap-1.5 overflow-y-auto text-sm">
-          {mensagens.length === 0 && <li className="text-zinc-500">Nenhuma mensagem ainda.</li>}
-          {mensagens.map((mensagem) => (
-            <BalaoMensagem
-              key={mensagem.id}
-              mensagem={mensagem}
-              identidadeAtualId={identidadeId}
-              nomeRemetente={outro.nomeExibicao}
-              aoResponder={responder}
-              aoEditar={iniciarEdicao}
-              aoExcluirParaMim={(alvo) => void excluirParaMim(alvo)}
-              aoExcluirParaTodos={(alvo) => void excluirParaTodos(alvo)}
-              aoAbrirPedido={(pedidoId) => void abrirPedido(pedidoId)}
-            />
-          ))}
-        </ol>
-        {respondendo && <PreviaRespostaCompositor resposta={respondendo} aoCancelar={cancelarResposta} />}
-        {editando && (
-          <BarraContextoCompositor titulo="Editando mensagem" texto={editando.conteudo} aoCancelar={cancelarEdicao} rotuloCancelar="Cancelar edição" />
+
+        {mensagens.length === 0 && (
+          <li className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
+            <p className="fonte-display text-sm font-semibold">Nenhuma mensagem ainda</p>
+            <p className="max-w-xs text-sm text-conteudo-suave">Escreva a primeira mensagem aqui embaixo.</p>
+          </li>
         )}
-        <AcoesMidiaDesabilitadas />
-        <form onSubmit={aoEnviar} className="flex items-end gap-2">
-          <label className="flex flex-1 flex-col gap-1 text-sm">
-            Mensagem
+
+        {mensagens.map((mensagem, indice) => {
+          const anterior = mensagens[indice - 1];
+          // Separador de dia: sem marcos, uma conversa longa vira um bloco só.
+          const abreDia = !anterior || !mesmoDia(new Date(anterior.criadoEm), new Date(mensagem.criadoEm));
+          return (
+            <Fragment key={mensagem.id}>
+              {abreDia && (
+                <li data-separador-dia className="flex justify-center py-1">
+                  <span className="rounded-full bg-conteudo/[0.06] px-3 py-1 text-[0.66rem] text-conteudo-suave">{rotuloDoDia(mensagem.criadoEm)}</span>
+                </li>
+              )}
+              <BalaoMensagem
+                mensagem={mensagem}
+                identidadeAtualId={identidadeId}
+                nomeRemetente={outro.nomeExibicao}
+                aoResponder={responder}
+                aoEditar={iniciarEdicao}
+                aoExcluirParaMim={(alvo) => void excluirParaMim(alvo)}
+                aoExcluirParaTodos={(alvo) => void excluirParaTodos(alvo)}
+                aoAbrirPedido={(pedidoId) => void abrirPedido(pedidoId)}
+              />
+            </Fragment>
+          );
+        })}
+      </ol>
+
+      <div className="shrink-0 px-2 pt-1 md:px-6" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-1.5">
+          {respondendo && <PreviaRespostaCompositor resposta={respondendo} aoCancelar={cancelarResposta} />}
+          {editando && (
+            <BarraContextoCompositor titulo="Editando mensagem" texto={editando.conteudo} aoCancelar={cancelarEdicao} rotuloCancelar="Cancelar edição" />
+          )}
+
+          <form onSubmit={aoEnviar} className="flex items-center gap-1 rounded-[1.4rem] border border-borda bg-superficie p-1.5 shadow-suave">
+            <AcoesMidiaDesabilitadas />
+            <label htmlFor="campo-mensagem" className="sr-only">
+              Mensagem
+            </label>
             <input
+              id="campo-mensagem"
               ref={campoMensagemRef}
               name="mensagem"
               value={texto}
+              placeholder="Escreva uma mensagem"
               onChange={(evento) => {
                 setTexto(evento.target.value);
                 if (!editando) atividade.informarTexto(evento.target.value);
               }}
               maxLength={4000}
               autoComplete="off"
-              className="rounded border border-zinc-300 px-3 py-2 text-base"
+              className="min-w-0 flex-1 bg-transparent px-1 py-2 text-base outline-none placeholder:text-conteudo-suave/60"
             />
-          </label>
-          <button type="submit" disabled={ocupado} className="rounded bg-black px-3 py-2 text-sm text-white disabled:opacity-50">
-            {editando ? "Salvar" : pendente && !ocupado ? "Reenviar" : "Enviar"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={ocupado}
+              aria-label={rotuloEnvio}
+              className={`grid h-10 shrink-0 place-items-center rounded-full bg-marca text-marca-conteudo disabled:opacity-50 ${rotuloEnvio === "Enviar" ? "w-10" : "px-4 text-xs font-medium"}`}
+            >
+              {rotuloEnvio === "Enviar" ? (
+                <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                  <path d="M3.4 20.4 21 12 3.4 3.6 3.39 10.1 15.5 12 3.39 13.9z" />
+                </svg>
+              ) : (
+                rotuloEnvio
+              )}
+            </button>
+          </form>
+        </div>
       </div>
 
       {erro && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="px-4 pb-2 text-sm text-perigo">
           {erro}
         </p>
       )}

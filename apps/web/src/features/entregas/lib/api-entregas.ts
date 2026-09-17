@@ -12,8 +12,11 @@ import {
   situacaoOperacionalSchema,
   listaSaidasSchema,
   listaVinculosEntregadorSchema,
+  acompanhamentoPedidoSchema,
+  listaPosicoesSchema,
   listaZonasSchema,
   painelDespachoSchema,
+  respostaPosicaoSaidaSchema,
   saidaEntregaSchema,
   zonaEntregaSchema,
   type EntregaAtribuida,
@@ -32,8 +35,11 @@ import {
   type SituacaoOperacional,
   type ListaSaidas,
   type ListaVinculosEntregador,
+  type AcompanhamentoPedido,
+  type ListaPosicoes,
   type ListaZonas,
   type PainelDespacho,
+  type PosicaoEntregador,
   type SaidaEntrega,
   type SalvarConfiguracaoDespachoEntrada,
   type SalvarZonaEntrada,
@@ -202,6 +208,28 @@ export function salvarConfiguracaoDespacho(empresaId: string, entrada: SalvarCon
 // Intervenção do gestor: fechar antes da hora uma saída que ainda está juntando pedidos.
 export function fecharSaida(empresaId: string, saidaId: string): Promise<ResultadoApi<SaidaEntrega>> {
   return requisitarApi(daEmpresa(empresaId, `/saidas/${encodeURIComponent(saidaId)}/fechar`), saidaEntregaSchema, { method: "POST" });
+}
+
+/*
+ * RASTREAMENTO (leitura). O Web nunca envia posição: quem envia é o aplicativo do entregador.
+ * Estas rotas existem para RECONEXÃO — recuperar o estado atual sem depender do último evento.
+ */
+
+// Posições das saídas EM ANDAMENTO da empresa (fora da operação não há rastreamento).
+export function listarPosicoesDaEmpresa(empresaId: string): Promise<ResultadoApi<ListaPosicoes>> {
+  return requisitarApi(daEmpresa(empresaId, "/posicoes"), listaPosicoesSchema, {});
+}
+
+export function obterPosicaoDaSaida(empresaId: string, saidaId: string): Promise<ResultadoApi<{ posicao: PosicaoEntregador | null }>> {
+  return requisitarApi(daEmpresa(empresaId, `/saidas/${encodeURIComponent(saidaId)}/posicao`), respostaPosicaoSaidaSchema, {});
+}
+
+/**
+ * ACOMPANHAMENTO do PRÓPRIO pedido: a fila de sempre e, só quando é a vez dele, a posição do
+ * entregador. Quem decide o que entra aqui é o servidor — o Web só apresenta.
+ */
+export function obterAcompanhamentoDoPedido(pedidoId: string): Promise<ResultadoApi<AcompanhamentoPedido>> {
+  return requisitarApi(`/pedidos/${encodeURIComponent(pedidoId)}/acompanhamento`, acompanhamentoPedidoSchema, { headers: cabecalhosIdentidadeAtuante() });
 }
 
 export function listarMinhasSituacoes(): Promise<ResultadoApi<ListaSituacoesOperacionais>> {

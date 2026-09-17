@@ -65,7 +65,21 @@ describe("proprietário administra produtos", () => {
     assert.equal(calabresa.descricao, "Molho, calabresa e cebola");
     assert.equal(calabresa.precoCentavos, 3990);
     assert.equal(calabresa.disponibilidade, "disponivel");
-    assert.deepEqual(Object.keys(calabresa).sort(), ["atualizadoEm", "criadoEm", "descricao", "disponibilidade", "empresaId", "id", "nome", "precoCentavos"]);
+    assert.deepEqual(Object.keys(calabresa).sort(), [
+      "atualizadoEm",
+      "categoriaId",
+      "categoriaNome",
+      "criadoEm",
+      "descricao",
+      "disponibilidade",
+      "empresaId",
+      "id",
+      "imagemUrl",
+      "nome",
+      "precoCentavos",
+    ]);
+    // Sem categoria e sem imagem é o estado normal de um produto recém-criado, não um erro.
+    assert.deepEqual([calabresa.categoriaId, calabresa.categoriaNome, calabresa.imagemUrl], [null, null, null]);
 
     const linha = await linhaDoBanco(calabresa.id);
     assert.equal(linha?.precoCentavos, 3990);
@@ -79,8 +93,11 @@ describe("proprietário administra produtos", () => {
     assert.equal(refri.descricao, null);
     assert.equal((await linhaDoBanco(refri.id))?.descricao, null);
 
-    const lista: Produto[] = (await ctx.api(A, "GET", rotaProdutos(pizzaria))).json().produtos;
-    assert.deepEqual(lista.map((p) => p.id), [calabresa.id, refri.id]);
+    const pagina = (await ctx.api(A, "GET", rotaProdutos(pizzaria))).json();
+    const lista: Produto[] = pagina.produtos;
+    // Mais recentes primeiro: é o que a empresa acabou de cadastrar e quer conferir.
+    assert.deepEqual(lista.map((p) => p.id), [refri.id, calabresa.id]);
+    assert.deepEqual(pagina.paginacao, { pagina: 1, limite: 20, total: 2, totalPaginas: 1 });
     assert.deepEqual((await ctx.api(A, "GET", rotaProduto(pizzaria, calabresa.id))).json(), calabresa);
   });
 

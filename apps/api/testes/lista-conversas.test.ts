@@ -47,11 +47,13 @@ const PREFIXO_USUARIO_EXTRA = "teste-lista-conversas-";
 const TOTAL_EXTRAS = 22;
 
 const ambiente = carregarAmbiente();
+// A origem do teste é definida AQUI: mudar as origens do .env local não pode quebrar a suíte.
+const ambienteDoTeste = { ...ambiente, ORIGENS_WEB_PERMITIDAS: [ORIGEM_WEB] };
 const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
 const { banco } = conexao;
 const eventosMensagens = criarCanalEventosMensagens();
 const sessoesEncerradas = criarAvisoSessoesEncerradas();
-const opcoes = criarOpcoesAutenticacao({ banco, ambiente, entregadorOtp: { enviar: async () => {} }, sessoesEncerradas });
+const opcoes = criarOpcoesAutenticacao({ banco, ambiente: ambienteDoTeste, entregadorOtp: { enviar: async () => {} }, sessoesEncerradas });
 const autenticacao = betterAuth({ ...opcoes, plugins: [...opcoes.plugins, testUtils({ captureOTP: true })] });
 
 let app: FastifyInstance;
@@ -194,8 +196,8 @@ async function limparDadosDeTeste() {
 
 before(async () => {
   await limparDadosDeTeste();
-  app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, logger: false });
-  configurarRealtime(app, { autenticacao, banco, sessoesEncerradas, eventosMensagens, origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS });
+  app = await criarAplicacao({ ambiente: ambienteDoTeste, banco, autenticacao, eventosMensagens, logger: false });
+  configurarRealtime(app, { autenticacao, banco, sessoesEncerradas, eventosMensagens, origensPermitidas: ambienteDoTeste.ORIGENS_WEB_PERMITIDAS });
   await app.listen({ port: 0, host: "127.0.0.1" });
   porta = (app.server.address() as AddressInfo).port;
 

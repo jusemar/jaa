@@ -20,11 +20,10 @@ export function criarIdentidadePessoal(
   });
 }
 
-export function testarRotaProtegida(): Promise<ResultadoApi<{ autenticado: boolean }>> {
-  return requisitarApi("/autenticacao/teste-protegido", {
-    parse: (valor) => {
-      const autenticado = typeof valor === "object" && valor !== null && "autenticado" in valor && valor.autenticado === true;
-      return { autenticado };
-    },
-  });
+/**
+ * Entrar com IDENTIFICADOR (celular ou @usuario) + SENHA. A rota do Jaa só descobre de qual conta o
+ * identificador fala; quem autentica e cria a sessão é o Better Auth, do outro lado.
+ */
+export function entrarComSenha(identificador: string, senha: string): Promise<ResultadoApi<unknown>> {
+  return requisitarApi("/autenticacao/entrar", { parse: (valor) => valor }, { method: "POST", body: JSON.stringify({ identificador, senha }) });
 }

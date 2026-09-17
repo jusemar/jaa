@@ -19,6 +19,14 @@ export const identidades = pgTable(
     nomeExibicao: text().notNull(),
     // Sempre armazenado na forma canônica minúscula; ver normalizarNomeUsuario em @jaa/contratos.
     nomeUsuario: text().notNull(),
+    // PERFIL — o que a identidade mostra de si. Tudo opcional: o Jaa funciona sem nada disso.
+    // A foto é a CHAVE do objeto no armazenamento de arquivos (não uma URL completa): trocar de
+    // provedor não invalida os dados gravados. Quem monta o endereço público é a API.
+    fotoChave: text(),
+    // Frase curta de status ("Entrego até 22h"), escolhida pela pessoa. Não é o status operacional.
+    fraseStatus: text(),
+    cidade: text(),
+    sobre: text(),
     criadoEm: timestamp({ withTimezone: true }).notNull().defaultNow(),
     atualizadoEm: timestamp({ withTimezone: true })
       .notNull()
@@ -42,6 +50,10 @@ export const identidades = pgTable(
     ),
     // Formato canônico: minúsculas impedem duplicidade por variação de maiúsculas.
     check("identidades_nome_usuario_formato", sql`${tabela.nomeUsuario} ~ '^[a-z][a-z0-9_]{2,29}$'`),
+    check("identidades_frase_status_valida", sql`${tabela.fraseStatus} is null or (char_length(${tabela.fraseStatus}) between 1 and 140 and ${tabela.fraseStatus} = btrim(${tabela.fraseStatus}))`),
+    check("identidades_cidade_valida", sql`${tabela.cidade} is null or (char_length(${tabela.cidade}) between 1 and 80 and ${tabela.cidade} = btrim(${tabela.cidade}))`),
+    check("identidades_sobre_valido", sql`${tabela.sobre} is null or (char_length(${tabela.sobre}) between 1 and 500 and ${tabela.sobre} = btrim(${tabela.sobre}))`),
+    check("identidades_foto_chave_valida", sql`${tabela.fotoChave} is null or char_length(${tabela.fotoChave}) between 1 and 300`),
     check(
       "identidades_nome_exibicao_valido",
       sql`char_length(${tabela.nomeExibicao}) between 1 and 50 and ${tabela.nomeExibicao} = btrim(${tabela.nomeExibicao})`,

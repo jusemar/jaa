@@ -16,11 +16,11 @@ export function MenuMensagem({ acoes }: { acoes: AcaoMensagem[] }) {
       <summary
         aria-label="Mais ações"
         title="Mais ações"
-        className="cursor-pointer list-none rounded px-1.5 text-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 [&::-webkit-details-marker]:hidden"
+        className="cursor-pointer list-none rounded px-1.5 text-sm text-conteudo-suave/70 hover:bg-superficie-suave hover:text-conteudo [&::-webkit-details-marker]:hidden"
       >
         ⋯
       </summary>
-      <ul role="menu" className="absolute right-0 z-10 mt-1 flex min-w-40 flex-col rounded border border-zinc-200 bg-white py-1 text-sm shadow">
+      <ul role="menu" className="absolute right-0 z-10 mt-1 flex min-w-40 flex-col rounded-jaa border border-borda bg-superficie py-1 text-sm shadow">
         {acoes.map((acao) => (
           <li key={acao.rotulo} role="none">
             <button
@@ -30,7 +30,7 @@ export function MenuMensagem({ acoes }: { acoes: AcaoMensagem[] }) {
                 if (detalhesRef.current) detalhesRef.current.open = false;
                 acao.executar();
               }}
-              className={`w-full px-3 py-1.5 text-left hover:bg-zinc-100 ${acao.perigosa ? "text-red-700" : ""}`}
+              className={`w-full px-3 py-1.5 text-left hover:bg-superficie-suave ${acao.perigosa ? "text-perigo" : ""}`}
             >
               {acao.rotulo}
             </button>

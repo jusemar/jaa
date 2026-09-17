@@ -1,4 +1,5 @@
 import { arredondarCoordenadas } from "@/features/enderecos/mapa/provedor-mapa";
+import { destruirMapa, liberarContainer, recalcularTamanho, registrarMapa } from "@/lib/mapa/leaflet";
 import type { CriarMapaZona } from "./provedor-mapa-zona";
 
 /**
@@ -13,7 +14,12 @@ export const criarMapaZonaLeaflet: CriarMapaZona = async ({ elemento, centro, ve
   // Import dinâmico: Leaflet precisa de `window` e só roda no navegador.
   const L = (await import("leaflet")).default;
 
+  // Remontagem do efeito: destrói a instância anterior antes de criar outra no mesmo elemento.
+  liberarContainer(elemento);
+
   const mapa = L.map(elemento, { zoomControl: true, attributionControl: true }).setView([centro.latitude, centro.longitude], 14);
+  registrarMapa(elemento, mapa);
+  recalcularTamanho(mapa);
   if (urlTiles) L.tileLayer(urlTiles, { maxZoom: 19, ...(atribuicao ? { attribution: atribuicao } : {}) }).addTo(mapa);
 
   // As outras zonas aparecem apagadas, só como referência: a sobreposição quem recusa é o servidor.
@@ -68,8 +74,8 @@ export const criarMapaZonaLeaflet: CriarMapaZona = async ({ elemento, centro, ve
       redesenhar();
     },
     destruir() {
-      mapa.off();
-      mapa.remove();
+      // Mesma proteção do mapa de ponto: nunca deixar um mapa visível e sem ouvintes na tela.
+      destruirMapa(elemento, mapa);
     },
   };
 };

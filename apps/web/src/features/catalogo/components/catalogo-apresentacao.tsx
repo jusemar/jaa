@@ -22,9 +22,9 @@ export function ListaCatalogo({
     <div className="flex flex-col gap-2">
       <h3 className="text-sm font-semibold">Produtos — {empresa.nome}</h3>
       {produtos.length === 0 ? (
-        <p className="text-sm text-zinc-500">Nenhum produto disponível no momento.</p>
+        <p className="text-sm text-conteudo-suave">Nenhum produto disponível no momento.</p>
       ) : (
-        <ol aria-label="Catálogo" className="flex flex-col divide-y divide-zinc-200 rounded border border-zinc-200 text-sm">
+        <ol aria-label="Catálogo" className="flex flex-col divide-y divide-borda rounded-jaa border border-borda text-sm">
           {produtos.map((produto) => (
             <li key={produto.id} data-produto-catalogo-id={produto.id} className="flex items-center justify-between gap-3 px-3 py-2">
               <span className="min-w-0">
@@ -34,11 +34,11 @@ export function ListaCatalogo({
                 </span>
               </span>
               <span className="flex shrink-0 items-center gap-1">
-                <button type="button" onClick={() => aoVer(produto)} className="rounded border px-2 py-1 text-xs">
+                <button type="button" onClick={() => aoVer(produto)} className="rounded-jaa border px-2 py-1 text-xs">
                   Ver
                 </button>
                 {aoAdicionar && (
-                  <button type="button" aria-label={`Adicionar ${produto.nome}`} onClick={() => aoAdicionar(produto)} className="rounded border px-2 py-1 text-xs">
+                  <button type="button" aria-label={`Adicionar ${produto.nome}`} onClick={() => aoAdicionar(produto)} className="rounded-jaa border px-2 py-1 text-xs">
                     Adicionar
                   </button>
                 )}
@@ -73,17 +73,17 @@ export function DetalheProdutoCatalogo({
         disabled
         aria-label="Imagem do produto em breve"
         data-imagem-produto-futura
-        className="flex h-24 cursor-not-allowed items-center justify-center rounded border border-dashed border-zinc-300 text-xs text-zinc-400"
+        className="flex h-24 cursor-not-allowed items-center justify-center rounded-jaa border border-dashed border-borda text-xs text-conteudo-suave/70"
       >
         Imagem em breve
       </button>
       <h4 className="text-base font-semibold">{produto.nome}</h4>
-      <p className="text-xs text-zinc-500">{empresa.nome}</p>
-      {produto.descricao && <p className="whitespace-pre-wrap text-zinc-700 [overflow-wrap:anywhere]">{produto.descricao}</p>}
+      <p className="text-xs text-conteudo-suave">{empresa.nome}</p>
+      {produto.descricao && <p className="whitespace-pre-wrap text-conteudo [overflow-wrap:anywhere]">{produto.descricao}</p>}
       <p data-preco className="font-medium">
         {formatarPrecoCentavos(produto.precoCentavos)}
       </p>
-      <p data-disponibilidade className="text-xs text-emerald-700">
+      <p data-disponibilidade className="text-xs text-marca">
         Disponível
       </p>
       {aoAdicionar && <AdicionarAoCarrinho produto={produto} aoAdicionar={aoAdicionar} />}
@@ -106,10 +106,10 @@ function AdicionarAoCarrinho({ produto, aoAdicionar }: { produto: ProdutoPublico
           max={QUANTIDADE_MAXIMA_POR_ITEM}
           value={quantidade}
           onChange={(evento) => setQuantidade(Math.min(Math.max(Math.trunc(Number(evento.target.value) || 1), 1), QUANTIDADE_MAXIMA_POR_ITEM))}
-          className="w-16 rounded border border-zinc-300 px-2 py-1"
+          className="w-16 rounded-jaa border border-borda px-2 py-1"
         />
       </label>
-      <button type="button" onClick={() => aoAdicionar(produto, quantidade)} className="rounded bg-black px-3 py-1.5 text-xs text-white">
+      <button type="button" onClick={() => aoAdicionar(produto, quantidade)} className="rounded bg-marca px-3 py-1.5 text-xs text-white">
         Adicionar ao carrinho
       </button>
     </span>

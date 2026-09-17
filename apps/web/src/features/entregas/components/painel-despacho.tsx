@@ -43,9 +43,9 @@ export function ConfiguracaoAutomacao({
           combinarZonas: dados.get("combinarZonas") === "sim",
         });
       }}
-      className="flex flex-col gap-2 rounded border border-zinc-200 p-2 text-sm"
+      className="flex flex-col gap-2 rounded-jaa border border-borda p-2 text-sm"
     >
-      <p className="text-xs font-semibold text-zinc-600">Automação das entregas</p>
+      <p className="text-xs font-semibold text-conteudo-suave">Automação das entregas</p>
       <label className="flex flex-col gap-1 text-xs">
         Máximo de pedidos por saída
         <input
@@ -54,7 +54,7 @@ export function ConfiguracaoAutomacao({
           min={MAXIMO_PEDIDOS_POR_SAIDA_MINIMO}
           max={MAXIMO_PEDIDOS_POR_SAIDA_MAXIMO}
           defaultValue={configuracao.maxPedidosPorSaida}
-          className="w-24 rounded border border-zinc-300 px-2 py-1"
+          className="w-24 rounded-jaa border border-borda px-2 py-1"
         />
       </label>
       <label className="flex flex-col gap-1 text-xs">
@@ -65,15 +65,15 @@ export function ConfiguracaoAutomacao({
           min={TEMPO_FORMACAO_MINIMO_MINUTOS}
           max={TEMPO_FORMACAO_MAXIMO_MINUTOS}
           defaultValue={configuracao.tempoFormacaoMinutos}
-          className="w-24 rounded border border-zinc-300 px-2 py-1"
+          className="w-24 rounded-jaa border border-borda px-2 py-1"
         />
       </label>
       <label className="flex items-center gap-2 text-xs">
         <input type="checkbox" name="combinarZonas" value="sim" defaultChecked={configuracao.combinarZonas} />
         Combinar zonas compatíveis quando houver pouco volume
       </label>
-      <p className="text-xs text-zinc-500">A saída fecha quando atingir a quantidade OU o tempo — o que vier primeiro.</p>
-      <button type="submit" data-salvar-automacao disabled={ocupado} className="self-start rounded bg-black px-3 py-1.5 text-xs text-white disabled:opacity-50">
+      <p className="text-xs text-conteudo-suave">A saída fecha quando atingir a quantidade OU o tempo — o que vier primeiro.</p>
+      <button type="submit" data-salvar-automacao disabled={ocupado} className="self-start rounded bg-marca px-3 py-1.5 text-xs text-white disabled:opacity-50">
         Salvar automação
       </button>
     </form>
@@ -83,14 +83,14 @@ export function ConfiguracaoAutomacao({
 // Pedidos prontos cujo ponto não caiu em zona nenhuma: pendência explícita, nunca encaixe forçado.
 export function PendenciasForaDeZona({ painel }: { painel: PainelDespacho }) {
   if (!painel.automacaoAtiva) {
-    return <p className="text-xs text-amber-700">Nenhuma zona ativa: as saídas continuam sendo montadas à mão.</p>;
+    return <p className="text-xs text-aviso">Nenhuma zona ativa: as saídas continuam sendo montadas à mão.</p>;
   }
-  if (painel.pedidosForaDeZona.length === 0) return <p className="text-xs text-zinc-500">Nenhum pedido fora das zonas configuradas.</p>;
+  if (painel.pedidosForaDeZona.length === 0) return <p className="text-xs text-conteudo-suave">Nenhum pedido fora das zonas configuradas.</p>;
 
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-xs font-semibold text-amber-700">Pedidos fora das zonas configuradas</p>
-      <ol aria-label="Pedidos fora das zonas" className="flex flex-col divide-y divide-zinc-200 rounded border border-amber-300 bg-amber-50">
+      <p className="text-xs font-semibold text-aviso">Pedidos fora das zonas configuradas</p>
+      <ol aria-label="Pedidos fora das zonas" className="flex flex-col divide-y divide-borda rounded-jaa border border-ouro/60 bg-aviso/5">
         {painel.pedidosForaDeZona.map((pedido) => (
           <li key={pedido.id} data-pedido-fora-de-zona={pedido.id} className="px-3 py-1.5 text-xs">
             {pedido.cliente.nomeExibicao} · {pedido.quantidadeItens} {pedido.quantidadeItens === 1 ? "item" : "itens"} — trate manualmente (monte a saída ou ajuste as zonas).
@@ -116,11 +116,11 @@ export function QuadroDeSaidas({ saidas, agora = new Date() }: { saidas: SaidaEn
         const doGrupo = saidas.filter((saida) => saida.status === grupo.status);
         return (
           <div key={grupo.status} className="flex flex-col gap-1">
-            <p className="text-xs font-semibold text-zinc-600">{grupo.titulo}</p>
+            <p className="text-xs font-semibold text-conteudo-suave">{grupo.titulo}</p>
             {doGrupo.length === 0 ? (
-              <p className="text-xs text-zinc-500">{grupo.vazio}</p>
+              <p className="text-xs text-conteudo-suave">{grupo.vazio}</p>
             ) : (
-              <ol aria-label={grupo.titulo} className="flex flex-col divide-y divide-zinc-200 rounded border border-zinc-200">
+              <ol aria-label={grupo.titulo} className="flex flex-col divide-y divide-borda rounded-jaa border border-borda">
                 {doGrupo.map((saida) => {
                   const ativas = saida.paradas.filter((parada) => parada.encerradaEm === null).length;
                   const zonas = saida.zonaPrincipal ? [saida.zonaPrincipal.nome, ...saida.zonasCombinadas.map((zona) => zona.nome)].join(" + ") : "Montada manualmente";
@@ -129,7 +129,7 @@ export function QuadroDeSaidas({ saidas, agora = new Date() }: { saidas: SaidaEn
                       <span>
                         {zonas} · {ativas} {ativas === 1 ? "pedido" : "pedidos"}
                       </span>
-                      <span className="text-zinc-600">
+                      <span className="text-conteudo-suave">
                         {saida.entregador?.nomeExibicao ?? (saida.status === "em_formacao" ? formatarEspera(saida, agora) : "sem entregador")}
                       </span>
                     </li>

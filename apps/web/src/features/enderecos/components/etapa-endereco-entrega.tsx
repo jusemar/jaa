@@ -116,7 +116,7 @@ export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar:
   }
 
   return (
-    <section aria-label="Endereço de entrega" className="flex flex-col gap-2 rounded border border-zinc-200 bg-white p-3 text-sm">
+    <section aria-label="Endereço de entrega" className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3 text-sm">
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-semibold">Entregar em</h3>
         <button type="button" onClick={aoVoltar} className="text-xs underline">
@@ -134,7 +134,7 @@ export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar:
             aoAjustarPonto={(endereco) => void abrirMapa(endereco)}
             aoRemover={(endereco) => void remover(endereco)}
           />
-          <button type="button" data-novo-endereco onClick={() => setEtapa({ modo: "novo" })} className="self-start rounded border px-3 py-1.5 text-xs">
+          <button type="button" data-novo-endereco onClick={() => setEtapa({ modo: "novo" })} className="self-start rounded-jaa border px-3 py-1.5 text-xs">
             + Novo endereço
           </button>
         </>
@@ -150,7 +150,7 @@ export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar:
       )}
 
       {erro && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-perigo">
           {erro}
         </p>
       )}

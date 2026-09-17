@@ -1,5 +1,5 @@
 import type { Banco } from "@jaa/banco";
-import { atribuicoesEntrega, destinosPedido, entregadoresEmpresa, identidades, paradasSaida, pedidos, saidasEntrega, zonasEntrega } from "@jaa/banco/schema";
+import { atribuicoesEntrega, destinosPedido, entregadoresEmpresa, identidades, paradasSaida, pedidos, posicoesSaida, saidasEntrega, zonasEntrega } from "@jaa/banco/schema";
 import { classificarPonto, poligonoZonaSchema, type StatusSaida, type Uf } from "@jaa/contratos";
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
@@ -339,6 +339,11 @@ export async function concluirSaidaSeTerminou(banco: Banco, saidaId: string): Pr
     .set({ status: "concluida", concluidaEm: new Date(), fechadaEm: sql`coalesce(${saidasEntrega.fechadaEm}, now())` })
     .where(and(eq(saidasEntrega.id, saidaId), ne(saidasEntrega.status, "concluida")))
     .returning({ id: saidasEntrega.id });
+  /*
+   * Terminou a operação, o rastreamento acaba: a última posição é apagada junto. O Jaa não guarda
+   * onde a pessoa estava depois que a saída acabou.
+   */
+  if (concluidas.length > 0) await banco.delete(posicoesSaida).where(eq(posicoesSaida.saidaId, saidaId));
   return concluidas.length > 0;
 }
 

@@ -7,6 +7,7 @@ import {
   salvarZonaEntradaSchema,
   criarSaidaEntradaSchema,
   enviarLocalizacaoEntradaSchema,
+  enviarPosicaoEntradaSchema,
   salvarBaseEntradaSchema,
   reordenarSequenciaEntradaSchema,
   alterarStatusEntregadorEntradaSchema,
@@ -21,8 +22,10 @@ import {
   type ListaEntregas,
   type BaseEmpresa,
   type ListaSaidas,
+  type ListaPosicoes,
   type ListaSituacoesOperacionais,
   type ListaZonas,
+  type PosicaoEntregador,
   type PainelDespacho,
   type PainelOperacional,
   type ListaVinculosEntregador,
@@ -71,6 +74,11 @@ import {
   salvarConfiguracaoAutorizada,
 } from "../casos-de-uso/gerir-zonas.js";
 import {
+  listarPosicoesAutorizadas,
+  obterPosicaoAutorizada,
+  registrarPosicaoDoEntregador,
+} from "../casos-de-uso/rastrear-entrega.js";
+import {
   confirmarPontoBaseAutorizado,
   listarMinhasSituacoes,
   montarSituacao,
@@ -85,7 +93,9 @@ import type { CanalEventosEntregas } from "../lib/eventos-entregas.js";
 import type { MotorDeRotas } from "../lib/motor-rotas.js";
 import { publicarOperacao } from "../lib/publicar-operacao.js";
 import { publicarSaida } from "../lib/publicar-saida.js";
+import { publicarVinculoEntregador } from "../lib/publicar-vinculo.js";
 import { buscarAtribuicaoAtual, buscarEmpresaDoPedido, listarHistoricoAtribuicoes } from "../repositorios/repositorio-atribuicoes.js";
+import { buscarEntregadorDaEmpresa } from "../repositorios/repositorio-entregadores.js";
 import { serializarEntregador } from "../lib/serializar-entrega.js";
 
 const parametrosEmpresaSchema = z.object({ empresaId: z.uuid() });
@@ -155,6 +165,8 @@ export function registrarRotasEntregas(
       case "pessoa-e-operadora":
         return responder(resposta, 409, { codigo: "IDENTIDADE_NAO_AUTORIZADA", mensagem: "Quem opera a empresa não pode ser cadastrado como entregador." });
       case "convidado":
+        // O convite aparece NA HORA para quem foi convidado (antes só aparecia com F5).
+        await publicarVinculoEntregador(dependencias, resultado.entregador);
         return resposta.code(201).send(serializarEntregador(resultado.entregador));
     }
   });
@@ -169,6 +181,9 @@ export function registrarRotasEntregas(
     const resultado = await alterarStatusEntregadorAutorizado(banco, usuarioId, parametros.data.empresaId, parametros.data.entregadorId, entrada.data.status);
     if (resultado.tipo === "empresa-nao-encontrada") return responder(resposta, 404, EMPRESA_NAO_ENCONTRADA);
     if (resultado.tipo !== "alterado") return responder(resposta, 404, ENTREGADOR_NAO_ENCONTRADO);
+
+    // A pessoa vê na hora que a empresa ativou/desativou o vínculo dela.
+    await publicarVinculoEntregador(dependencias, resultado.entregador);
 
     // Vínculo desativado deixa de ser elegível: sai da fila da base na hora.
     const apos = await reavaliarFila(banco, parametros.data.entregadorId, "Vínculo desativado");
@@ -547,6 +562,74 @@ export function registrarRotasEntregas(
     return serializarSaidaComEmpresa(banco, atual.saida);
   });
 
+  /*
+   * RASTREAMENTO — só DENTRO da operação. O aparelho do entregador manda o que mediu; o servidor
+   * confere que a saída é dele e está EM ANDAMENTO, decide o que aceitar e quem recebe.
+   * Nenhuma posição aqui chama provedor de rotas: GPS não recalcula percurso.
+   */
+  servidor.post("/entregas/saidas/:saidaId/posicao", { preHandler }, async (requisicao, resposta) => {
+    const { usuarioId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosSaidaSchema.safeParse(requisicao.params);
+    const entrada = enviarPosicaoEntradaSchema.safeParse(requisicao.body);
+    if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Saída inválida." });
+    if (!entrada.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Leitura de localização inválida." });
+
+    const resultado = await registrarPosicaoDoEntregador(dependencias, usuarioId, parametros.data.saidaId, entrada.data);
+    switch (resultado.tipo) {
+      case "saida-nao-encontrada":
+        return responder(resposta, 404, SAIDA_NAO_ENCONTRADA);
+      case "fora-de-operacao":
+        // Saída ainda não iniciada ou já encerrada: o aparelho deve PARAR de rastrear.
+        return responder(resposta, 409, { codigo: "SAIDA_NAO_ESTA_EM_ANDAMENTO", mensagem: "Esta saída não está em andamento: o rastreamento desta operação terminou." });
+      case "leitura-invalida":
+        return responder(resposta, 409, { codigo: "LOCALIZACAO_IMPRECISA", mensagem: "Leitura de localização antiga ou imprecisa demais." });
+      case "ignorada":
+        // Pacote atrasado/fora de ordem: a posição atual é mais nova e permanece.
+        return resposta.code(202).send({ aplicada: false });
+      case "registrada":
+        return resultado.posicao;
+    }
+  });
+
+  // Reconexão do ENTREGADOR: a última posição da própria saída, sem depender do último evento.
+  servidor.get("/entregas/saidas/:saidaId/posicao", { preHandler }, async (requisicao, resposta) => {
+    const { usuarioId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosSaidaSchema.safeParse(requisicao.params);
+    if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Saída inválida." });
+
+    const resultado = await obterPosicaoAutorizada(banco, usuarioId, parametros.data.saidaId);
+    if (resultado.tipo !== "posicao") return responder(resposta, 404, SAIDA_NAO_ENCONTRADA);
+    const posicao: PosicaoEntregador | null = resultado.posicao;
+    return { posicao };
+  });
+
+  // Reconexão da EMPRESA: última posição de UMA saída dela.
+  servidor.get("/empresas/:empresaId/saidas/:saidaId/posicao", { preHandler }, async (requisicao, resposta) => {
+    const { usuarioId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosSaidaDaEmpresaSchema.safeParse(requisicao.params);
+    if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Saída inválida." });
+
+    const resultado = await obterPosicaoAutorizada(banco, usuarioId, parametros.data.saidaId, parametros.data.empresaId);
+    if (resultado.tipo !== "posicao") return responder(resposta, 404, SAIDA_NAO_ENCONTRADA);
+    const posicao: PosicaoEntregador | null = resultado.posicao;
+    return { posicao };
+  });
+
+  /**
+   * Painel da empresa: posições das saídas EM ANDAMENTO dela. Fora da operação não há rastreamento —
+   * isto acompanha entrega, não pessoa.
+   */
+  servidor.get("/empresas/:empresaId/posicoes", { preHandler }, async (requisicao, resposta) => {
+    const { usuarioId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosEmpresaSchema.safeParse(requisicao.params);
+    if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Empresa inválida." });
+
+    const resultado = await listarPosicoesAutorizadas(banco, usuarioId, parametros.data.empresaId);
+    if (resultado.tipo !== "lista") return responder(resposta, 404, EMPRESA_NAO_ENCONTRADA);
+    const lista: ListaPosicoes = { posicoes: resultado.posicoes };
+    return lista;
+  });
+
   /* SAÍDAS — lado do ENTREGADOR: as próprias saídas e a reordenação da própria sequência. */
 
   servidor.get("/entregas/saidas", { preHandler }, async (requisicao) => {
@@ -614,6 +697,10 @@ export function registrarRotasEntregas(
 
     const resultado = await responderConviteDaPessoa(banco, usuarioId, parametros.data.entregadorId, entrada.data.resposta === "aceitar");
     if (resultado.tipo !== "respondido") return responder(resposta, 404, ENTREGADOR_NAO_ENCONTRADO);
+
+    // Respondeu: o convite sai da lista dele e o vínculo entra (nas outras abas/dispositivos também).
+    const atualizado = await buscarEntregadorDaEmpresa(banco, resultado.empresaId, parametros.data.entregadorId);
+    if (atualizado) await publicarVinculoEntregador(dependencias, atualizado);
     return { status: resultado.status };
   });
 

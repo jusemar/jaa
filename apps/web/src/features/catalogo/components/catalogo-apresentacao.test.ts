@@ -4,7 +4,6 @@ import type { EmpresaPublica, ProdutoPublico } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DetalheProdutoCatalogo, ListaCatalogo } from "./catalogo-apresentacao.tsx";
-import { ListaEmpresasEncontradas } from "./descoberta-empresas-tecnica.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
 const empresa: EmpresaPublica = { identidadeId: "bbbbbbbb-0000-4000-8000-000000000000", nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh" };
@@ -25,10 +24,5 @@ describe("catálogo do cliente (Web técnica)", () => {
     for (const esperado of ["Pizza Calabresa", "Molho e calabresa", "R$ 39,90", "Pizzaria BH", "Disponível", "Imagem em breve"]) assert.ok(conteudo.includes(esperado), esperado);
     assert.ok(/<button[^>]*disabled=""[^>]*data-imagem-produto-futura/.test(html));
     assert.ok(!/type="file"|<input/.test(html));
-  });
-
-  it("descoberta técnica lista empresas com Conversar", () => {
-    const html = renderToStaticMarkup(createElement(ListaEmpresasEncontradas, { empresas: [empresa], aoConversar: () => {} }));
-    assert.ok(texto(html).includes("Pizzaria BH@pizzariabhConversar"));
   });
 });

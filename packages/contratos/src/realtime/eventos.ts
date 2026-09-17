@@ -2,9 +2,10 @@ import * as z from "zod";
 import { participanteConversaSchema } from "../conversas/conversa.ts";
 import { contagemNaoLidasSchema } from "../conversas/lista-conversas.ts";
 import { exclusaoParaMimSchema, mensagemSchema } from "../mensagens/mensagem.ts";
-import { entregaAtribuidaSchema, entregadorDaEmpresaSchema } from "../entregas/entregador.ts";
+import { conviteEntregadorSchema, entregaAtribuidaSchema, entregadorDaEmpresaSchema, vinculoEntregadorSchema } from "../entregas/entregador.ts";
 import { painelOperacionalSchema, situacaoOperacionalSchema } from "../entregas/base-e-fila.ts";
 import { painelDespachoSchema } from "../entregas/zonas.ts";
+import { acompanhamentoPedidoSchema, posicaoEntregadorSchema } from "../entregas/rastreamento.ts";
 import { filaDoPedidoSchema, saidaEntregaSchema } from "../entregas/saida.ts";
 import { resumoPedidoSchema } from "../pedidos/pedido.ts";
 import {
@@ -196,6 +197,46 @@ export const eventoDespachoAtualizadoSchema = z.object({ painel: painelDespachoS
 
 export type EventoDespachoAtualizado = z.infer<typeof eventoDespachoAtualizadoSchema>;
 
+/**
+ * POSIÇÃO do entregador numa saída EM ANDAMENTO. Vai para a identidade da EMPRESA daquela saída e
+ * para o próprio entregador — nunca para clientes (eles veriam por onde andam as entregas dos outros)
+ * e nunca em broadcast. Fora da operação não existe evento nenhum: terminou a saída, acabou o
+ * rastreamento.
+ */
+export const EVENTO_POSICAO_ENTREGADOR = "entrega:posicao";
+
+export const eventoPosicaoEntregadorSchema = z.object({ posicao: posicaoEntregadorSchema });
+
+export type EventoPosicaoEntregador = z.infer<typeof eventoPosicaoEntregadorSchema>;
+
+/**
+ * ACOMPANHAMENTO do PRÓPRIO pedido, para a identidade do cliente: a fila derivada de sempre e, SÓ
+ * quando a entrega dele é a parada atual, a posição do entregador. Nunca os destinos, coordenadas ou
+ * ids das outras paradas — a decisão é do SERVIDOR, não de esconder campo na tela.
+ */
+export const EVENTO_PEDIDO_ACOMPANHAMENTO = "pedido:acompanhamento";
+
+export const eventoPedidoAcompanhamentoSchema = z.object({ pedidoId: z.uuid(), acompanhamento: acompanhamentoPedidoSchema });
+
+export type EventoPedidoAcompanhamento = z.infer<typeof eventoPedidoAcompanhamentoSchema>;
+
+/**
+ * O VÍNCULO de entregador de uma pessoa mudou: ela foi convidada, o convite deixou de existir
+ * (aceito/recusado) ou a empresa ativou/desativou o vínculo. Vai só para a identidade pessoal DELA.
+ *
+ * É o que faz um convite novo aparecer na hora, sem F5: antes o convite era persistido e ninguém
+ * avisava o destinatário conectado.
+ */
+export const EVENTO_VINCULO_ENTREGADOR = "entregador:vinculo";
+
+export const eventoVinculoEntregadorSchema = z.object({
+  // Convite pendente (quando houver) e o vínculo resultante, para a tela atualizar as duas listas.
+  convite: conviteEntregadorSchema.nullable(),
+  vinculo: vinculoEntregadorSchema.nullable(),
+});
+
+export type EventoVinculoEntregador = z.infer<typeof eventoVinculoEntregadorSchema>;
+
 // Eventos que a API envia ao cliente. Comandos de negócio do cliente (enviar, confirmar) passam pela
 // API HTTP; pelo socket o cliente envia só atividade efêmera (ver atividade-conversa.ts).
 export interface EventosRealtimeServidorParaCliente {
@@ -214,6 +255,9 @@ export interface EventosRealtimeServidorParaCliente {
   [EVENTO_FILA_ATUALIZADA]: (evento: EventoFilaAtualizada) => void;
   [EVENTO_SITUACAO_OPERACIONAL]: (evento: EventoSituacaoOperacional) => void;
   [EVENTO_DESPACHO_ATUALIZADO]: (evento: EventoDespachoAtualizado) => void;
+  [EVENTO_POSICAO_ENTREGADOR]: (evento: EventoPosicaoEntregador) => void;
+  [EVENTO_PEDIDO_ACOMPANHAMENTO]: (evento: EventoPedidoAcompanhamento) => void;
+  [EVENTO_VINCULO_ENTREGADOR]: (evento: EventoVinculoEntregador) => void;
   [EVENTO_PRESENCA_ATUALIZADA]: (evento: EventoPresencaAtualizada) => void;
   [EVENTO_DIGITANDO_ATUALIZADO]: (evento: EventoDigitandoAtualizado) => void;
 }

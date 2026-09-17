@@ -20,6 +20,15 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
+      {/* Área operacional do entregador (saída em andamento + localização). */}
+      <NativeTabs.Trigger name="entrega">
+        <NativeTabs.Trigger.Label>Entrega</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          src={require('@/assets/images/tabIcons/explore.png')}
+          renderingMode="template"
+        />
+      </NativeTabs.Trigger>
+
       <NativeTabs.Trigger name="explore">
         <NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon

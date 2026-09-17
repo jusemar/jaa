@@ -34,24 +34,24 @@ export function SequenciaDaSaida({
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-conteudo-suave">
         Sequência sugerida pelo Jaa — você pode mudar a ordem se conhecer um caminho melhor.
       </p>
       <ResumoPercurso saida={saida} />
-      <ol aria-label="Sequência da saída" className="flex flex-col divide-y divide-zinc-200 rounded border border-zinc-200 text-sm">
+      <ol aria-label="Sequência da saída" className="flex flex-col divide-y divide-borda rounded-jaa border border-borda text-sm">
         {ativas.map((parada, indice) => (
           <li key={parada.id} data-parada={parada.pedidoId} data-posicao={indice + 1} className="flex items-start justify-between gap-2 px-3 py-2">
             <span className="flex min-w-0 flex-col">
               <span className="font-medium">
                 <span aria-hidden>{indice === 0 ? "● " : "○ "}</span>
                 {indice + 1}. {parada.cliente.nomeExibicao}
-                {indice === 0 && <span data-proxima-parada className="ml-2 text-xs font-normal text-emerald-700">Próxima</span>}
+                {indice === 0 && <span data-proxima-parada className="ml-2 text-xs font-normal text-marca">Próxima</span>}
               </span>
               <span className="text-xs">{formatarEnderecoResumido(parada.destino)}</span>
-              <span className="text-xs text-zinc-600">
+              <span className="text-xs text-conteudo-suave">
                 {parada.destino.bairro}, {parada.destino.cidade}/{parada.destino.uf} · {formatarPrecoCentavos(parada.totalCentavos)}
               </span>
-              <span data-status-parada={parada.statusPedido} className="text-xs text-zinc-600">
+              <span data-status-parada={parada.statusPedido} className="text-xs text-conteudo-suave">
                 {ROTULO_STATUS_PEDIDO[parada.statusPedido]}
               </span>
             </span>
@@ -63,7 +63,7 @@ export function SequenciaDaSaida({
                   data-subir-parada
                   disabled={ocupado || indice === 0}
                   onClick={() => aoMover(parada.pedidoId, -1)}
-                  className="rounded border px-2 text-xs disabled:opacity-40"
+                  className="rounded-jaa border px-2 text-xs disabled:opacity-40"
                 >
                   ↑
                 </button>
@@ -73,7 +73,7 @@ export function SequenciaDaSaida({
                   data-descer-parada
                   disabled={ocupado || indice === ativas.length - 1}
                   onClick={() => aoMover(parada.pedidoId, 1)}
-                  className="rounded border px-2 text-xs disabled:opacity-40"
+                  className="rounded-jaa border px-2 text-xs disabled:opacity-40"
                 >
                   ↓
                 </button>
@@ -81,12 +81,12 @@ export function SequenciaDaSaida({
             )}
           </li>
         ))}
-        {ativas.length === 0 && <li className="px-3 py-2 text-zinc-500">Nenhuma entrega ativa nesta saída.</li>}
+        {ativas.length === 0 && <li className="px-3 py-2 text-conteudo-suave">Nenhuma entrega ativa nesta saída.</li>}
       </ol>
 
       {/* Paradas encerradas continuam visíveis como histórico da operação. */}
       {encerradas.length > 0 && (
-        <ol aria-label="Entregas encerradas" className="flex flex-col gap-0.5 text-xs text-zinc-500">
+        <ol aria-label="Entregas encerradas" className="flex flex-col gap-0.5 text-xs text-conteudo-suave">
           {encerradas.map((parada) => (
             <li key={parada.id} data-parada-encerrada={parada.pedidoId}>
               <span aria-hidden>✓ </span>
@@ -106,7 +106,7 @@ export function ResumoSaida({ saida }: { saida: SaidaEntrega }) {
       <span className="font-medium">
         {saida.empresa.nome} · {saida.entregador?.nomeExibicao ?? "Sem entregador ainda"}
       </span>
-      <span data-status-saida={saida.status} className="text-xs text-zinc-600">
+      <span data-status-saida={saida.status} className="text-xs text-conteudo-suave">
         {ROTULO_STATUS_SAIDA[saida.status]} · {ativas.length} {ativas.length === 1 ? "entrega ativa" : "entregas ativas"}
       </span>
     </span>
@@ -122,7 +122,7 @@ export function FilaDoCliente({ fila }: { fila: FilaDoPedido }) {
   if (fila.situacao === "sem_saida" || fila.situacao === "encerrado") return null;
 
   return (
-    <p data-fila-pedido={fila.situacao} className={`text-xs ${fila.situacao === "indo_ate_voce" ? "font-semibold text-emerald-700" : "text-zinc-600"}`}>
+    <p data-fila-pedido={fila.situacao} className={`text-xs ${fila.situacao === "indo_ate_voce" ? "font-semibold text-marca" : "text-conteudo-suave"}`}>
       {rotuloFila(fila)}
     </p>
   );

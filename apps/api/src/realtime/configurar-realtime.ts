@@ -11,6 +11,9 @@ import {
   EVENTO_ENTREGA_ATUALIZADA,
   EVENTO_ENTREGADOR_DISPONIBILIDADE,
   EVENTO_DESPACHO_ATUALIZADO,
+  EVENTO_PEDIDO_ACOMPANHAMENTO,
+  EVENTO_POSICAO_ENTREGADOR,
+  EVENTO_VINCULO_ENTREGADOR,
   EVENTO_FILA_ATUALIZADA,
   EVENTO_PEDIDO_FILA,
   EVENTO_SITUACAO_OPERACIONAL,
@@ -250,6 +253,21 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
     if (evento.tipo === "fila-atualizada") {
       // Cliente: só a posição do PRÓPRIO pedido, nunca a sequência.
       realtime.to(salas).emit(EVENTO_PEDIDO_FILA, evento.fila);
+      return;
+    }
+    if (evento.tipo === "vinculo-entregador-atualizado") {
+      // Convite/vínculo de entregador: só para a identidade pessoal de quem foi convidado.
+      realtime.to(salas).emit(EVENTO_VINCULO_ENTREGADOR, { convite: evento.convite, vinculo: evento.vinculo });
+      return;
+    }
+    if (evento.tipo === "posicao-atualizada") {
+      // Posição do entregador: só empresa e entregador daquela saída.
+      realtime.to(salas).emit(EVENTO_POSICAO_ENTREGADOR, { posicao: evento.posicao });
+      return;
+    }
+    if (evento.tipo === "acompanhamento-atualizado") {
+      // Cliente: a fila do PRÓPRIO pedido e, quando é a vez dele, o ponto do entregador.
+      realtime.to(salas).emit(EVENTO_PEDIDO_ACOMPANHAMENTO, { pedidoId: evento.pedidoId, acompanhamento: evento.acompanhamento });
       return;
     }
     if (evento.tipo === "despacho-atualizado") {

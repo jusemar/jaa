@@ -28,12 +28,14 @@ const [TEL_PRINCIPAL, TEL_OTP_INCORRETO, TEL_OTP_EXPIRADO, TEL_MARIA, TEL_OUTRA_
   TELEFONES_TESTE as [string, string, string, string, string, ...string[]];
 
 const ambiente = carregarAmbiente();
+// A origem do teste é definida AQUI: mudar as origens do .env local não pode quebrar a suíte.
+const ambienteDoTeste = { ...ambiente, ORIGENS_WEB_PERMITIDAS: [ORIGEM_WEB] };
 const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
 const { banco } = conexao;
 
 const opcoes = criarOpcoesAutenticacao({
   banco,
-  ambiente,
+  ambiente: ambienteDoTeste,
   entregadorOtp: { enviar: async () => {} },
   sessoesEncerradas: criarAvisoSessoesEncerradas(),
 });
@@ -116,7 +118,7 @@ async function limparDadosDeTeste() {
 
 before(async () => {
   await limparDadosDeTeste();
-  app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens: criarCanalEventosMensagens(), logger: false });
+  app = await criarAplicacao({ ambiente: ambienteDoTeste, banco, autenticacao, eventosMensagens: criarCanalEventosMensagens(), logger: false });
   await app.ready();
 });
 
@@ -467,21 +469,16 @@ describe("proteções contra abuso de envio de OTP", () => {
     assert.ok(comIpForjado.headers["x-retry-after"]);
   });
 
-  it("rotas de senha do plugin de telefone estão desativadas", async () => {
-    const ip = `${PREFIXO_IP_TESTE}10`;
-    for (const url of [
-      "/api/auth/sign-in/phone-number",
-      "/api/auth/phone-number/request-password-reset",
-      "/api/auth/phone-number/reset-password",
-    ]) {
-      const resposta = await requisitar({
-        metodo: "POST",
-        url,
-        ip,
-        corpo: { phoneNumber: TEL_PRINCIPAL, password: "senha-qualquer", otp: "123456", newPassword: "x" },
-      });
-      assert.equal(resposta.statusCode, 404, url);
-    }
+  it("senha errada não entra — e a recusa não revela se a conta existe", async () => {
+    const resposta = await requisitar({
+      metodo: "POST",
+      url: "/api/auth/sign-in/phone-number",
+      ip: `${PREFIXO_IP_TESTE}10`,
+      corpo: { phoneNumber: TEL_PRINCIPAL, password: "senha-que-nao-e-a-dele" },
+    });
+    // 401, e não 404: a rota existe (senha é credencial válida no Jaa), mas a tentativa falha.
+    assert.equal(resposta.statusCode, 401);
+    assert.equal(resposta.headers["set-cookie"], undefined, "tentativa recusada não pode criar sessão");
   });
 
   it("não há login por e-mail e senha", async () => {

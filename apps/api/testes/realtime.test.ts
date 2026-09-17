@@ -30,6 +30,8 @@ const TELEFONES_TESTE = Array.from({ length: 4 }, (_, i) => `+55319876501${Strin
 const [TEL_COMPLETO, TEL_INCOMPLETO] = TELEFONES_TESTE as [string, string, ...string[]];
 
 const ambiente = carregarAmbiente();
+// A origem do teste é definida AQUI: mudar as origens do .env local não pode quebrar a suíte.
+const ambienteDoTeste = { ...ambiente, ORIGENS_WEB_PERMITIDAS: [ORIGEM_WEB] };
 const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
 const { banco } = conexao;
 
@@ -37,7 +39,7 @@ const sessoesEncerradas = criarAvisoSessoesEncerradas();
 const eventosMensagens = criarCanalEventosMensagens();
 const opcoes = criarOpcoesAutenticacao({
   banco,
-  ambiente,
+  ambiente: ambienteDoTeste,
   entregadorOtp: { enviar: async () => {} },
   sessoesEncerradas,
 });
@@ -68,7 +70,7 @@ async function iniciarServidor() {
     banco,
     sessoesEncerradas,
     eventosMensagens,
-    origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS,
+    origensPermitidas: ambienteDoTeste.ORIGENS_WEB_PERMITIDAS,
   });
   await app.listen({ port: porta, host: "127.0.0.1" });
   porta = (app.server.address() as AddressInfo).port;

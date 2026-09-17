@@ -29,15 +29,15 @@ export function ResumoPercurso({ saida }: { saida: SaidaEntrega }) {
   const atualizada = rotaCobreSequenciaAtual(rota, saida.versaoSequencia);
 
   return (
-    <p data-percurso={rota?.estado ?? "sem_rota"} className="text-xs text-zinc-600">
+    <p data-percurso={rota?.estado ?? "sem_rota"} className="text-xs text-conteudo-suave">
       {rotuloRota(rota, saida.versaoSequencia)}
       {rota && atualizada && rota.estado === "aproximacao_local" && rota.motivoFallback && (
-        <span data-percurso-motivo={rota.motivoFallback} className="ml-1 text-zinc-500">
+        <span data-percurso-motivo={rota.motivoFallback} className="ml-1 text-conteudo-suave">
           {ROTULO_MOTIVO_FALLBACK[rota.motivoFallback]}
         </span>
       )}
       {rotaTemPercursoReal(rota) && atualizada && (
-        <span className="ml-1 text-zinc-500">(tempo de trajeto, não é previsão de entrega)</span>
+        <span className="ml-1 text-conteudo-suave">(tempo de trajeto, não é previsão de entrega)</span>
       )}
     </p>
   );

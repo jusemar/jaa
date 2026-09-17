@@ -26,7 +26,7 @@ export function AcoesPedidoEmpresa({
 
   if (!rotuloAvancar && !podeCancelarPedido(pedido.status)) {
     return (
-      <p data-sem-acoes className="text-xs text-zinc-500">
+      <p data-sem-acoes className="text-xs text-conteudo-suave">
         Este pedido está encerrado.
       </p>
     );
@@ -36,12 +36,12 @@ export function AcoesPedidoEmpresa({
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {rotuloAvancar && (
-          <button type="button" data-avancar-pedido disabled={ocupado} onClick={aoAvancar} className="rounded bg-black px-3 py-1.5 text-sm text-white disabled:opacity-50">
+          <button type="button" data-avancar-pedido disabled={ocupado} onClick={aoAvancar} className="rounded bg-marca px-3 py-1.5 text-sm text-white disabled:opacity-50">
             {rotuloAvancar}
           </button>
         )}
         {podeCancelarPedido(pedido.status) && !cancelando && (
-          <button type="button" data-cancelar-pedido onClick={() => setCancelando(true)} className="rounded border border-red-600 px-3 py-1.5 text-sm text-red-700">
+          <button type="button" data-cancelar-pedido onClick={() => setCancelando(true)} className="rounded-jaa border border-perigo/40 px-3 py-1.5 text-sm text-perigo">
             Cancelar pedido
           </button>
         )}
@@ -49,11 +49,11 @@ export function AcoesPedidoEmpresa({
 
       {/* Cancelar não acontece por um clique: exige motivo e confirmação. */}
       {cancelando && (
-        <div role="group" aria-label="Cancelar pedido" className="flex flex-col gap-2 rounded border border-red-300 bg-red-50 p-2 text-sm">
+        <div role="group" aria-label="Cancelar pedido" className="flex flex-col gap-2 rounded-jaa border border-perigo/40 bg-perigo/5 p-2 text-sm">
           <p>Cancelar este pedido? O cliente verá o cancelamento e o motivo.</p>
           <label className="flex flex-col gap-1 text-xs">
             Motivo
-            <select name="motivoCancelamento" value={motivo} onChange={(evento) => setMotivo(evento.target.value)} className="rounded border border-zinc-300 px-2 py-1 text-sm">
+            <select name="motivoCancelamento" value={motivo} onChange={(evento) => setMotivo(evento.target.value)} className="rounded-jaa border border-borda px-2 py-1 text-sm">
               {[...MOTIVOS_CANCELAMENTO_SUGERIDOS, "Outro motivo"].map((opcao) => (
                 <option key={opcao} value={opcao}>
                   {opcao}
@@ -68,7 +68,7 @@ export function AcoesPedidoEmpresa({
               maxLength={MOTIVO_CANCELAMENTO_TAMANHO_MAXIMO}
               placeholder="Explique em poucas palavras"
               onChange={(evento) => setOutroMotivo(evento.target.value)}
-              className="rounded border border-zinc-300 px-2 py-1"
+              className="rounded-jaa border border-borda px-2 py-1"
             />
           )}
           <div className="flex gap-2">
@@ -80,11 +80,11 @@ export function AcoesPedidoEmpresa({
                 aoCancelar(motivoEscolhido);
                 setCancelando(false);
               }}
-              className="rounded bg-red-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+              className="rounded-full bg-perigo px-3 py-1.5 text-sm text-marca-conteudo disabled:opacity-50"
             >
               Confirmar cancelamento
             </button>
-            <button type="button" onClick={() => setCancelando(false)} className="rounded border px-3 py-1.5 text-sm">
+            <button type="button" onClick={() => setCancelando(false)} className="rounded-jaa border px-3 py-1.5 text-sm">
               Manter pedido
             </button>
           </div>

@@ -1,3 +1,4 @@
+import { destruirMapa, liberarContainer, recalcularTamanho, registrarMapa } from "@/lib/mapa/leaflet";
 import { arredondarCoordenadas, type CriarMapaPonto } from "./provedor-mapa";
 
 /**
@@ -12,7 +13,15 @@ export const criarMapaLeaflet: CriarMapaPonto = async ({ elemento, centro, aoMov
   // Import dinâmico: Leaflet precisa de `window` e só roda no navegador.
   const L = (await import("leaflet")).default;
 
+  // O container pode ter sido usado por um mapa anterior (remontagem do efeito): liberar evita o
+  // "Map container is already initialized", que deixava a tela cinza.
+  // Remontagem do efeito: destrói a instância anterior antes de criar outra no mesmo elemento.
+  liberarContainer(elemento);
+
   const mapa = L.map(elemento, { zoomControl: true, attributionControl: true }).setView([centro.latitude, centro.longitude], 17);
+  registrarMapa(elemento, mapa);
+  // Container ainda sendo medido nasce 0×0 e não pede tile nenhum: recalcular resolve.
+  recalcularTamanho(mapa);
 
   // Sem serviço de tiles configurado o mapa continua utilizável (fundo vazio): o ponto é o que importa.
   if (urlTiles) {
@@ -29,8 +38,9 @@ export const criarMapaLeaflet: CriarMapaPonto = async ({ elemento, centro, aoMov
       avisar();
     },
     destruir() {
-      mapa.off();
-      mapa.remove();
+      // Sem `off()` antes: se o `remove()` falhasse, sobraria um mapa visível e sem ouvintes — ou
+      // seja, um mapa que não deixa mais arrastar nem clicar. `destruirMapa` já protege tudo.
+      destruirMapa(elemento, mapa);
     },
   };
 };

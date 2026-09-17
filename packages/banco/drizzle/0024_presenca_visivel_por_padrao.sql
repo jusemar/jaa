@@ -1,0 +1,1 @@
+ALTER TABLE "preferencias_identidade" ALTER COLUMN "visibilidade_presenca" SET DEFAULT 'todos';

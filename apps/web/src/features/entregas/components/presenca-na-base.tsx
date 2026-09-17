@@ -30,7 +30,7 @@ export function AvisoLocalizacao({ permissao }: { permissao: PermissaoLocalizaca
         ? "Este aparelho não informa localização. Sem ela não é possível entrar automaticamente na fila da base."
         : "Localização necessária para entrar automaticamente na fila da base.";
   return (
-    <p data-aviso-localizacao={permissao} className="text-xs text-amber-700">
+    <p data-aviso-localizacao={permissao} className="text-xs text-aviso">
       {mensagem}
     </p>
   );
@@ -45,14 +45,14 @@ export function MinhaSituacaoNaBase({ situacoes, permissao, aoPermitir }: { situ
 
   return (
     <div className="flex flex-col gap-2">
-      <ol aria-label="Minha situação nas bases" className="flex flex-col divide-y divide-zinc-200 rounded border border-zinc-200 text-sm">
+      <ol aria-label="Minha situação nas bases" className="flex flex-col divide-y divide-borda rounded-jaa border border-borda text-sm">
         {situacoes.map((situacao) => (
           <li key={situacao.entregadorId} data-situacao={situacao.entregadorId} className="flex flex-col gap-0.5 px-3 py-2">
             <span className="font-medium">{situacao.empresa.nome}</span>
-            <span data-estado-operacional={situacao.estado} className={`text-xs ${situacao.estado === "disponivel_na_base" ? "text-emerald-700" : "text-zinc-600"}`}>
+            <span data-estado-operacional={situacao.estado} className={`text-xs ${situacao.estado === "disponivel_na_base" ? "text-marca" : "text-conteudo-suave"}`}>
               {ROTULO_ESTADO_OPERACIONAL[situacao.estado]}
             </span>
-            <span data-presenca={situacao.naBase ? "na-base" : "fora-da-base"} className="text-xs text-zinc-600">
+            <span data-presenca={situacao.naBase ? "na-base" : "fora-da-base"} className="text-xs text-conteudo-suave">
               {situacao.naBase ? "Na base" : "Fora da base"}
             </span>
             {situacao.posicaoFila !== null ? (
@@ -60,16 +60,16 @@ export function MinhaSituacaoNaBase({ situacoes, permissao, aoPermitir }: { situ
                 {rotuloSituacaoEntregador(situacao)} · {situacao.totalNaFila} na fila
               </span>
             ) : (
-              <span className="text-xs text-zinc-600">{rotuloSituacaoEntregador(situacao)}</span>
+              <span className="text-xs text-conteudo-suave">{rotuloSituacaoEntregador(situacao)}</span>
             )}
-            {!situacao.baseConfigurada && <span className="text-xs text-amber-700">A empresa ainda não confirmou o ponto da base.</span>}
+            {!situacao.baseConfigurada && <span className="text-xs text-aviso">A empresa ainda não confirmou o ponto da base.</span>}
           </li>
         ))}
       </ol>
 
       <AvisoLocalizacao permissao={permissao} />
       {permissao !== "ativa" && permissao !== "indisponivel" && (
-        <button type="button" data-permitir-localizacao onClick={aoPermitir} className="self-start rounded border px-2 py-1 text-xs">
+        <button type="button" data-permitir-localizacao onClick={aoPermitir} className="self-start rounded-jaa border px-2 py-1 text-xs">
           Permitir localização
         </button>
       )}

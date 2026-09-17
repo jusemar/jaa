@@ -10,13 +10,16 @@
     "autenticacao:gerar-schema": "npx --yes auth@1.7.4 generate --config ./scripts/better-auth-schema.ts --output ../../packages/banco/src/tabelas/autenticacao/better-auth.ts --yes"
   },
   "dependencies": {
+    "@better-auth/expo": "^1.7.5",
     "@fastify/cors": "^11.3.0",
+    "@fastify/multipart": "^10.1.1",
     "@jaa/banco": "^0.1.0",
     "@jaa/contratos": "^0.1.0",
     "better-auth": "^1.7.4",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.12.4",
     "libphonenumber-js": "^1.13.13",
+    "sharp": "^0.35.4",
     "socket.io": "^4.8.3",
     "zod": "^4.6.5"
   },

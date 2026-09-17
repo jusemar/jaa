@@ -1,11 +1,4 @@
-import {
-  catalogoPublicoSchema,
-  listaEmpresasPublicasSchema,
-  produtoPublicoDetalheSchema,
-  type CatalogoPublico,
-  type ListaEmpresasPublicas,
-  type ProdutoPublicoDetalhe,
-} from "@jaa/contratos";
+import { catalogoPublicoSchema, produtoPublicoDetalheSchema, type CatalogoPublico, type ProdutoPublicoDetalhe } from "@jaa/contratos";
 import { requisitarApi, type ResultadoApi } from "@/lib/api";
 
 // Consulta de CLIENTE (pública): nunca usa as rotas administrativas de produtos.
@@ -17,8 +10,5 @@ export function obterProdutoDoCatalogo(identidadeEmpresaId: string, produtoId: s
   return requisitarApi(`/publico/empresas/${encodeURIComponent(identidadeEmpresaId)}/catalogo/produtos/${encodeURIComponent(produtoId)}`, produtoPublicoDetalheSchema);
 }
 
-// Descoberta TÉCNICA temporária (não é o "Encontrar" definitivo).
-export function buscarEmpresas(busca: string): Promise<ResultadoApi<ListaEmpresasPublicas>> {
-  const consulta = busca.trim() ? `?busca=${encodeURIComponent(busca.trim())}` : "";
-  return requisitarApi(`/descoberta/empresas${consulta}`, listaEmpresasPublicasSchema);
-}
+// A descoberta de empresas saiu daqui: procurar pessoa OU empresa agora é a busca única
+// "Pesquisar no Jaa" (features/contatos), que já respeita contatos e privacidade.

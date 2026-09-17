@@ -54,11 +54,16 @@ export const disponibilidadeProdutoSchema = z.enum(["disponivel", "indisponivel"
 
 export type DisponibilidadeProduto = z.infer<typeof disponibilidadeProdutoSchema>;
 
+// null = "Sem categoria" (explícito), ausente = não mexer. A categoria precisa ser DA MESMA empresa,
+// e quem confere isso é o servidor (e, em última instância, a FK composta do banco).
+export const categoriaIdSchema = z.uuid().nullable();
+
 export const criarProdutoEntradaSchema = z.object({
   nome: nomeProdutoSchema,
   descricao: descricaoProdutoSchema.optional(),
   precoCentavos: precoCentavosSchema,
   disponibilidade: disponibilidadeProdutoSchema.default("disponivel"),
+  categoriaId: categoriaIdSchema.optional(),
 });
 
 export type CriarProdutoEntrada = z.input<typeof criarProdutoEntradaSchema>;
@@ -70,6 +75,7 @@ export const atualizarProdutoEntradaSchema = z
     descricao: descricaoProdutoSchema.optional(),
     precoCentavos: precoCentavosSchema.optional(),
     disponibilidade: disponibilidadeProdutoSchema.optional(),
+    categoriaId: categoriaIdSchema.optional(),
   })
   .refine((entrada) => Object.values(entrada).some((valor) => valor !== undefined), "Informe ao menos um campo para alterar.");
 
@@ -90,14 +96,43 @@ export const produtoSchema = z.object({
   descricao: z.string().nullable(),
   precoCentavos: z.number().int(),
   disponibilidade: disponibilidadeProdutoSchema,
+  categoriaId: z.uuid().nullable(),
+  categoriaNome: z.string().nullable(),
+  // Endereço público montado pela API a partir da chave gravada; null = produto sem imagem.
+  imagemUrl: z.url().nullable(),
   criadoEm: z.iso.datetime(),
   atualizadoEm: z.iso.datetime(),
 });
 
 export type Produto = z.infer<typeof produtoSchema>;
 
+/*
+ * PAGINAÇÃO da administração. Aqui o cursor por id não serve: a empresa quer "página 3" e quer saber
+ * quantos produtos tem. O catálogo de uma empresa é pequeno o bastante para offset (o veto do
+ * CLAUDE.md a offset é sobre HISTÓRICO de mensagens, que cresce sem limite).
+ */
+export const PAGINA_PRODUTOS_TAMANHO_PADRAO = 20;
+export const PAGINA_PRODUTOS_TAMANHO_MAXIMO = 50;
+
+export const consultaProdutosSchema = z.object({
+  pagina: z.coerce.number().int().min(1).default(1),
+  limite: z.coerce.number().int().min(1).max(PAGINA_PRODUTOS_TAMANHO_MAXIMO).default(PAGINA_PRODUTOS_TAMANHO_PADRAO),
+  // "sem-categoria" filtra justamente os que ficaram de fora da organização.
+  categoriaId: z.union([z.uuid(), z.literal("sem-categoria")]).optional(),
+  disponibilidade: disponibilidadeProdutoSchema.optional(),
+  busca: z.string().trim().min(1).max(120).optional(),
+});
+
+export type ConsultaProdutos = z.input<typeof consultaProdutosSchema>;
+
 export const listaProdutosSchema = z.object({
   produtos: z.array(produtoSchema),
+  paginacao: z.object({
+    pagina: z.number().int(),
+    limite: z.number().int(),
+    total: z.number().int(),
+    totalPaginas: z.number().int(),
+  }),
 });
 
 export type ListaProdutos = z.infer<typeof listaProdutosSchema>;

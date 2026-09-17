@@ -34,18 +34,21 @@ describe("ListaEmpresas", () => {
 });
 
 describe("SeletorIdentidade", () => {
-  it("separa Pessoa e Empresas e marca o tipo da identidade ativa", () => {
+  it("mostra QUEM a pessoa é agora — avatar, nome e @usuario, não um select técnico", () => {
     const html = renderToStaticMarkup(createElement(SeletorIdentidade, { operaveis: [pessoal, empresarial], ativa: pessoal, erro: null, aoSelecionar: () => {} }));
-    assert.ok(html.includes('<optgroup label="Pessoa">') && html.includes('<optgroup label="Empresas">'));
-    assert.ok(html.indexOf("Junior Rocha") < html.indexOf('label="Empresas"') && html.indexOf("Pizzaria BH") > html.indexOf('label="Empresas"'));
+    assert.ok(texto(html).includes("Agindo como"));
+    assert.ok(texto(html).includes("Junior Rocha"));
     assert.ok(html.includes('data-tipo-identidade-ativa="pessoal"'));
+    // O menu abre por interação: fechado, não despeja a lista inteira na tela.
+    assert.ok(!html.includes('role="menu"'));
+    assert.ok(html.includes('aria-expanded="false"'));
     assert.ok(!html.includes('role="note"'));
   });
 
   it("com empresa ativa avisa que o mensageiro opera como a empresa, sem conversas pessoais", () => {
     const html = renderToStaticMarkup(createElement(SeletorIdentidade, { operaveis: [pessoal, empresarial], ativa: empresarial, erro: null, aoSelecionar: () => {} }));
     assert.ok(html.includes('data-tipo-identidade-ativa="empresarial"'));
-    assert.ok(texto(html).includes("conversas e respostas saem como Pizzaria BH"));
+    assert.ok(texto(html).includes("Você responde como Pizzaria BH"));
     assert.ok(texto(html).includes("Suas conversas pessoais não aparecem aqui"));
   });
 });

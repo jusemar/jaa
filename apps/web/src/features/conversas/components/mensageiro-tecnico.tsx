@@ -1,8 +1,8 @@
 "use client";
 
-import type { EmpresaPublica, EventoNotificacaoNovaMensagem, ParticipanteConversa, TipoIdentidade } from "@jaa/contratos";
-import { DescobertaEmpresasTecnica } from "@/features/catalogo/components/descoberta-empresas-tecnica";
-import { useEffect, useState, type FormEvent } from "react";
+import type { EventoNotificacaoNovaMensagem, ParticipanteConversa, TipoIdentidade } from "@jaa/contratos";
+import { PesquisaJaa } from "@/features/contatos/components/pesquisa-jaa";
+import { useEffect, useState } from "react";
 import { useConfirmacaoRecebimento } from "../hooks/use-confirmacao-recebimento";
 import { useDocumentoVisivel } from "../hooks/use-documento-visivel";
 import { useListaConversas } from "../hooks/use-lista-conversas";
@@ -14,10 +14,29 @@ import { AvisosNotificacao } from "./avisos-notificacao";
 import { ConversaTecnica, type ConversaAberta } from "./conversa-tecnica";
 import { ListaConversas } from "./lista-conversas";
 
-// Interface TÉCNICA e TEMPORÁRIA: lista de conversas ao lado da conversa aberta. Não é o design do Jaa.
+/*
+ * O MENSAGEIRO em dois painéis, como na referência de UI/UX aprovada: a lista de conversas à
+ * esquerda e a conversa aberta à direita.
+ *
+ * No CELULAR só um painel existe por vez — a lista ocupa a tela, e abrir uma conversa a substitui
+ * (com "voltar" no cabeçalho). É a diferença que mais pesa na experiência: antes a conversa era uma
+ * caixinha de altura fixa embaixo da lista, e no celular isso era impraticável.
+ *
+ * Nada da mecânica mudou: inbox por identidade ATUANTE, realtime, confirmação de recebimento,
+ * leitura e notificações continuam exatamente como estavam.
+ */
 
 // `identidadeId` = identidade ATUANTE (pessoal ou empresa operada). A inbox é carregada pela API para ela.
-export function MensageiroTecnico({ identidadeId, tipoIdentidade = "pessoal" }: { identidadeId: string; tipoIdentidade?: TipoIdentidade }) {
+export function MensageiroTecnico({
+  identidadeId,
+  tipoIdentidade = "pessoal",
+  aoAlterarConversaAberta,
+}: {
+  identidadeId: string;
+  tipoIdentidade?: TipoIdentidade;
+  // Avisa o app: com uma conversa aberta no celular, a barra de navegação sai do caminho.
+  aoAlterarConversaAberta?: (aberta: boolean) => void;
+}) {
   const lista = useListaConversas();
   const documentoVisivel = useDocumentoVisivel();
   useConfirmacaoRecebimento(identidadeId);
@@ -37,18 +56,16 @@ export function MensageiroTecnico({ identidadeId, tipoIdentidade = "pessoal" }: 
     document.title = totalNaoLidas > 0 ? `(${rotuloNaoLidas(totalNaoLidas)}) ${tituloOriginal}` : tituloOriginal;
   }, [totalNaoLidas]);
 
+  useEffect(() => {
+    aoAlterarConversaAberta?.(conversaAberta !== null);
+  }, [conversaAberta, aoAlterarConversaAberta]);
+
   function abrirPelaNotificacao(aviso: EventoNotificacaoNovaMensagem) {
     setConversaAberta({ id: aviso.conversaId, outraIdentidade: aviso.remetente });
     notificacoes.dispensar(aviso.mensagemId);
   }
-  const [destino, setDestino] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [abrindo, setAbrindo] = useState(false);
-
-  async function abrirPorNomeUsuario(evento: FormEvent<HTMLFormElement>) {
-    evento.preventDefault();
-    await abrirCom(destino);
-  }
 
   async function abrirCom(nomeUsuario: string) {
     setErro(null);
@@ -67,33 +84,25 @@ export function MensageiroTecnico({ identidadeId, tipoIdentidade = "pessoal" }: 
   }
 
   return (
-    <section
-      aria-label="Mensageiro"
-      className="grid gap-6 border-t border-zinc-200 pt-4 md:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]"
-    >
-      <div className="flex flex-col gap-4">
-        {tipoIdentidade === "pessoal" && <DescobertaEmpresasTecnica aoConversar={(empresa: EmpresaPublica) => void abrirCom(empresa.nomeUsuario)} />}
-        <form onSubmit={(evento) => void abrirPorNomeUsuario(evento)} className="flex items-end gap-2">
-          <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-            @usuario do contato
-            <input
-              name="destino"
-              value={destino}
-              onChange={(evento) => setDestino(evento.target.value)}
-              placeholder="@usuario"
-              required
-              className="min-w-0 rounded border border-zinc-300 px-3 py-2 text-base"
-            />
-          </label>
-          <button type="submit" disabled={abrindo} className="shrink-0 whitespace-nowrap rounded border px-3 py-2 text-sm disabled:opacity-50">
-            Abrir conversa
-          </button>
-        </form>
-        {erro && (
-          <p role="alert" className="text-sm text-red-600">
-            {erro}
-          </p>
-        )}
+    <section aria-label="Mensageiro" className="flex min-h-0 flex-1">
+      <aside
+        aria-label="Conversas"
+        className={`min-w-0 flex-col border-borda bg-fundo md:flex md:w-[21rem] md:shrink-0 md:border-r lg:w-[23rem] ${conversaAberta ? "hidden w-full" : "flex w-full"}`}
+      >
+        <div className="shrink-0 px-3 pb-2 pt-3">
+          {/* Uma busca só: pessoas e empresas, contatos primeiro. Tocar no resultado abre a conversa. */}
+          <PesquisaJaa aoAbrirConversa={(nomeUsuario) => void abrirCom(nomeUsuario)} />
+          {abrindo && (
+            <p role="status" className="px-1 pt-1 text-xs text-conteudo-suave">
+              Abrindo conversa…
+            </p>
+          )}
+          {erro && (
+            <p role="alert" className="px-1 pt-1 text-sm text-perigo">
+              {erro}
+            </p>
+          )}
+        </div>
 
         <ListaConversas
           identidadeId={identidadeId}
@@ -107,22 +116,34 @@ export function MensageiroTecnico({ identidadeId, tipoIdentidade = "pessoal" }: 
           aoAbrir={(item) => setConversaAberta({ id: item.id, outraIdentidade: item.outraIdentidade })}
           aoCarregarMais={() => void lista.carregarMais()}
         />
+      </aside>
+
+      <div className={`min-w-0 flex-1 flex-col ${conversaAberta ? "flex" : "hidden md:flex"}`}>
+        {conversaAberta ? (
+          // `key`: trocar de conversa recomeça o estado (histórico, envio pendente, atividade) do zero.
+          <ConversaTecnica
+            key={conversaAberta.id}
+            identidadeId={identidadeId}
+            tipoIdentidade={tipoIdentidade}
+            conversa={conversaAberta}
+            aoVoltar={() => setConversaAberta(null)}
+            aoMensagemConfirmada={lista.registrarMensagem}
+            aoMensagemAtualizada={lista.registrarAtualizacao}
+            aoMensagemExcluidaParaMim={lista.registrarExclusaoParaMim}
+          />
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 bg-conversa-fundo px-6 text-center">
+            <span aria-hidden className="fonte-display grid h-14 w-14 place-items-center rounded-[0.85rem_0.85rem_0.85rem_0.3rem] bg-conteudo text-2xl font-bold text-marca-conteudo shadow-suave">
+              J
+            </span>
+            <p className="fonte-display text-base font-semibold">Escolha uma conversa</p>
+            <p className="max-w-sm text-sm text-conteudo-suave">
+              Selecione alguém na lista ao lado, ou use a busca para encontrar uma pessoa ou empresa pelo nome ou @usuario.
+            </p>
+          </div>
+        )}
       </div>
 
-      {conversaAberta ? (
-        // `key`: trocar de conversa recomeça o estado (histórico, envio pendente, atividade) do zero.
-        <ConversaTecnica
-          key={conversaAberta.id}
-          identidadeId={identidadeId}
-          tipoIdentidade={tipoIdentidade}
-          conversa={conversaAberta}
-          aoMensagemConfirmada={lista.registrarMensagem}
-          aoMensagemAtualizada={lista.registrarAtualizacao}
-          aoMensagemExcluidaParaMim={lista.registrarExclusaoParaMim}
-        />
-      ) : (
-        <p className="text-sm text-zinc-500">Selecione uma conversa.</p>
-      )}
       <AvisosNotificacao avisos={notificacoes.avisos} aoAbrir={abrirPelaNotificacao} aoDispensar={notificacoes.dispensar} />
     </section>
   );

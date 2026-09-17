@@ -104,6 +104,22 @@ export const listaEnderecosSchema = z.object({ enderecos: z.array(enderecoClient
 
 export type ListaEnderecos = z.infer<typeof listaEnderecosSchema>;
 
+/**
+ * Endereço sugerido pelo CEP. É só PREENCHIMENTO do formulário: o CEP não confirma coordenada, e
+ * campos ausentes (CEP geral de cidade, por exemplo) continuam sendo preenchidos por quem cadastra.
+ */
+export const enderecoDoCepSchema = z.object({
+  cep: z.string(),
+  logradouro: z.string().nullable(),
+  bairro: z.string().nullable(),
+  cidade: z.string().nullable(),
+  uf: z.string().nullable(),
+  // false quando o provedor não respondeu: a tela avisa e segue no preenchimento manual.
+  encontrado: z.boolean(),
+});
+
+export type EnderecoDoCep = z.infer<typeof enderecoDoCepSchema>;
+
 // Sugestão de ponto (geocodificação) é só um palpite para abrir o mapa; nunca vira confirmação.
 export const sugestaoLocalizacaoSchema = z.object({
   coordenadas: coordenadasSchema.nullable(),

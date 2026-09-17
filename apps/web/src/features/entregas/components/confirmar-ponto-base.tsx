@@ -2,8 +2,6 @@
 
 import { formatarEnderecoResumido, type BaseEmpresa, type Coordenadas } from "@jaa/contratos";
 import { useEffect, useRef, useState } from "react";
-// Estilos do Leaflet (a biblioteca posiciona os painéis por CSS; sem ele o mapa fica quebrado).
-import "leaflet/dist/leaflet.css";
 import { ATRIBUICAO_TILES, URL_TILES_MAPA } from "@/features/enderecos/mapa/configuracao-mapa";
 import { criarMapaLeaflet } from "@/features/enderecos/mapa/mapa-leaflet";
 import { CENTRO_PADRAO, type MapaPonto } from "@/features/enderecos/mapa/provedor-mapa";
@@ -57,16 +55,16 @@ export function ConfirmarPontoBase({
   }, []);
 
   return (
-    <section aria-label="Confirmar ponto da base" className="flex flex-col gap-2 rounded border border-zinc-200 bg-white p-3 text-sm">
+    <section aria-label="Confirmar ponto da base" className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3 text-sm">
       <h3 className="font-semibold">Confirme o ponto exato da base</h3>
-      <p data-endereco-base className="text-xs text-zinc-600">
+      <p data-endereco-base className="text-xs text-conteudo-suave">
         {formatarEnderecoResumido(base)} — {base.bairro}, {base.cidade}/{base.uf}
       </p>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-conteudo-suave">
         Arraste o mapa para deixar o marcador na porta de saída dos entregadores. O endereço digitado não muda: o ponto é só a referência da base.
       </p>
 
-      <div className="relative h-64 w-full overflow-hidden rounded border border-zinc-300">
+      <div className="relative h-64 w-full overflow-hidden rounded-jaa border border-borda">
         <div ref={containerRef} data-mapa-base className="h-full w-full" />
         {/* Marcador fixo no centro: move-se o mapa embaixo dele (fácil no celular). */}
         <span aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-[400] -translate-x-1/2 -translate-y-full text-2xl">
@@ -74,21 +72,21 @@ export function ConfirmarPontoBase({
         </span>
       </div>
 
-      <p data-ponto-base={`${ponto.latitude},${ponto.longitude}`} className="text-xs text-zinc-500">
+      <p data-ponto-base={`${ponto.latitude},${ponto.longitude}`} className="text-xs text-conteudo-suave">
         Quem estiver a até {base.raioMetros} m deste ponto é considerado na base.
       </p>
 
       <div className="flex gap-2">
-        <button type="button" data-confirmar-ponto-base disabled={enviando} onClick={() => aoConfirmar(ponto)} className="rounded bg-black px-3 py-2 text-white disabled:opacity-50">
+        <button type="button" data-confirmar-ponto-base disabled={enviando} onClick={() => aoConfirmar(ponto)} className="rounded bg-marca px-3 py-2 text-white disabled:opacity-50">
           Confirmar ponto da base
         </button>
-        <button type="button" onClick={aoCancelar} className="rounded border px-3 py-2">
+        <button type="button" onClick={aoCancelar} className="rounded-jaa border px-3 py-2">
           Voltar
         </button>
       </div>
 
       {erro && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-perigo">
           {erro}
         </p>
       )}

@@ -141,6 +141,41 @@
       "when": 1789589024351,
       "tag": "0019_motor_de_rotas",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789592776174,
+      "tag": "0020_posicao_da_saida",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789609675784,
+      "tag": "0021_contatos_e_preferencias",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1789610391644,
+      "tag": "0022_perfil_privacidade_e_categorias",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789635585411,
+      "tag": "0023_categoria_sem_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789636569824,
+      "tag": "0024_presenca_visivel_por_padrao",
+      "breakpoints": true
     }
   ]
 }

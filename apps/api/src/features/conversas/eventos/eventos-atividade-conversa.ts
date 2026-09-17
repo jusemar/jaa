@@ -12,6 +12,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { salaDaConversa, salaDePresenca } from "../../../realtime/salas.js";
 import type { SocketRealtime } from "../../../realtime/tipos.js";
 import type { RegistroPresenca } from "../../presenca/lib/registro-presenca.js";
+import { presencasVisiveis } from "../../perfil/lib/visibilidade-presenca.js";
 import { autorizarObservacaoConversa } from "../casos-de-uso/autorizar-observacao-conversa.js";
 import type { RegistroDigitando } from "../lib/registro-digitando.js";
 
@@ -59,12 +60,24 @@ export function registrarEventosAtividadeConversa(socket: SocketRealtime, depend
       }
 
       const outros = resultado.outrosParticipantesIds;
+      /*
+       * PRIVACIDADE DE PRESENÇA resolvida aqui, uma vez: quem não pode ver não entra na sala de
+       * presença daquela identidade. Assim nenhum evento posterior precisa ser filtrado, e nada é
+       * respondido sobre ela — a interface fica sem indicador, em vez de afirmar "sem conexão"
+       * (que seria mentira).
+       */
+      const visiveis = new Set(await presencasVisiveis(dependencias.banco, outros, identidadeId));
+      if (!socket.connected) {
+        responderSeFuncao<RespostaObservarConversa>(responder, { ok: false, codigo: "CONVERSA_NAO_ENCONTRADA" });
+        return;
+      }
+
       observacoes.set(conversaId, outros);
       // Inscrição e leitura do estado atual no mesmo tick: nenhuma mudança fica entre as duas.
-      void socket.join([salaDaConversa(conversaId), ...outros.map(salaDePresenca)]);
+      void socket.join([salaDaConversa(conversaId), ...outros.filter((id) => visiveis.has(id)).map(salaDePresenca)]);
       responderSeFuncao<RespostaObservarConversa>(responder, {
         ok: true,
-        presencas: outros.map((id) => ({ identidadeId: id, online: dependencias.presenca.estaOnline(id) })),
+        presencas: outros.filter((id) => visiveis.has(id)).map((id) => ({ identidadeId: id, online: dependencias.presenca.estaOnline(id) })),
       });
     } catch (erro) {
       dependencias.log.error({ erro: erro instanceof Error ? erro.message : "desconhecido" }, "Falha ao autorizar observação de conversa");

@@ -1,4 +1,16 @@
-import type { EntregaAtribuida, EntregadorDaEmpresa, FilaDoPedido, PainelDespacho, PainelOperacional, SaidaEntrega, SituacaoOperacional } from "@jaa/contratos";
+import type {
+  AcompanhamentoPedido,
+  ConviteEntregador,
+  VinculoEntregador,
+  EntregaAtribuida,
+  EntregadorDaEmpresa,
+  FilaDoPedido,
+  PainelDespacho,
+  PainelOperacional,
+  PosicaoEntregador,
+  SaidaEntrega,
+  SituacaoOperacional,
+} from "@jaa/contratos";
 
 /**
  * Canal interno do domínio ENTREGA: publicado só depois do commit.
@@ -73,6 +85,38 @@ export interface DespachoAtualizado {
   painel: PainelDespacho;
 }
 
+/**
+ * POSIÇÃO do entregador numa saída em andamento: vai para a identidade da EMPRESA daquela saída e
+ * para o próprio entregador. Cliente nunca recebe este evento (ele veria a operação inteira).
+ */
+export interface PosicaoAtualizada {
+  tipo: "posicao-atualizada";
+  destinatariosIdentidadeIds: string[];
+  posicao: PosicaoEntregador;
+}
+
+/**
+ * ACOMPANHAMENTO do PRÓPRIO pedido para a identidade do cliente: fila + posição só quando a entrega
+ * dele é a parada atual. Nunca destinos, coordenadas ou ids das outras paradas.
+ */
+export interface AcompanhamentoAtualizado {
+  tipo: "acompanhamento-atualizado";
+  destinatariosIdentidadeIds: string[];
+  pedidoId: string;
+  acompanhamento: AcompanhamentoPedido;
+}
+
+/**
+ * O VÍNCULO de entregador da pessoa mudou (convidada, respondeu, ativada/desativada). Vai só para a
+ * identidade pessoal dela: é o que faz o convite aparecer na hora, sem recarregar a página.
+ */
+export interface VinculoEntregadorAtualizado {
+  tipo: "vinculo-entregador-atualizado";
+  destinatariosIdentidadeIds: string[];
+  convite: ConviteEntregador | null;
+  vinculo: VinculoEntregador | null;
+}
+
 export type EventoDominioEntregas =
   | EntregaAtualizada
   | DisponibilidadeAtualizada
@@ -80,7 +124,10 @@ export type EventoDominioEntregas =
   | FilaAtualizada
   | PainelOperacionalAtualizado
   | SituacaoOperacionalAtualizada
-  | DespachoAtualizado;
+  | DespachoAtualizado
+  | PosicaoAtualizada
+  | AcompanhamentoAtualizado
+  | VinculoEntregadorAtualizado;
 
 type OuvinteEventosEntregas = (evento: EventoDominioEntregas) => void;
 

@@ -44,11 +44,11 @@ export function CatalogoDaEmpresa({
   }
 
   return (
-    <section aria-label="Catálogo da empresa" className="flex flex-col gap-2 rounded border border-zinc-200 bg-white p-3">
+    <section aria-label="Catálogo da empresa" className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3">
       <button type="button" onClick={aoFechar} aria-label="Fechar produtos" className="self-end text-xs underline">
         Fechar produtos
       </button>
-      {!catalogo && !erro && <p className="text-sm text-zinc-500">Carregando produtos…</p>}
+      {!catalogo && !erro && <p className="text-sm text-conteudo-suave">Carregando produtos…</p>}
       {catalogo && !produto && (
         <ListaCatalogo
           empresa={catalogo.empresa}
@@ -66,7 +66,7 @@ export function CatalogoDaEmpresa({
         />
       )}
       {erro && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-perigo">
           {erro}
         </p>
       )}

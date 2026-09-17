@@ -24,21 +24,21 @@ export function ListaEntregadores({
   ocupado: boolean;
   aoAlterarStatus: (entregador: EntregadorDaEmpresa, status: "ativo" | "inativo") => void;
 }) {
-  if (entregadores.length === 0) return <p className="text-sm text-zinc-500">Nenhum entregador ainda.</p>;
+  if (entregadores.length === 0) return <p className="text-sm text-conteudo-suave">Nenhum entregador ainda.</p>;
 
   return (
-    <ol aria-label="Entregadores" className="flex flex-col divide-y divide-zinc-200 rounded border border-zinc-200 text-sm">
+    <ol aria-label="Entregadores" className="flex flex-col divide-y divide-borda rounded-jaa border border-borda text-sm">
       {entregadores.map((entregador) => (
         <li key={entregador.id} data-entregador={entregador.id} className="flex items-center justify-between gap-2 px-3 py-2">
           <span className="flex min-w-0 flex-col">
             <span className="truncate font-medium">{entregador.pessoa.nomeExibicao}</span>
-            <span className="text-xs text-zinc-500">@{entregador.pessoa.nomeUsuario}</span>
+            <span className="text-xs text-conteudo-suave">@{entregador.pessoa.nomeUsuario}</span>
             {/* Vínculo (profissional, da empresa) e disponibilidade (operacional, do entregador). */}
-            <span data-status-entregador={entregador.status} className="text-xs text-zinc-600">
+            <span data-status-entregador={entregador.status} className="text-xs text-conteudo-suave">
               Vínculo: {ROTULO_STATUS_ENTREGADOR[entregador.status]}
             </span>
             {entregadorPodeOperar(entregador.status) && (
-              <span data-disponibilidade={entregador.disponivel ? "disponivel" : "indisponivel"} className={`text-xs ${entregador.disponivel ? "text-emerald-700" : "text-zinc-600"}`}>
+              <span data-disponibilidade={entregador.disponivel ? "disponivel" : "indisponivel"} className={`text-xs ${entregador.disponivel ? "text-marca" : "text-conteudo-suave"}`}>
                 Disponibilidade: {rotuloDisponibilidade(entregador.disponivel)}
               </span>
             )}
@@ -50,7 +50,7 @@ export function ListaEntregadores({
               data-alternar-entregador
               disabled={ocupado}
               onClick={() => aoAlterarStatus(entregador, entregador.status === "ativo" ? "inativo" : "ativo")}
-              className="shrink-0 rounded border px-2 py-1 text-xs disabled:opacity-50"
+              className="shrink-0 rounded-jaa border px-2 py-1 text-xs disabled:opacity-50"
             >
               {entregador.status === "ativo" ? "Desativar" : "Ativar"}
             </button>
@@ -144,7 +144,7 @@ export function QuadroEntregadores({ empresaId, nomeEmpresa }: { empresaId: stri
   }
 
   return (
-    <section aria-label="Entregadores da empresa" className="flex flex-col gap-3 rounded border border-zinc-200 p-3">
+    <section aria-label="Entregadores da empresa" className="flex flex-col gap-3 rounded-jaa border border-borda p-3">
       <h3 className="text-sm font-semibold">Entregadores — {nomeEmpresa}</h3>
 
       <form aria-label="Convidar entregador" onSubmit={(evento) => void convidar(evento)} className="flex items-end gap-2 text-sm">
@@ -157,10 +157,10 @@ export function QuadroEntregadores({ empresaId, nomeEmpresa }: { empresaId: stri
             maxLength={31}
             placeholder="@paulo"
             onChange={(evento) => setNomeUsuario(evento.target.value)}
-            className="min-w-0 rounded border border-zinc-300 px-2 py-1.5"
+            className="min-w-0 rounded-jaa border border-borda px-2 py-1.5"
           />
         </label>
-        <button type="submit" disabled={ocupado} className="shrink-0 rounded bg-black px-3 py-2 text-xs text-white disabled:opacity-50">
+        <button type="submit" disabled={ocupado} className="shrink-0 rounded bg-marca px-3 py-2 text-xs text-white disabled:opacity-50">
           Convidar
         </button>
       </form>
@@ -168,12 +168,12 @@ export function QuadroEntregadores({ empresaId, nomeEmpresa }: { empresaId: stri
       <ListaEntregadores entregadores={entregadores} ocupado={ocupado} aoAlterarStatus={(entregador, status) => void alterar(entregador, status)} />
 
       {aviso && (
-        <p role="status" className="text-xs text-emerald-700">
+        <p role="status" className="text-xs text-marca">
           {aviso}
         </p>
       )}
       {erro && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-perigo">
           {erro}
         </p>
       )}

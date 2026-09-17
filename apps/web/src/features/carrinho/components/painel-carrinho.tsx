@@ -56,7 +56,7 @@ export function PainelCarrinho({
   }
 
   return (
-    <section aria-label="Carrinho" className="flex flex-col gap-2 rounded border border-zinc-200 bg-white p-3 text-sm">
+    <section aria-label="Carrinho" className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3 text-sm">
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-semibold">Carrinho — {carrinho.empresa.nome}</h3>
         <button type="button" onClick={aoFechar} className="text-xs underline">
@@ -64,23 +64,23 @@ export function PainelCarrinho({
         </button>
       </div>
 
-      <ol aria-label="Itens do carrinho" className="flex flex-col divide-y divide-zinc-200 rounded border border-zinc-200">
+      <ol aria-label="Itens do carrinho" className="flex flex-col divide-y divide-borda rounded-jaa border border-borda">
         {carrinho.itens.map((item) => (
           <li key={item.produtoId} data-item-carrinho={item.produtoId} className="flex items-center justify-between gap-2 px-2 py-1.5">
             <span className="min-w-0">
               <span className="block truncate">{item.nome}</span>
-              <span data-subtotal className="text-xs text-zinc-500">
+              <span data-subtotal className="text-xs text-conteudo-suave">
                 {item.quantidade} × {formatarPrecoCentavos(item.precoCentavos)} = {formatarPrecoCentavos(item.precoCentavos * item.quantidade)}
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-1">
-              <button type="button" aria-label={`Diminuir ${item.nome}`} onClick={() => aoAlterarQuantidade(item.produtoId, item.quantidade - 1)} className="rounded border px-2">
+              <button type="button" aria-label={`Diminuir ${item.nome}`} onClick={() => aoAlterarQuantidade(item.produtoId, item.quantidade - 1)} className="rounded-jaa border px-2">
                 −
               </button>
               <span data-quantidade className="min-w-6 text-center">
                 {item.quantidade}
               </span>
-              <button type="button" aria-label={`Aumentar ${item.nome}`} onClick={() => aoAlterarQuantidade(item.produtoId, item.quantidade + 1)} className="rounded border px-2">
+              <button type="button" aria-label={`Aumentar ${item.nome}`} onClick={() => aoAlterarQuantidade(item.produtoId, item.quantidade + 1)} className="rounded-jaa border px-2">
                 +
               </button>
               <button type="button" aria-label={`Remover ${item.nome}`} onClick={() => aoRemover(item.produtoId)} className="rounded px-1 text-xs underline">
@@ -96,7 +96,7 @@ export function PainelCarrinho({
       </p>
 
       {/* Destino antes do pagamento: pedido de entrega não existe sem endereço confirmado. */}
-      <div data-endereco-selecionado={endereco?.id ?? ""} className="flex items-start justify-between gap-2 rounded border border-zinc-200 p-2">
+      <div data-endereco-selecionado={endereco?.id ?? ""} className="flex items-start justify-between gap-2 rounded-jaa border border-borda p-2">
         <span className="flex min-w-0 flex-col text-xs">
           <span className="font-medium">Entregar em</span>
           {endereco ? (
@@ -104,22 +104,22 @@ export function PainelCarrinho({
               <span>
                 {endereco.apelido} · {formatarEnderecoResumido(endereco)}
               </span>
-              <span className="text-zinc-500">
+              <span className="text-conteudo-suave">
                 {endereco.bairro}, {endereco.cidade}/{endereco.uf}
               </span>
-              <span className="text-emerald-700">📍 Ponto de entrega confirmado</span>
+              <span className="text-marca">📍 Ponto de entrega confirmado</span>
             </>
           ) : (
-            <span className="text-amber-700">Escolha o endereço de entrega para continuar.</span>
+            <span className="text-aviso">Escolha o endereço de entrega para continuar.</span>
           )}
         </span>
-        <button type="button" data-escolher-endereco onClick={aoTrocarEndereco} className="shrink-0 rounded border px-2 py-1 text-xs">
+        <button type="button" data-escolher-endereco onClick={aoTrocarEndereco} className="shrink-0 rounded-jaa border px-2 py-1 text-xs">
           {endereco ? "Trocar endereço" : "Escolher endereço"}
         </button>
       </div>
 
-      <fieldset className="flex flex-col gap-1 rounded border border-zinc-200 p-2">
-        <legend className="px-1 text-xs text-zinc-500">Pagamento na entrega</legend>
+      <fieldset className="flex flex-col gap-1 rounded-jaa border border-borda p-2">
+        <legend className="px-1 text-xs text-conteudo-suave">Pagamento na entrega</legend>
         {(["dinheiro", "cartao"] as const).map((opcao) => (
           <label key={opcao} className="flex items-center gap-2">
             <input
@@ -149,7 +149,7 @@ export function PainelCarrinho({
             {precisaTroco && (
               <label className="flex flex-col gap-1">
                 Troco para quanto?
-                <input name="trocoPara" value={trocoDigitado} inputMode="decimal" placeholder="100,00" onChange={(evento) => setTrocoDigitado(evento.target.value)} className="rounded border border-zinc-300 px-2 py-1" />
+                <input name="trocoPara" value={trocoDigitado} inputMode="decimal" placeholder="100,00" onChange={(evento) => setTrocoDigitado(evento.target.value)} className="rounded-jaa border border-borda px-2 py-1" />
               </label>
             )}
           </div>
@@ -160,7 +160,7 @@ export function PainelCarrinho({
        * Pagamento ONLINE ainda não existe no Jaa: nada de gateway, cobrança, QR, token ou dado
        * bancário. As opções aparecem só como lembrete visual, desabilitadas, como as mídias do chat.
        */}
-      <fieldset disabled className="flex flex-col gap-1 rounded border border-dashed border-zinc-300 p-2 text-zinc-400">
+      <fieldset disabled className="flex flex-col gap-1 rounded-jaa border border-dashed border-borda p-2 text-conteudo-suave/70">
         <legend className="px-1 text-xs">Pagamento online — em breve</legend>
         {[
           { valor: "pix-online", rotulo: "Pix online" },
@@ -173,11 +173,11 @@ export function PainelCarrinho({
         ))}
       </fieldset>
 
-      <button type="button" disabled={enviando || carrinho.itens.length === 0 || endereco === null} onClick={confirmar} className="rounded bg-black px-3 py-2 text-white disabled:opacity-50">
+      <button type="button" disabled={enviando || carrinho.itens.length === 0 || endereco === null} onClick={confirmar} className="rounded bg-marca px-3 py-2 text-white disabled:opacity-50">
         Confirmar pedido
       </button>
       {(erroTroco ?? erro) && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-perigo">
           {erroTroco ?? erro}
         </p>
       )}

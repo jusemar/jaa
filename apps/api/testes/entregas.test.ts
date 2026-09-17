@@ -5,12 +5,14 @@ import { atribuicoesEntrega } from "@jaa/banco/schema";
 import {
   EVENTO_ENTREGA_ATUALIZADA,
   EVENTO_ENTREGADOR_DISPONIBILIDADE,
+  EVENTO_VINCULO_ENTREGADOR,
   type Empresa,
   type EntregaAtribuida,
   type EntregaDoPedido,
   type EntregadorDaEmpresa,
   type EventoEntregaAtualizada,
   type EventoEntregadorDisponibilidade,
+  type EventoVinculoEntregador,
   type ListaVinculosEntregador,
   type ListaConvitesEntregador,
   type ListaEntregadores,
@@ -41,6 +43,7 @@ let C: Pessoa;
 let R: Pessoa;
 let pizzaria: Empresa;
 let farmacia: Empresa;
+let padaria: Empresa;
 let pizza: Produto;
 let dipirona: Produto;
 let conversaBP = "";
@@ -93,6 +96,7 @@ before(async () => {
   pizzaria = (await ctx.api(A, "POST", "/empresas", { nome: "Pizzaria BH", nomeUsuario: `${PREFIXO}_pizza`, slug: `${PREFIXO}-pizzaria` })).json();
   farmacia = (await ctx.api(A, "POST", "/empresas", { nome: "Farmácia Central", nomeUsuario: `${PREFIXO}_farma`, slug: `${PREFIXO}-farmacia` })).json();
   pizza = (await ctx.api(A, "POST", `/empresas/${pizzaria.id}/produtos`, { nome: "Pizza Calabresa", precoCentavos: 3990 })).json();
+  padaria = (await ctx.api(A, "POST", "/empresas", { nome: "Padaria Central", nomeUsuario: `${PREFIXO}_pada`, slug: `${PREFIXO}-padaria` })).json();
   dipirona = (await ctx.api(A, "POST", `/empresas/${farmacia.id}/produtos`, { nome: "Dipirona", precoCentavos: 890 })).json();
   conversaBP = await ctx.abrirConversa(B, `${PREFIXO}_pizza`);
   conversaBF = await ctx.abrirConversa(B, `${PREFIXO}_farma`);
@@ -123,6 +127,28 @@ describe("quadro de entregadores", () => {
     // A mesma pessoa entrega para duas empresas: o vínculo é por empresa.
     const naPizzaria: ListaEntregadores = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/entregadores`)).json();
     assert.ok(naPizzaria.entregadores.some((item) => item.pessoa.nomeUsuario === `${PREFIXO}_p`));
+  });
+
+  it("o convite chega em TEMPO REAL para quem foi convidado (sem recarregar a página)", async () => {
+    // Regressão real: o convite era gravado e ninguém avisava o destinatário conectado.
+    const eventos = coletar<EventoVinculoEntregador>(await ctx.conectar(P), EVENTO_VINCULO_ENTREGADOR);
+
+    const convite = await ctx.api(A, "POST", `/empresas/${padaria.id}/entregadores`, { nomeUsuario: `${PREFIXO}_p` });
+    assert.equal(convite.statusCode, 201, convite.body);
+    const entregador: EntregadorDaEmpresa = convite.json();
+
+    await aguardarAte(() => eventos.some((evento) => evento.convite?.id === entregador.id));
+    const recebido = eventos.find((evento) => evento.convite?.id === entregador.id);
+    assert.equal(recebido?.convite?.empresa.nome, "Padaria Central");
+    assert.equal(recebido?.vinculo, null, "enquanto é convite pendente ainda não há vínculo");
+
+    // Responder também atualiza na hora: o convite sai da lista e o vínculo entra.
+    assert.equal((await ctx.api(P, "POST", `/entregas/convites/${entregador.id}`, { resposta: "aceitar" })).statusCode, 200);
+    await aguardarAte(() => eventos.some((evento) => evento.vinculo?.id === entregador.id));
+    const aposAceite = eventos.filter((evento) => evento.vinculo?.id === entregador.id).at(-1);
+    assert.equal(aposAceite?.convite, null);
+    assert.equal(aposAceite?.vinculo?.status, "ativo");
+    assert.equal(aposAceite?.vinculo?.disponivel, false, "aceitar o vínculo NÃO deixa a pessoa disponível");
   });
 
   it("convite só é aceito pela própria pessoa e @usuario inexistente é recusado", async () => {

@@ -9,7 +9,7 @@ import { AvisosNotificacao } from "./avisos-notificacao.tsx";
 import { BalaoMensagem } from "./balao-mensagem.tsx";
 import { CabecalhoConversa } from "./cabecalho-conversa.tsx";
 import { PreviaRespostaCompositor } from "./previa-resposta-compositor.tsx";
-import { ListaConversas } from "./lista-conversas.tsx";
+import { formatarHorarioDaLista, ListaConversas } from "./lista-conversas.tsx";
 
 // Renderização real dos componentes de apresentação (sem navegador) para verificar o que é exibido.
 
@@ -233,19 +233,34 @@ describe("CabecalhoConversa", () => {
   const cabecalho = (presenca: "online" | "offline" | null, digitando: boolean) =>
     html(createElement(CabecalhoConversa, { outraIdentidade: OUTRA, presenca, digitando }));
 
-  it("mostra nome, @usuario e Online/Offline; digitando tem prioridade", () => {
-    assert.ok(texto(cabecalho("online", false)).includes("Mateus Filho@mateusOnline"));
-    assert.ok(texto(cabecalho("offline", false)).endsWith("Offline"));
-    assert.ok(texto(cabecalho("online", true)).endsWith("digitando..."));
-    assert.ok(texto(cabecalho(null, false)).endsWith("@mateus"), "sem conexão: não afirma online nem offline");
+  it("presença é discreta (bolinha), com texto para leitor de tela; digitando tem prioridade", () => {
+    const online = cabecalho("online", false);
+    // A palavra "Online" não fica gritando na tela: quem comunica é o indicador visual.
+    assert.equal(texto(online).includes("Online"), false);
+    assert.ok(online.includes('data-presenca="online"'));
+    // Cor sozinha não comunica: o equivalente textual existe para leitores de tela.
+    assert.ok(texto(online).includes("Disponível agora"));
+    assert.ok(cabecalho("offline", false).includes('data-presenca="offline"'));
+    assert.ok(texto(cabecalho("offline", false)).includes("Sem conexão agora"));
+    assert.ok(texto(cabecalho("online", true)).includes("digitando"));
+    assert.equal(cabecalho(null, false).includes("data-presenca"), false, "sem conexão: não afirma online nem offline");
+    assert.ok(texto(cabecalho(null, false)).includes("@mateus"));
   });
 
   it("conversa com empresa: selo Empresa e ações (ex.: Ver produtos); com pessoa, nenhum selo", () => {
     const empresa = { ...OUTRA, tipo: "empresarial" as const, nomeExibicao: "Pizzaria BH" };
     const html = renderToStaticMarkup(createElement(CabecalhoConversa, { outraIdentidade: empresa, presenca: "online", digitando: false, acoes: createElement("button", null, "Ver produtos") }));
-    assert.ok(html.includes('data-tipo-participante="empresarial"') && texto(html).includes("Pizzaria BHEmpresa"));
+    assert.ok(html.includes('data-tipo-participante="empresarial"') && texto(html).includes("Pizzaria BH"));
     assert.ok(texto(html).includes("Ver produtos"));
     assert.ok(!cabecalho("online", false).includes("data-tipo-participante"));
+  });
+
+  it("no celular há caminho de volta para a lista; no desktop ele não existe", () => {
+    const comVoltar = html(createElement(CabecalhoConversa, { outraIdentidade: OUTRA, presenca: null, digitando: false, aoVoltar: () => {} }));
+    assert.ok(comVoltar.includes("data-voltar-conversas"));
+    // Só no celular: no desktop os dois painéis convivem e voltar não faz sentido.
+    assert.ok(/data-voltar-conversas[^>]*md:hidden|md:hidden[^>]*data-voltar-conversas/.test(comVoltar));
+    assert.equal(cabecalho("online", false).includes("data-voltar-conversas"), false);
   });
 
   it("não tem horário global nem prévia da última mensagem", () => {
@@ -257,7 +272,7 @@ describe("CabecalhoConversa", () => {
   });
 });
 
-describe("ListaConversas (inalterada)", () => {
+describe("ListaConversas", () => {
   it("última mensagem que é resposta: a prévia da lista mostra só o conteúdo novo", () => {
     const ultima: Mensagem = {
       ...mensagem(6, OUTRA.identidadeId, ha(1)),
@@ -307,7 +322,7 @@ describe("ListaConversas (inalterada)", () => {
     assert.ok(!renderizar(3, ultima.conversaId).includes("data-nao-lidas"), "conversa aberta e visível não mostra badge");
   });
 
-  it("continua mostrando nome, @usuario, prévia e horário da última mensagem", () => {
+  it("mostra nome, prévia e horário — e NÃO o @usuario, que sobrecarregava a linha", () => {
     const ultima = mensagem(5, OUTRA.identidadeId, ha(2));
     const item: ItemListaConversas = { id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, naoLidas: 0 };
     const marcacao = html(
@@ -324,9 +339,21 @@ describe("ListaConversas (inalterada)", () => {
       }),
     );
     assert.ok(texto(marcacao).includes("Mateus Filho"));
-    assert.ok(texto(marcacao).includes("@mateus"));
     assert.ok(texto(marcacao).includes("conteúdo 5"));
     assert.ok(marcacao.includes(`<time dateTime="${ultima.criadoEm}"`));
+    /*
+     * O @usuario saiu da linha da lista (segue o padrão da referência de UI/UX aprovada): com nome,
+     * @usuario, selo de empresa, hora e contador, a linha não cabia no celular. Ele continua à mão no
+     * cabeçalho da conversa e nos resultados da busca, que é onde serve para desambiguar.
+     */
+    assert.equal(texto(marcacao).includes("@mateus"), false);
+  });
+
+  it("horário da lista é relativo: hoje mostra a hora, ontem diz 'ontem', antes disso a data", () => {
+    const agora = new Date("2026-09-17T15:00:00.000Z");
+    assert.match(formatarHorarioDaLista("2026-09-17T09:42:00.000Z", agora), /^\d{2}:\d{2}$/);
+    assert.equal(formatarHorarioDaLista("2026-09-16T23:10:00.000Z", agora), "ontem");
+    assert.equal(formatarHorarioDaLista("2026-06-01T10:00:00.000Z", agora), "01/06/26");
   });
 });
 

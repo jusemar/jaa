@@ -66,6 +66,19 @@ describe("card e detalhe do Pedido Jaa (Web técnica)", () => {
     assert.ok(html.includes('data-status-pedido="recebido"'));
   });
 
+  it("o card não herda a cor do balão: fundo claro e texto escuro também no pedido que EU enviei", () => {
+    const html = card(resumo);
+    /*
+     * O balão próprio é jade com texto quase branco. Se o card herdasse isso, o conteúdo do pedido
+     * ficaria branco sobre verde-claro — foi exatamente o problema relatado na validação manual.
+     * Por isso ele declara a PRÓPRIA superfície e a PRÓPRIA cor de texto.
+     */
+    const abertura = html.slice(0, html.indexOf(">") + 1);
+    assert.ok(abertura.includes("bg-mensagem-recebida"), "mesma superfície clara das mensagens recebidas");
+    assert.ok(abertura.includes("text-conteudo"), "cor de texto própria, não a herdada do balão");
+    assert.equal(abertura.includes("bg-superficie/70"), false, "nada de fundo translúcido sobre o balão");
+  });
+
   it("troco aparece só quando o cliente pediu troco em dinheiro", () => {
     assert.ok(!card(resumo).includes("data-troco"));
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { criarConexaoBanco } from "@jaa/banco";
-import { atribuicoesEntrega, compatibilidadesZona, configuracoesDespacho, conversas, empresas, enderecosCliente, entregadoresEmpresa, paradasSaida, saidasEntrega, identidades, membrosEmpresa, mensagens, participantesConversa, pedidos, produtos, rateLimits, users, verifications, zonasEntrega } from "@jaa/banco/schema";
+import { atribuicoesEntrega, categoriasProduto, compatibilidadesZona, contatos, excecoesPrivacidade, preferenciasIdentidade, configuracoesDespacho, conversas, empresas, enderecosCliente, entregadoresEmpresa, paradasSaida, saidasEntrega, identidades, membrosEmpresa, mensagens, participantesConversa, pedidos, produtos, rateLimits, users, verifications, zonasEntrega } from "@jaa/banco/schema";
 import { CABECALHO_IDENTIDADE_ATUANTE, type Mensagem, type PaginaConversas, type PaginaMensagens } from "@jaa/contratos";
 import { betterAuth } from "better-auth";
 import { testUtils } from "better-auth/plugins";
@@ -10,6 +10,7 @@ import { count, inArray, like, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { io, type Socket } from "socket.io-client";
 import type { MotorDeRotas } from "../../src/features/entregas/lib/motor-rotas.js";
+import type { ArmazenamentoDeArquivos } from "../../src/lib/armazenamento/armazenamento-arquivos.js";
 import { criarAplicacao } from "../../src/aplicacao.js";
 import { criarOpcoesAutenticacao } from "../../src/features/autenticacao/autenticacao.js";
 import { criarAvisoSessoesEncerradas } from "../../src/features/autenticacao/lib/sessoes-encerradas.js";
@@ -45,19 +46,24 @@ export function criarAmbienteIntegracao({
   prefixoIp,
   // Motor de rotas FAKE quando o teste precisa dele: nenhum teste chama provedor externo real.
   motorRotas,
+  // Armazenamento FAKE quando o teste precisa dele: nenhum teste fala com o Cloudflare de verdade.
+  armazenamento,
 }: {
   telefones: string[];
   prefixoIp: string;
   motorRotas?: MotorDeRotas | undefined;
+  armazenamento?: ArmazenamentoDeArquivos | undefined;
 }) {
   const ambiente = carregarAmbiente();
+  // A origem do teste é definida AQUI: mudar as origens do .env local não pode quebrar a suíte.
+  const ambienteDoTeste = { ...ambiente, ORIGENS_WEB_PERMITIDAS: [ORIGEM_WEB] };
   const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
   const { banco } = conexao;
   const eventosMensagens = criarCanalEventosMensagens();
   const eventosPedidos = criarCanalEventosPedidos();
   const eventosEntregas = criarCanalEventosEntregas();
   const sessoesEncerradas = criarAvisoSessoesEncerradas();
-  const opcoes = criarOpcoesAutenticacao({ banco, ambiente, entregadorOtp: { enviar: async () => {} }, sessoesEncerradas });
+  const opcoes = criarOpcoesAutenticacao({ banco, ambiente: ambienteDoTeste, entregadorOtp: { enviar: async () => {} }, sessoesEncerradas });
   const autenticacao = betterAuth({ ...opcoes, plugins: [...opcoes.plugins, testUtils({ captureOTP: true })] });
   const clientes: Socket[] = [];
   let app: FastifyInstance;
@@ -78,6 +84,30 @@ export function criarAmbienteIntegracao({
     });
   }
 
+  /**
+   * Envio de arquivo (multipart/form-data) montado à mão: o teste precisa exercitar exatamente o
+   * mesmo caminho do navegador, inclusive o tipo declarado — que o servidor não deve acreditar.
+   */
+  function enviarArquivo(pessoa: Pessoa, url: string, arquivo: { nome: string; tipo: string; conteudo: Buffer }) {
+    const limite = "----JaaTeste";
+    const cabecalho = Buffer.from(
+      `--${limite}\r\nContent-Disposition: form-data; name="arquivo"; filename="${arquivo.nome}"\r\nContent-Type: ${arquivo.tipo}\r\n\r\n`,
+    );
+    const fim = Buffer.from(`\r\n--${limite}--\r\n`);
+    return app.inject({
+      method: "POST",
+      url,
+      remoteAddress: pessoa.ip,
+      headers: {
+        origin: ORIGEM_WEB,
+        cookie: pessoa.cookie,
+        "content-type": `multipart/form-data; boundary=${limite}`,
+        ...(pessoa.identidadeAtuanteId ? { [CABECALHO_IDENTIDADE_ATUANTE]: pessoa.identidadeAtuanteId } : {}),
+      },
+      payload: Buffer.concat([cabecalho, arquivo.conteudo, fim]),
+    });
+  }
+
   async function limpar() {
     const usuariosTeste = banco.select({ id: users.id }).from(users).where(inArray(users.phoneNumber, telefones));
     const empresasTeste = banco.select({ id: membrosEmpresa.empresaId }).from(membrosEmpresa).where(inArray(membrosEmpresa.usuarioId, usuariosTeste));
@@ -90,6 +120,9 @@ export function criarAmbienteIntegracao({
       .from(participantesConversa)
       .where(inArray(participantesConversa.identidadeId, identidadesTeste));
     // Ordem: mensagens (referenciam pedidos) → pedidos (itens em cascata) → conversas → produtos → …
+    await banco.delete(contatos).where(or(inArray(contatos.identidadeId, identidadesTeste), inArray(contatos.contatoIdentidadeId, identidadesTeste)));
+    await banco.delete(preferenciasIdentidade).where(inArray(preferenciasIdentidade.identidadeId, identidadesTeste));
+    await banco.delete(excecoesPrivacidade).where(or(inArray(excecoesPrivacidade.identidadeId, identidadesTeste), inArray(excecoesPrivacidade.alvoIdentidadeId, identidadesTeste)));
     await banco.delete(mensagens).where(inArray(mensagens.conversaId, conversasTeste));
     await banco.delete(atribuicoesEntrega).where(inArray(atribuicoesEntrega.pedidoId, banco.select({ id: pedidos.id }).from(pedidos).where(inArray(pedidos.clienteIdentidadeId, identidadesTeste))));
     await banco.delete(pedidos).where(inArray(pedidos.clienteIdentidadeId, identidadesTeste));
@@ -111,6 +144,7 @@ export function criarAmbienteIntegracao({
       await banco.delete(entregadoresEmpresa).where(inArray(entregadoresEmpresa.empresaId, idsEmpresas));
       await banco.delete(pedidos).where(inArray(pedidos.empresaId, idsEmpresas));
       await banco.delete(produtos).where(inArray(produtos.empresaId, idsEmpresas));
+      await banco.delete(categoriasProduto).where(inArray(categoriasProduto.empresaId, idsEmpresas));
       await banco.delete(identidades).where(inArray(identidades.empresaId, idsEmpresas));
       await banco.delete(empresas).where(inArray(empresas.id, idsEmpresas));
     }
@@ -126,11 +160,12 @@ export function criarAmbienteIntegracao({
     eventosPedidos,
     eventosEntregas,
     api,
+    enviarArquivo,
 
     async iniciar() {
       await limpar();
-      app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, eventosPedidos, eventosEntregas, ...(motorRotas ? { motorRotas } : {}), logger: false });
-      configurarRealtime(app, { autenticacao, banco, sessoesEncerradas, eventosMensagens, eventosPedidos, eventosEntregas, origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS });
+      app = await criarAplicacao({ ambiente: ambienteDoTeste, banco, autenticacao, eventosMensagens, eventosPedidos, eventosEntregas, ...(motorRotas ? { motorRotas } : {}), ...(armazenamento ? { armazenamento } : {}), logger: false });
+      configurarRealtime(app, { autenticacao, banco, sessoesEncerradas, eventosMensagens, eventosPedidos, eventosEntregas, origensPermitidas: ambienteDoTeste.ORIGENS_WEB_PERMITIDAS });
       await app.listen({ port: 0, host: "127.0.0.1" });
       porta = (app.server.address() as AddressInfo).port;
     },

@@ -1,10 +1,14 @@
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import type { Banco } from "@jaa/banco";
+import { TAMANHO_MAXIMO_IMAGEM_BYTES } from "@jaa/contratos";
 import Fastify, { type FastifyServerOptions } from "fastify";
 import type { Autenticacao } from "./features/autenticacao/autenticacao.js";
 import { registrarRotasBetterAuth } from "./features/autenticacao/rotas/rotas-better-auth.js";
+import { registrarRotasCredenciais } from "./features/autenticacao/rotas/rotas-credenciais.js";
 import { registrarRotaTesteProtegido } from "./features/autenticacao/rotas/rotas-teste-protegido.js";
 import { registrarRotasCatalogoPublico } from "./features/catalogo/rotas/rotas-catalogo-publico.js";
+import { registrarRotasContatos } from "./features/contatos/rotas/rotas-contatos.js";
 import { registrarRotasConversas } from "./features/conversas/rotas/rotas-conversas.js";
 import { registrarRotasEmpresas } from "./features/empresas/rotas/rotas-empresas.js";
 import { geocodificadorIndisponivel, type GeocodificadorEndereco } from "./features/enderecos/lib/geocodificador.js";
@@ -16,12 +20,15 @@ import { registrarRotasEnderecos } from "./features/enderecos/rotas/rotas-endere
 import { criarCanalEventosPedidos, type CanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
 import { registrarRotasPedidos } from "./features/pedidos/rotas/rotas-pedidos.js";
 import { registrarRotasPedidosEmpresa } from "./features/pedidos/rotas/rotas-pedidos-empresa.js";
+import { registrarRotasCategorias } from "./features/produtos/rotas/rotas-categorias.js";
 import { registrarRotasProdutosAdministracao } from "./features/produtos/rotas/rotas-produtos-administracao.js";
+import { registrarRotasPerfil } from "./features/perfil/rotas/rotas-perfil.js";
 import { registrarRotasIdentidades } from "./features/identidades/rotas/rotas-identidades.js";
 import type { CanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
 import { registrarRotasMensagens } from "./features/mensagens/rotas/rotas-mensagens.js";
 import { registrarRotasUsuarios } from "./features/usuarios/rotas/rotas-usuarios.js";
 import type { Ambiente } from "./lib/ambiente.js";
+import { armazenamentoIndisponivel, type ArmazenamentoDeArquivos } from "./lib/armazenamento/armazenamento-arquivos.js";
 
 interface DependenciasAplicacao {
   ambiente: Ambiente;
@@ -36,6 +43,8 @@ interface DependenciasAplicacao {
   geocodificador?: GeocodificadorEndereco;
   // Motor de rotas do Jaa. Sem provedor configurado, ele já cai na aproximação local (sem rede).
   motorRotas?: MotorDeRotas;
+  // Fronteira com o storage. Sem credenciais, o upload é recusado com aviso claro (nunca "salvou" falso).
+  armazenamento?: ArmazenamentoDeArquivos;
   logger: FastifyServerOptions["logger"];
 }
 
@@ -49,6 +58,7 @@ export async function criarAplicacao({
   eventosEntregas = criarCanalEventosEntregas(),
   geocodificador = geocodificadorIndisponivel,
   motorRotas = criarMotorDeRotas(null),
+  armazenamento = armazenamentoIndisponivel,
   logger,
 }: DependenciasAplicacao) {
   const servidor = Fastify({ logger });
@@ -58,6 +68,10 @@ export async function criarAplicacao({
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   });
+
+  // Upload de imagens (foto de perfil, logo, imagem de produto). O limite de bytes é a primeira
+  // barreira: o corpo nem é lido inteiro quando passa do teto.
+  await servidor.register(multipart, { limits: { fileSize: TAMANHO_MAXIMO_IMAGEM_BYTES, files: 1 } });
 
   servidor.decorateRequest("sessao", null);
   servidor.decorateRequest("identidadeAutenticada", null);
@@ -70,14 +84,17 @@ export async function criarAplicacao({
   });
 
   registrarRotasBetterAuth(servidor, autenticacao, ambiente.BETTER_AUTH_URL);
+  registrarRotasCredenciais(servidor, { banco, autenticacao, urlBase: ambiente.BETTER_AUTH_URL });
   registrarRotaTesteProtegido(servidor, autenticacao);
   registrarRotasUsuarios(servidor, { banco, autenticacao });
   registrarRotasIdentidades(servidor, { banco, autenticacao });
   registrarRotasEmpresas(servidor, { banco, autenticacao });
-  registrarRotasProdutosAdministracao(servidor, { banco, autenticacao });
+  registrarRotasProdutosAdministracao(servidor, { banco, autenticacao, armazenamento });
+  registrarRotasCategorias(servidor, { banco, autenticacao });
+  registrarRotasPerfil(servidor, { banco, autenticacao, armazenamento });
   registrarRotasCatalogoPublico(servidor, { banco, autenticacao });
   registrarRotasEnderecos(servidor, { banco, autenticacao, geocodificador });
-  registrarRotasPedidos(servidor, { banco, autenticacao, eventosMensagens });
+  registrarRotasPedidos(servidor, { banco, autenticacao, eventosMensagens, eventosEntregas });
   registrarRotasPedidosEmpresa(servidor, { banco, autenticacao, eventosPedidos, eventosEntregas });
   registrarRotasEntregas(servidor, {
     banco,
@@ -90,6 +107,7 @@ export async function criarAplicacao({
       await alterarStatusPedidoAutorizado({ banco, eventosPedidos, eventosEntregas }, usuarioId, empresaId, pedidoId, { tipo: "avancar", statusAtual: "pronto" });
     },
   });
+  registrarRotasContatos(servidor, { banco, autenticacao });
   registrarRotasConversas(servidor, { banco, autenticacao });
   registrarRotasMensagens(servidor, { banco, autenticacao, eventosMensagens });
 

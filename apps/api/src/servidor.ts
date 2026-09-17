@@ -11,6 +11,7 @@ import { criarProvedorMapbox } from "./features/entregas/lib/provedores/provedor
 import { iniciarRotinaDespacho } from "./features/entregas/lib/rotina-despacho.js";
 import { criarCanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
 import { carregarAmbiente } from "./lib/ambiente.js";
+import { criarArmazenamento } from "./lib/armazenamento/criar-armazenamento.js";
 import { configurarRealtime } from "./realtime/configurar-realtime.js";
 
 const ambiente = carregarAmbiente();
@@ -48,6 +49,7 @@ const servidor = await criarAplicacao({
   eventosEntregas,
   geocodificador,
   motorRotas,
+  armazenamento: criarArmazenamento(ambiente),
   logger: true,
 });
 

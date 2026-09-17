@@ -2,8 +2,6 @@
 
 import { formatarEnderecoResumido, type Coordenadas, type EnderecoCliente } from "@jaa/contratos";
 import { useEffect, useRef, useState } from "react";
-// Estilos do Leaflet (a biblioteca posiciona os painéis por CSS; sem ele o mapa fica quebrado).
-import "leaflet/dist/leaflet.css";
 import { criarMapaLeaflet } from "../mapa/mapa-leaflet";
 import { ATRIBUICAO_TILES, URL_TILES_MAPA } from "../mapa/configuracao-mapa";
 import { CENTRO_PADRAO, arredondarCoordenadas, type MapaPonto } from "../mapa/provedor-mapa";
@@ -87,14 +85,14 @@ export function ConfirmarPontoEntrega({
   }
 
   return (
-    <section aria-label="Confirmar ponto de entrega" className="flex flex-col gap-2 rounded border border-zinc-200 bg-white p-3 text-sm">
+    <section aria-label="Confirmar ponto de entrega" className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3 text-sm">
       <h3 className="font-semibold">Confirme onde devemos entregar</h3>
-      <p data-endereco-confirmacao className="text-xs text-zinc-600">
+      <p data-endereco-confirmacao className="text-xs text-conteudo-suave">
         {endereco.apelido} · {formatarEnderecoResumido(endereco)} — {endereco.bairro}, {endereco.cidade}/{endereco.uf}
       </p>
-      <p className="text-xs text-zinc-500">Confira o ponto no mapa. Se necessário, arraste o mapa para deixar o marcador no local exato da entrega.</p>
+      <p className="text-xs text-conteudo-suave">Confira o ponto no mapa. Se necessário, arraste o mapa para deixar o marcador no local exato da entrega.</p>
 
-      <div className="relative h-64 w-full overflow-hidden rounded border border-zinc-300">
+      <div className="relative h-64 w-full overflow-hidden rounded-jaa border border-borda">
         <div ref={containerRef} data-mapa-ponto className="h-full w-full" />
         {/* Marcador fixo no centro: o cliente move o mapa embaixo dele (fácil no celular). */}
         <span aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-[400] -translate-x-1/2 -translate-y-full text-2xl">
@@ -102,19 +100,19 @@ export function ConfirmarPontoEntrega({
         </span>
       </div>
 
-      <p data-ponto-selecionado={`${ponto.latitude},${ponto.longitude}`} className="text-xs text-zinc-500">
+      <p data-ponto-selecionado={`${ponto.latitude},${ponto.longitude}`} className="text-xs text-conteudo-suave">
         Marcador posicionado. O endereço digitado não muda: o ponto é só onde entregar.
       </p>
 
       <div className="flex flex-col gap-1">
-        <button type="button" onClick={usarLocalizacaoComoReferencia} className="self-start rounded border px-2 py-1 text-xs">
+        <button type="button" onClick={usarLocalizacaoComoReferencia} className="self-start rounded-jaa border px-2 py-1 text-xs">
           Usar minha localização como referência
         </button>
-        <p className="text-xs text-zinc-500">Usamos sua localização apenas para ajudar você a conferir o ponto de entrega. Ela não é guardada.</p>
-        {referencia.situacao === "obtendo" && <p className="text-xs text-zinc-500">Obtendo sua localização…</p>}
-        {referencia.situacao === "erro" && <p className="text-xs text-zinc-500">Não foi possível obter sua localização. Você pode confirmar o ponto mesmo assim.</p>}
+        <p className="text-xs text-conteudo-suave">Usamos sua localização apenas para ajudar você a conferir o ponto de entrega. Ela não é guardada.</p>
+        {referencia.situacao === "obtendo" && <p className="text-xs text-conteudo-suave">Obtendo sua localização…</p>}
+        {referencia.situacao === "erro" && <p className="text-xs text-conteudo-suave">Não foi possível obter sua localização. Você pode confirmar o ponto mesmo assim.</p>}
         {referencia.situacao === "obtida" && (
-          <p data-referencia-localizacao className="text-xs text-zinc-600">
+          <p data-referencia-localizacao className="text-xs text-conteudo-suave">
             {(referencia.distanciaKm ?? 0) <= 1
               ? "Você parece estar próximo deste endereço."
               : "Você está longe do endereço selecionado. Confira o ponto de entrega — pedir para outro lugar é normal."}
@@ -123,16 +121,16 @@ export function ConfirmarPontoEntrega({
       </div>
 
       <div className="flex gap-2">
-        <button type="button" data-confirmar-ponto disabled={enviando} onClick={() => aoConfirmar(ponto)} className="rounded bg-black px-3 py-2 text-white disabled:opacity-50">
+        <button type="button" data-confirmar-ponto disabled={enviando} onClick={() => aoConfirmar(ponto)} className="rounded bg-marca px-3 py-2 text-white disabled:opacity-50">
           Confirmar ponto de entrega
         </button>
-        <button type="button" onClick={aoCancelar} className="rounded border px-3 py-2">
+        <button type="button" onClick={aoCancelar} className="rounded-jaa border px-3 py-2">
           Voltar
         </button>
       </div>
 
       {erro && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-perigo">
           {erro}
         </p>
       )}

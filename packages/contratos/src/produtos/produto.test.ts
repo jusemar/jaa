@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  PAGINA_PRODUTOS_TAMANHO_MAXIMO,
+  PAGINA_PRODUTOS_TAMANHO_PADRAO,
   PRECO_PRODUTO_MAXIMO_CENTAVOS,
   alterarDisponibilidadeProdutoEntradaSchema,
+  consultaProdutosSchema,
   atualizarProdutoEntradaSchema,
   criarProdutoEntradaSchema,
   precoCentavosSchema,
@@ -54,8 +57,39 @@ describe("edição e disponibilidade", () => {
   it("disponibilidade só aceita os dois estados; produto exige centavos inteiros", () => {
     assert.equal(alterarDisponibilidadeProdutoEntradaSchema.safeParse({ disponibilidade: "indisponivel" }).success, true);
     assert.equal(alterarDisponibilidadeProdutoEntradaSchema.safeParse({ disponibilidade: "pausado" }).success, false);
-    const produto = { id: "01a0a394-6225-75f2-b809-b2690993c512", empresaId: "01a0a394-6225-75f2-b809-b2690993c512", nome: "P", descricao: null, precoCentavos: 3990, disponibilidade: "disponivel", criadoEm: "2026-09-15T12:00:00.000Z", atualizadoEm: "2026-09-15T12:00:00.000Z" };
+    const produto = {
+      id: "01a0a394-6225-75f2-b809-b2690993c512",
+      empresaId: "01a0a394-6225-75f2-b809-b2690993c512",
+      nome: "P",
+      descricao: null,
+      precoCentavos: 3990,
+      disponibilidade: "disponivel",
+      categoriaId: null,
+      categoriaNome: null,
+      imagemUrl: null,
+      criadoEm: "2026-09-15T12:00:00.000Z",
+      atualizadoEm: "2026-09-15T12:00:00.000Z",
+    };
     assert.equal(produtoSchema.safeParse(produto).success, true);
     assert.equal(produtoSchema.safeParse({ ...produto, precoCentavos: 39.9 }).success, false);
+    // A imagem é uma URL montada pela API; chave crua ou caminho relativo não é contrato válido.
+    assert.equal(produtoSchema.safeParse({ ...produto, imagemUrl: "imagem-produto/a/b.webp" }).success, false);
+  });
+
+  it("categoria entra na criação e na edição; null é 'Sem categoria' explícito", () => {
+    const categoria = "01a0a394-6225-75f2-b809-b2690993c512";
+    assert.equal(criarProdutoEntradaSchema.safeParse({ nome: "P", precoCentavos: 100, categoriaId: categoria }).success, true);
+    assert.deepEqual(atualizarProdutoEntradaSchema.parse({ categoriaId: null }), { categoriaId: null });
+    assert.equal(atualizarProdutoEntradaSchema.safeParse({ categoriaId: "nao-e-uuid" }).success, false);
+  });
+
+  it("a consulta da listagem tem limites: página e limite absurdos não passam", () => {
+    assert.deepEqual(consultaProdutosSchema.parse({}), { pagina: 1, limite: PAGINA_PRODUTOS_TAMANHO_PADRAO });
+    // Vem da query string: texto que representa número é aceito, número impossível não.
+    assert.equal(consultaProdutosSchema.parse({ pagina: "3", limite: "10" }).pagina, 3);
+    assert.equal(consultaProdutosSchema.safeParse({ pagina: 0 }).success, false);
+    assert.equal(consultaProdutosSchema.safeParse({ limite: PAGINA_PRODUTOS_TAMANHO_MAXIMO + 1 }).success, false);
+    assert.equal(consultaProdutosSchema.safeParse({ categoriaId: "sem-categoria" }).success, true);
+    assert.equal(consultaProdutosSchema.safeParse({ categoriaId: "qualquer-coisa" }).success, false);
   });
 });

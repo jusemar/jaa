@@ -4,6 +4,8 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { phoneNumber } from "better-auth/plugins";
+import { expo } from "@better-auth/expo";
+import { SENHA_TAMANHO_MAXIMO, SENHA_TAMANHO_MINIMO } from "@jaa/contratos";
 import type { Ambiente } from "../../lib/ambiente.js";
 import type { EntregadorOtp } from "./entrega-otp/entregador-otp.js";
 import { derivarEmailTecnico, NOME_TECNICO_CONTA } from "./lib/conta-tecnica.js";
@@ -12,6 +14,13 @@ import { ehCelularBrasileiroNormalizado, normalizarCelularBrasileiro } from "./l
 
 export const CAMINHO_BASE_AUTENTICACAO = "/api/auth";
 
+/*
+ * Esquema do aplicativo (apps/mobile/app.json → expo.scheme). O Better Auth precisa confiar nele para
+ * aceitar as requisições do Mobile: é a MESMA autenticação do Web (conta + sessão + OTP por celular),
+ * só que com a sessão guardada em armazenamento seguro do aparelho em vez de cookie do navegador.
+ */
+export const ESQUEMA_MOBILE = "mobile";
+
 // Preenchido pela ponte Fastify com o IP resolvido pelo próprio Fastify.
 // Valores enviados pelo cliente neste cabeçalho são descartados antes de chegar aqui.
 export const CABECALHO_IP_CLIENTE = "x-jaa-ip-cliente";
@@ -19,7 +28,12 @@ export const CABECALHO_IP_CLIENTE = "x-jaa-ip-cliente";
 export const OTP_EXPIRA_EM_SEGUNDOS = 300;
 export const INTERVALO_MINIMO_ENTRE_OTPS_SEGUNDOS = 60;
 
-const ROTAS_COM_TELEFONE = new Set(["/phone-number/send-otp", "/phone-number/verify"]);
+const ROTAS_COM_TELEFONE = new Set([
+  "/phone-number/send-otp",
+  "/phone-number/verify",
+  // Recuperação de senha: também recebe telefone e também precisa da forma canônica E.164.
+  "/phone-number/request-password-reset",
+]);
 
 interface DependenciasAutenticacao {
   banco: Banco;
@@ -39,22 +53,23 @@ export function criarOpcoesAutenticacao({
     baseURL: ambiente.BETTER_AUTH_URL,
     basePath: CAMINHO_BASE_AUTENTICACAO,
     secret: ambiente.BETTER_AUTH_SECRET,
-    trustedOrigins: ambiente.ORIGENS_WEB_PERMITIDAS,
+    trustedOrigins: [...ambiente.ORIGENS_WEB_PERMITIDAS, `${ESQUEMA_MOBILE}://`],
     database: drizzleAdapter(banco, {
       provider: "pg",
       schema,
       usePlural: true,
       transaction: true,
     }),
-    // A única credencial é o telefone verificado por OTP. Não há senha nem login por e-mail.
-    emailAndPassword: { enabled: false },
-    // O plugin de telefone também expõe login/redefinição por SENHA; ficam desativados
-    // para que ninguém consiga criar uma senha e contornar o OTP.
-    disabledPaths: [
-      "/sign-in/phone-number",
-      "/phone-number/request-password-reset",
-      "/phone-number/reset-password",
-    ],
+    /*
+     * A senha é uma credencial do Better Auth (hash, sessão e cookie são dele). O e-mail continua
+     * fora do produto: é um endereço técnico opaco, ninguém o conhece — por isso as rotas de e-mail
+     * ficam desativadas e o login acontece por telefone OU @usuario (rotas-credenciais.ts).
+     *
+     * O OTP não foi substituído: ele continua sendo o CADASTRO e a RECUPERAÇÃO. Conta antiga sem
+     * senha nenhuma segue entrando por OTP e pode definir uma senha depois.
+     */
+    emailAndPassword: { enabled: true, minPasswordLength: SENHA_TAMANHO_MINIMO, maxPasswordLength: SENHA_TAMANHO_MAXIMO },
+    disabledPaths: ["/sign-in/email", "/sign-up/email", "/forget-password", "/reset-password"],
     rateLimit: {
       // Por padrão o Better Auth só limita em produção; o Jaa limita em todos os ambientes.
       enabled: true,
@@ -63,6 +78,9 @@ export function criarOpcoesAutenticacao({
       customRules: {
         "/phone-number/send-otp": { window: 60, max: 5 },
         "/phone-number/verify": { window: 60, max: 10 },
+        "/phone-number/request-password-reset": { window: 60, max: 5 },
+        // Tentar senha é barato para quem ataca: o limite por IP é a primeira barreira.
+        "/sign-in/phone-number": { window: 60, max: 10 },
       },
     },
     advanced: {
@@ -117,6 +135,8 @@ export function criarOpcoesAutenticacao({
       }),
     },
     plugins: [
+      // Sessão do aplicativo nativo (mesmo domínio de contas; nenhuma autenticação paralela).
+      expo(),
       phoneNumber({
         otpLength: 6,
         expiresIn: OTP_EXPIRA_EM_SEGUNDOS,
@@ -147,5 +167,6 @@ type InstanciaAutenticacao = ReturnType<typeof criarAutenticacao>;
 // Superfície do Better Auth usada pelas rotas do Jaa. Permite injetar instâncias com
 // plugins adicionais (ex.: testUtils nos testes) sem acoplar as rotas à configuração exata.
 export type Autenticacao = Pick<InstanciaAutenticacao, "handler"> & {
-  api: Pick<InstanciaAutenticacao["api"], "getSession">;
+  // `setPassword` é server-only no Better Auth: só existe por aqui, nunca como rota HTTP.
+  api: Pick<InstanciaAutenticacao["api"], "getSession" | "setPassword">;
 };

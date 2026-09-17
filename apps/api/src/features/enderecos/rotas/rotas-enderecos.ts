@@ -1,6 +1,7 @@
 import type { Banco } from "@jaa/banco";
 import {
   atualizarEnderecoEntradaSchema,
+  type EnderecoDoCep,
   confirmarLocalizacaoEntradaSchema,
   criarEnderecoEntradaSchema,
   type ErroApi,
@@ -10,6 +11,7 @@ import {
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as z from "zod";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
+import { criarConsultaViaCep, type ConsultaCep } from "../lib/consulta-cep.js";
 import { exigirIdentidadeAtuante, obterIdentidadeExigida } from "../../autenticacao/lib/exigir-identidade-autenticada.js";
 import {
   arquivarEnderecoDoCliente,
@@ -37,10 +39,12 @@ const NAO_ENCONTRADO: ErroApi = { codigo: "ENDERECO_NAO_ENCONTRADO", mensagem: "
  */
 export function registrarRotasEnderecos(
   servidor: FastifyInstance,
-  dependencias: { banco: Banco; autenticacao: Autenticacao; geocodificador: GeocodificadorEndereco },
+  dependencias: { banco: Banco; autenticacao: Autenticacao; geocodificador: GeocodificadorEndereco; consultaCep?: ConsultaCep },
 ) {
   const preHandler = exigirIdentidadeAtuante(dependencias);
   const { banco, geocodificador } = dependencias;
+  // Sem provedor injetado, usa o ViaCEP (público, sem chave); os testes injetam um falso.
+  const consultaCep = dependencias.consultaCep ?? criarConsultaViaCep();
 
   // Endereço é do consumidor: quem age como empresa não tem agenda de endereços.
   function identidadePessoal(requisicao: Parameters<typeof obterIdentidadeExigida>[0], resposta: FastifyReply) {
@@ -51,6 +55,25 @@ export function registrarRotasEnderecos(
     }
     return contexto.identidadeId;
   }
+
+  /**
+   * CONSULTA DE CEP: preenche o formulário (logradouro, bairro, cidade, UF). NÃO confirma ponto
+   * geográfico — o ponto continua sendo a ação explícita no mapa.
+   */
+  servidor.get("/enderecos/cep/:cep", { preHandler }, async (requisicao, resposta) => {
+    const parametros = z.object({ cep: z.string().min(8).max(9) }).safeParse(requisicao.params);
+    if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "CEP inválido." });
+
+    const resultado = await consultaCep.consultar(parametros.data.cep);
+    if (resultado.tipo === "indisponivel") {
+      return responder(resposta, 503, { codigo: "CEP_INDISPONIVEL", mensagem: "Não foi possível consultar o CEP agora. Preencha o endereço manualmente." });
+    }
+    if (resultado.tipo === "nao-encontrado") {
+      return responder(resposta, 404, { codigo: "CEP_NAO_ENCONTRADO", mensagem: "CEP não encontrado. Confira o número ou preencha manualmente." });
+    }
+    const endereco: EnderecoDoCep = { ...resultado.endereco, encontrado: true };
+    return endereco;
+  });
 
   servidor.get("/enderecos", { preHandler }, async (requisicao, resposta) => {
     const identidadeId = identidadePessoal(requisicao, resposta);

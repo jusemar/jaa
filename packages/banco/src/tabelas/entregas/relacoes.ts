@@ -8,6 +8,7 @@ import { saidasEntrega } from "./saidas-entrega.js";
 import { compatibilidadesZona, zonasEntrega } from "./zonas-entrega.js";
 import { configuracoesDespacho } from "./configuracoes-despacho.js";
 import { consumosRoteamento } from "./consumos-roteamento.js";
+import { posicoesSaida } from "./posicoes-saida.js";
 
 export const entregadoresEmpresaRelacoes = relations(entregadoresEmpresa, ({ one, many }) => ({
   empresa: one(empresas, { fields: [entregadoresEmpresa.empresaId], references: [empresas.id] }),
@@ -36,6 +37,11 @@ export const compatibilidadesZonaRelacoes = relations(compatibilidadesZona, ({ o
   empresa: one(empresas, { fields: [compatibilidadesZona.empresaId], references: [empresas.id] }),
   zonaMenor: one(zonasEntrega, { fields: [compatibilidadesZona.zonaMenorId], references: [zonasEntrega.id], relationName: "zonaMenor" }),
   zonaMaior: one(zonasEntrega, { fields: [compatibilidadesZona.zonaMaiorId], references: [zonasEntrega.id], relationName: "zonaMaior" }),
+}));
+
+export const posicoesSaidaRelacoes = relations(posicoesSaida, ({ one }) => ({
+  saida: one(saidasEntrega, { fields: [posicoesSaida.saidaId], references: [saidasEntrega.id] }),
+  entregador: one(entregadoresEmpresa, { fields: [posicoesSaida.entregadorId], references: [entregadoresEmpresa.id] }),
 }));
 
 export const consumosRoteamentoRelacoes = relations(consumosRoteamento, ({ one }) => ({

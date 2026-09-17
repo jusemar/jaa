@@ -116,10 +116,10 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
   }
 
   return (
-    <section aria-label="Pedidos da empresa" className="flex flex-col gap-3 rounded border border-zinc-200 p-3">
+    <section aria-label="Pedidos da empresa" className="flex flex-col gap-3 rounded-jaa border border-borda p-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Pedidos — {nomeEmpresa}</h3>
-        <button type="button" onClick={() => void carregar(filtro)} className="rounded border px-2 py-1 text-xs">
+        <button type="button" onClick={() => void carregar(filtro)} className="rounded-jaa border px-2 py-1 text-xs">
           Atualizar
         </button>
       </div>
@@ -152,7 +152,7 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
       )}
 
       {erro && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-perigo">
           {erro}
         </p>
       )}

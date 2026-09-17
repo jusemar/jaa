@@ -46,11 +46,13 @@ const VALIDADE_DIGITANDO_MS = 700;
 const REPASSE_DIGITANDO_MS = 250;
 
 const ambiente = carregarAmbiente();
+// A origem do teste é definida AQUI: mudar as origens do .env local não pode quebrar a suíte.
+const ambienteDoTeste = { ...ambiente, ORIGENS_WEB_PERMITIDAS: [ORIGEM_WEB] };
 const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
 const { banco } = conexao;
 const eventosMensagens = criarCanalEventosMensagens();
 const sessoesEncerradas = criarAvisoSessoesEncerradas();
-const opcoes = criarOpcoesAutenticacao({ banco, ambiente, entregadorOtp: { enviar: async () => {} }, sessoesEncerradas });
+const opcoes = criarOpcoesAutenticacao({ banco, ambiente: ambienteDoTeste, entregadorOtp: { enviar: async () => {} }, sessoesEncerradas });
 const autenticacao = betterAuth({ ...opcoes, plugins: [...opcoes.plugins, testUtils({ captureOTP: true })] });
 
 let app: FastifyInstance;
@@ -164,13 +166,13 @@ async function limparDadosDeTeste() {
 
 before(async () => {
   await limparDadosDeTeste();
-  app = await criarAplicacao({ ambiente, banco, autenticacao, eventosMensagens, logger: false });
+  app = await criarAplicacao({ ambiente: ambienteDoTeste, banco, autenticacao, eventosMensagens, logger: false });
   realtime = configurarRealtime(app, {
     autenticacao,
     banco,
     sessoesEncerradas,
     eventosMensagens,
-    origensPermitidas: ambiente.ORIGENS_WEB_PERMITIDAS,
+    origensPermitidas: ambienteDoTeste.ORIGENS_WEB_PERMITIDAS,
     presenca: criarRegistroPresencaEmMemoria({ toleranciaOfflineMs: TOLERANCIA_OFFLINE_MS }),
     digitando: criarRegistroDigitandoEmMemoria({ validadeMs: VALIDADE_DIGITANDO_MS, intervaloMinimoRepasseMs: REPASSE_DIGITANDO_MS }),
   });

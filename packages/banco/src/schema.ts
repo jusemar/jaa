@@ -10,6 +10,7 @@ export * from "./tabelas/empresas/empresas.js";
 export * from "./tabelas/empresas/membros-empresa.js";
 export * from "./tabelas/empresas/relacoes.js";
 
+export * from "./tabelas/produtos/categorias-produto.js";
 export * from "./tabelas/produtos/produtos.js";
 export * from "./tabelas/produtos/relacoes.js";
 
@@ -24,6 +25,7 @@ export * from "./tabelas/entregas/zonas-entrega.js";
 export * from "./tabelas/entregas/configuracoes-despacho.js";
 export * from "./tabelas/entregas/saidas-entrega.js";
 export * from "./tabelas/entregas/consumos-roteamento.js";
+export * from "./tabelas/entregas/posicoes-saida.js";
 export * from "./tabelas/entregas/paradas-saida.js";
 export * from "./tabelas/entregas/relacoes.js";
 export * from "./tabelas/pedidos/destinos-pedido.js";
@@ -32,6 +34,10 @@ export * from "./tabelas/pedidos/historico-status-pedido.js";
 export * from "./tabelas/pedidos/relacoes.js";
 
 export * from "./tabelas/identidades/identidades.js";
+export * from "./tabelas/identidades/preferencias-identidade.js";
+export * from "./tabelas/identidades/excecoes-privacidade.js";
+export * from "./tabelas/contatos/contatos.js";
+export * from "./tabelas/contatos/relacoes.js";
 export * from "./tabelas/identidades/relacoes.js";
 
 export * from "./tabelas/conversas/conversas.js";

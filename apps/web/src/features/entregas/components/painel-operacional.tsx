@@ -12,6 +12,7 @@ import {
   type PainelOperacional,
 } from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
+import { MENSAGEM_CEP, useCep } from "@/features/enderecos/hooks/use-cep";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { confirmarPontoBase, obterBase, obterPainelOperacional, salvarBase } from "../lib/api-entregas";
 import { ConfirmarPontoBase } from "./confirmar-ponto-base";
@@ -29,6 +30,17 @@ export function PainelOperacionalEmpresa({ empresaId, nomeEmpresa }: { empresaId
   const [confirmandoPonto, setConfirmandoPonto] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  // Endereço da base preenchido pelo CEP (ViaCEP via servidor). O PONTO continua sendo confirmado no mapa.
+  const [enderecoDigitado, setEnderecoDigitado] = useState<{ cep: string; logradouro: string; bairro: string; cidade: string; uf: string } | null>(null);
+  const { situacao: situacaoCep, consultar: consultarCep } = useCep((doCep) =>
+    setEnderecoDigitado((atual) => ({
+      cep: atual?.cep ?? "",
+      logradouro: doCep.logradouro ?? atual?.logradouro ?? "",
+      bairro: doCep.bairro ?? atual?.bairro ?? "",
+      cidade: doCep.cidade ?? atual?.cidade ?? "",
+      uf: doCep.uf ?? atual?.uf ?? "MG",
+    })),
+  );
 
   useEffect(() => {
     let ativo = true;
@@ -87,39 +99,54 @@ export function PainelOperacionalEmpresa({ empresaId, nomeEmpresa }: { empresaId
   const confirmado = baseTemPontoConfirmado(base);
 
   return (
-    <section aria-label="Operação da base" className="flex flex-col gap-3 rounded border border-zinc-200 p-3">
+    <section aria-label="Operação da base" className="flex flex-col gap-3 rounded-jaa border border-borda p-3">
       <h3 className="text-sm font-semibold">Operação da base — {nomeEmpresa}</h3>
 
       {/* Base: endereço textual + ponto confirmado + raio (área da base, não região de entrega). */}
-      <div className="flex flex-col gap-1 rounded border border-zinc-200 p-2 text-sm">
+      <div className="flex flex-col gap-1 rounded-jaa border border-borda p-2 text-sm">
         {base && !editando ? (
           <>
             <p className="text-xs">
               {base.logradouro}, {base.numero} — {base.bairro}, {base.cidade}/{base.uf} · CEP {formatarCep(base.cep)}
             </p>
-            <p data-base-confirmada={confirmado} className={`text-xs ${confirmado ? "text-emerald-700" : "text-amber-700"}`}>
+            <p data-base-confirmada={confirmado} className={`text-xs ${confirmado ? "text-marca" : "text-aviso"}`}>
               {confirmado ? `📍 Ponto da base confirmado · raio de ${base.raioMetros} m` : "Ponto da base ainda não confirmado"}
             </p>
             <span className="flex gap-2">
-              <button type="button" onClick={() => setEditando(true)} className="self-start rounded border px-2 py-1 text-xs">
+              <button type="button" onClick={() => setEditando(true)} className="self-start rounded-jaa border px-2 py-1 text-xs">
                 Editar base
               </button>
-              <button type="button" data-confirmar-base onClick={() => setConfirmandoPonto(true)} className="self-start rounded border px-2 py-1 text-xs">
+              <button type="button" data-confirmar-base onClick={() => setConfirmandoPonto(true)} className="self-start rounded-jaa border px-2 py-1 text-xs">
                 {confirmado ? "Ajustar ponto no mapa" : "Confirmar ponto no mapa"}
               </button>
             </span>
           </>
         ) : (
           <form aria-label="Base da empresa" onSubmit={(evento) => void salvar(evento)} className="grid gap-2 sm:grid-cols-6">
-            <Campo nome="cepBase" rotulo="CEP" valor={base?.cep} classe="sm:col-span-2" />
-            <Campo nome="logradouroBase" rotulo="Logradouro" valor={base?.logradouro} classe="sm:col-span-4" />
+            <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+              CEP
+              <input
+                name="cepBase"
+                defaultValue={base?.cep ?? ""}
+                required
+                maxLength={9}
+                placeholder="30123-000"
+                onChange={(evento) => {
+                  setEnderecoDigitado((atual) => ({ ...(atual ?? { logradouro: "", bairro: "", cidade: "", uf: "MG" }), cep: evento.target.value }));
+                  void consultarCep(evento.target.value);
+                }}
+                onBlur={(evento) => void consultarCep(evento.target.value)}
+                className="rounded-jaa border border-borda px-2 py-1"
+              />
+            </label>
+            <Campo nome="logradouroBase" rotulo="Logradouro" valor={enderecoDigitado?.logradouro || base?.logradouro} classe="sm:col-span-4" chave={enderecoDigitado?.logradouro} />
             <Campo nome="numeroBase" rotulo="Número" valor={base?.numero} classe="sm:col-span-2" />
             <Campo nome="complementoBase" rotulo="Complemento" valor={base?.complemento ?? ""} classe="sm:col-span-2" opcional />
-            <Campo nome="bairroBase" rotulo="Bairro" valor={base?.bairro} classe="sm:col-span-2" />
-            <Campo nome="cidadeBase" rotulo="Cidade" valor={base?.cidade} classe="sm:col-span-3" />
+            <Campo nome="bairroBase" rotulo="Bairro" valor={enderecoDigitado?.bairro || base?.bairro} classe="sm:col-span-2" chave={enderecoDigitado?.bairro} />
+            <Campo nome="cidadeBase" rotulo="Cidade" valor={enderecoDigitado?.cidade || base?.cidade} classe="sm:col-span-3" chave={enderecoDigitado?.cidade} />
             <label className="flex flex-col gap-1 text-xs sm:col-span-1">
               UF
-              <select name="ufBase" defaultValue={base?.uf ?? "MG"} className="rounded border border-zinc-300 px-2 py-1">
+              <select key={enderecoDigitado?.uf ?? base?.uf ?? "MG"} name="ufBase" defaultValue={enderecoDigitado?.uf ?? base?.uf ?? "MG"} className="rounded-jaa border border-borda px-2 py-1">
                 {UNIDADES_FEDERACAO.map((uf) => (
                   <option key={uf} value={uf}>
                     {uf}
@@ -135,16 +162,21 @@ export function PainelOperacionalEmpresa({ empresaId, nomeEmpresa }: { empresaId
                 min={RAIO_BASE_MINIMO_METROS}
                 max={RAIO_BASE_MAXIMO_METROS}
                 defaultValue={base?.raioMetros ?? 150}
-                className="rounded border border-zinc-300 px-2 py-1"
+                className="rounded-jaa border border-borda px-2 py-1"
               />
             </label>
-            <p className="text-xs text-zinc-500 sm:col-span-6">O raio delimita a área da base para detectar quem chegou — não é a região de entrega.</p>
+            {MENSAGEM_CEP[situacaoCep] && (
+              <p data-situacao-cep={situacaoCep} className="text-xs text-conteudo-suave sm:col-span-6">
+                {MENSAGEM_CEP[situacaoCep]}
+              </p>
+            )}
+            <p className="text-xs text-conteudo-suave sm:col-span-6">O raio delimita a área da base para detectar quem chegou — não é a região de entrega.</p>
             <span className="flex gap-2 sm:col-span-6">
-              <button type="submit" disabled={ocupado} className="rounded bg-black px-3 py-1.5 text-xs text-white disabled:opacity-50">
+              <button type="submit" disabled={ocupado} className="rounded bg-marca px-3 py-1.5 text-xs text-white disabled:opacity-50">
                 Salvar base
               </button>
               {base && (
-                <button type="button" onClick={() => setEditando(false)} className="rounded border px-3 py-1.5 text-xs">
+                <button type="button" onClick={() => setEditando(false)} className="rounded-jaa border px-3 py-1.5 text-xs">
                   Cancelar
                 </button>
               )}
@@ -178,7 +210,7 @@ export function PainelOperacionalEmpresa({ empresaId, nomeEmpresa }: { empresaId
       {painel && <QuadroDaFila painel={painel} />}
 
       {erro && !confirmandoPonto && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-perigo">
           {erro}
         </p>
       )}
@@ -186,11 +218,26 @@ export function PainelOperacionalEmpresa({ empresaId, nomeEmpresa }: { empresaId
   );
 }
 
-function Campo({ nome, rotulo, valor, classe, opcional }: { nome: string; rotulo: string; valor?: string | undefined; classe?: string; opcional?: boolean }) {
+function Campo({
+  nome,
+  rotulo,
+  valor,
+  classe,
+  opcional,
+  // `chave` força o campo a reassumir o valor quando o CEP preenche o endereço.
+  chave,
+}: {
+  nome: string;
+  rotulo: string;
+  valor?: string | undefined;
+  classe?: string;
+  opcional?: boolean;
+  chave?: string | undefined;
+}) {
   return (
     <label className={`flex flex-col gap-1 text-xs ${classe ?? ""}`}>
       {rotulo}
-      <input name={nome} defaultValue={valor ?? ""} required={!opcional} maxLength={120} className="rounded border border-zinc-300 px-2 py-1" />
+      <input key={chave ?? nome} name={nome} defaultValue={valor ?? ""} required={!opcional} maxLength={120} className="rounded-jaa border border-borda px-2 py-1" />
     </label>
   );
 }

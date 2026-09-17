@@ -1,10 +1,12 @@
 import type { Banco } from "@jaa/banco";
-import { criarPedidoEntradaSchema, type ErroApi, type FilaDoPedido } from "@jaa/contratos";
+import { criarPedidoEntradaSchema, type AcompanhamentoPedido, type ErroApi, type FilaDoPedido } from "@jaa/contratos";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as z from "zod";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
 import { exigirIdentidadeAtuante, obterIdentidadeExigida } from "../../autenticacao/lib/exigir-identidade-autenticada.js";
 import type { CanalEventosMensagens } from "../../mensagens/lib/eventos-mensagens.js";
+import { criarCanalEventosEntregas, type CanalEventosEntregas } from "../../entregas/lib/eventos-entregas.js";
+import { montarAcompanhamento } from "../../entregas/casos-de-uso/rastrear-entrega.js";
 import { criarPedido } from "../casos-de-uso/criar-pedido.js";
 import { obterPedidoAutorizado } from "../casos-de-uso/obter-pedido.js";
 import { calcularFilaDoPedido } from "../../entregas/casos-de-uso/gerir-saidas.js";
@@ -22,9 +24,12 @@ function responder(resposta: FastifyReply, status: number, erro: ErroApi) {
  * recalculados no servidor. Criar pedido é ação da identidade PESSOAL (cliente); a empresa do pedido
  * também pode consultá-lo quando operada por quem tem vínculo.
  */
+// A leitura do acompanhamento não publica nada: o canal só existe porque o caso de uso o recebe.
+const canalSemOuvintes = criarCanalEventosEntregas();
+
 export function registrarRotasPedidos(
   servidor: FastifyInstance,
-  dependencias: { banco: Banco; autenticacao: Autenticacao; eventosMensagens: CanalEventosMensagens },
+  dependencias: { banco: Banco; autenticacao: Autenticacao; eventosMensagens: CanalEventosMensagens; eventosEntregas?: CanalEventosEntregas },
 ) {
   const preHandler = exigirIdentidadeAtuante(dependencias);
 
@@ -76,6 +81,26 @@ export function registrarRotasPedidos(
     if (resultado.tipo !== "pedido") return responder(resposta, 404, { codigo: "PEDIDO_NAO_ENCONTRADO", mensagem: "Pedido não encontrado." });
     const fila: FilaDoPedido = await calcularFilaDoPedido(dependencias.banco, parametros.data.pedidoId);
     return fila;
+  });
+
+  /**
+   * ACOMPANHAMENTO do próprio pedido: a fila de sempre e, SÓ quando a entrega dele é a parada atual,
+   * a posição do entregador (um ponto recente, nada mais). É o que sustenta o "Indo até você" no mapa
+   * — e a reconexão, porque o estado vem daqui sem depender do último evento realtime.
+   */
+  servidor.get("/pedidos/:pedidoId/acompanhamento", { preHandler }, async (requisicao, resposta) => {
+    const { identidadeId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosPedidoSchema.safeParse(requisicao.params);
+    if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Pedido inválido." });
+
+    const resultado = await obterPedidoAutorizado(dependencias.banco, identidadeId, parametros.data.pedidoId);
+    if (resultado.tipo !== "pedido") return responder(resposta, 404, { codigo: "PEDIDO_NAO_ENCONTRADO", mensagem: "Pedido não encontrado." });
+
+    const acompanhamento: AcompanhamentoPedido = await montarAcompanhamento(
+      { banco: dependencias.banco, eventosEntregas: dependencias.eventosEntregas ?? canalSemOuvintes },
+      parametros.data.pedidoId,
+    );
+    return acompanhamento;
   });
 
   servidor.get("/pedidos/:pedidoId", { preHandler }, async (requisicao, resposta) => {
