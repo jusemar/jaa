@@ -40,7 +40,7 @@ export function ListaPedidosEmpresa({ pedidos, aoAbrir }: { pedidos: PedidoDaEmp
       {pedidos.map((pedido) => (
         <li key={pedido.id} data-pedido={pedido.id} className="flex items-center justify-between gap-2 px-3 py-2">
           <span className="flex min-w-0 flex-col">
-            <span className="truncate font-medium">{pedido.cliente.nomeExibicao}</span>
+            <span className="truncate font-medium">Pedido #{pedido.numero} · {pedido.cliente.nomeExibicao}</span>
             <span className="text-xs text-conteudo-suave">
               Criado às {formatarHorarioMensagem(pedido.criadoEm)} · {pedido.quantidadeItens} {pedido.quantidadeItens === 1 ? "item" : "itens"} ·{" "}
               {formatarPrecoCentavos(pedido.totalCentavos)} · {ROTULO_PAGAMENTO_ENTREGA[pedido.formaPagamentoNaEntrega]}

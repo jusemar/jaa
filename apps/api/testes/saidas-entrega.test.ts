@@ -115,6 +115,7 @@ describe("montar a saída", () => {
     assert.equal(saida.paradas.length, 3);
     // Sequência sugerida: posições 1..n, cada pedido uma vez.
     assert.deepEqual(saida.paradas.map((parada) => parada.posicao), [1, 2, 3]);
+    assert.deepEqual(saida.paradas.map((parada) => parada.numeroPedido), pedidos.map((pedido) => pedido.numero));
     assert.deepEqual([...new Set(saida.paradas.map((parada) => parada.pedidoId))].length, 3);
     // Cada parada usa o destino SNAPSHOT do pedido (com o ponto que o cliente confirmou).
     assert.equal(saida.paradas.every((parada) => parada.destino.latitude !== null && parada.destino.logradouro === "Rua das Flores"), true);
@@ -218,6 +219,45 @@ describe("iniciar a saída", () => {
     }
     // Iniciar duas vezes não faz sentido.
     assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`)).statusCode, 409);
+  });
+
+  it("o ENTREGADOR atual inicia a própria saída pela mesma regra — e não inicia de novo", async () => {
+    const pedidos = [await pedidoPronto(B1), await pedidoPronto(B3)];
+    const saida: SaidaEntrega = (await criarSaida(A, pizzaria, { entregadorId: paulo, pedidoIds: pedidos.map((pedido) => pedido.id) })).json();
+    assert.equal(saida.status, "preparada");
+
+    // Outra pessoa (mesmo sendo entregador da empresa) não enxerga a saída de Paulo: 404, sem revelar nada.
+    assert.equal((await ctx.api(C, "POST", `/entregas/saidas/${saida.id}/iniciar`)).statusCode, 404);
+    // Cliente, então, muito menos.
+    assert.equal((await ctx.api(B1, "POST", `/entregas/saidas/${saida.id}/iniciar`)).statusCode, 404);
+
+    const iniciada = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`);
+    assert.equal(iniciada.statusCode, 200, iniciada.body);
+    const emAndamento: SaidaEntrega = iniciada.json();
+    assert.equal(emAndamento.status, "em_andamento");
+    assert.ok(emAndamento.iniciadaEm);
+
+    // Os pedidos avançam pela MESMA máquina de estados, com histórico completo.
+    for (const pedido of pedidos) {
+      const atual: Pedido = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${pedido.id}`)).json();
+      assert.equal(atual.status, "saiu_para_entrega");
+      assert.deepEqual(atual.historico.map((evento) => evento.status), ["recebido", "confirmado", "em_preparacao", "pronto", "saiu_para_entrega"]);
+    }
+
+    // Já em andamento: nem ele nem a empresa iniciam de novo.
+    const deNovo = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`);
+    assert.equal(deNovo.statusCode, 409);
+    assert.equal(deNovo.json().codigo, "SAIDA_EM_ANDAMENTO");
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`)).statusCode, 409);
+
+    // E o rastreamento, que depende de a saída estar em andamento, passa a aceitar a posição dele.
+    const posicao = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/posicao`, {
+      latitude: -19.92,
+      longitude: -43.94,
+      precisaoMetros: 10,
+      capturadaEm: new Date().toISOString(),
+    });
+    assert.ok(posicao.statusCode >= 200 && posicao.statusCode < 300, posicao.body);
   });
 });
 

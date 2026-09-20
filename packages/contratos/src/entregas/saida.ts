@@ -55,6 +55,7 @@ export const MAXIMO_PARADAS_POR_SAIDA = 30;
 export const paradaSaidaSchema = z.object({
   id: z.uuid(),
   pedidoId: z.uuid(),
+  numeroPedido: z.number().int().positive(),
   posicao: z.number().int().min(1),
   statusPedido: statusPedidoSchema,
   destino: destinoPedidoSchema,

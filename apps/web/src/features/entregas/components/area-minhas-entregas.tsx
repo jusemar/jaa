@@ -29,6 +29,7 @@ import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import {
   alterarMinhaDisponibilidade,
+  iniciarMinhaSaida,
   listarMeusConvites,
   listarMeusVinculos,
   listarMinhasEntregas,
@@ -116,6 +117,30 @@ export function AreaMinhasEntregas() {
       }
       setErro(null);
       setSaidas((atuais) => atuais.map((item) => (item.id === resultado.dados.id ? resultado.dados : item)));
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  /*
+   * INICIAR A SAÍDA: o entregador saiu com os pedidos. A saída passa a "em andamento" (só então o
+   * rastreamento vale) e cada pedido pronto vira "saiu para entrega" — tudo decidido pela API.
+   * A tela já troca pelo retorno; o evento realtime confirma para a empresa e para as outras abas.
+   */
+  async function iniciar(saida: SaidaEntrega) {
+    if (!window.confirm(`Iniciar a saída de ${saida.empresa.nome}? Os pedidos passam a "saiu para entrega".`)) return;
+    setOcupado(true);
+    try {
+      const resultado = await iniciarMinhaSaida(saida.id);
+      if (!resultado.ok) {
+        setErro(resultado.mensagem);
+        await recarregar();
+        return;
+      }
+      setErro(null);
+      setSaidas((atuais) => atuais.map((item) => (item.id === resultado.dados.id ? resultado.dados : item)));
+      // Os pedidos mudaram de status: a lista de entregas também precisa refletir.
+      await recarregar();
     } finally {
       setOcupado(false);
     }
@@ -225,6 +250,7 @@ export function AreaMinhasEntregas() {
           <p className="text-sm font-medium">
             Saída — {saida.empresa.nome} · {paradasAtivas(saida).length} {paradasAtivas(saida).length === 1 ? "entrega" : "entregas"}
           </p>
+          <AcaoIniciarSaida saida={saida} ocupado={ocupado} aoIniciar={() => void iniciar(saida)} />
           <SequenciaDaSaida saida={saida} ocupado={ocupado} aoMover={(pedidoId, direcao) => void mover(saida, pedidoId, direcao)} />
           <MapaPercurso saida={saida} />
         </div>
@@ -240,6 +266,34 @@ export function AreaMinhasEntregas() {
       </section>
     </div>
   );
+}
+
+/**
+ * Ação de início da saída, só no estado em que ela é possível: PREPARADA (atribuída a ele e ainda não
+ * iniciada). Em andamento, a tela diz isso em vez de oferecer iniciar de novo — e a API recusaria.
+ */
+export function AcaoIniciarSaida({ saida, ocupado, aoIniciar }: { saida: SaidaEntrega; ocupado: boolean; aoIniciar: () => void }) {
+  if (saida.status === "preparada") {
+    return (
+      <button
+        type="button"
+        data-iniciar-saida={saida.id}
+        disabled={ocupado}
+        onClick={aoIniciar}
+        className="min-h-11 self-start rounded-full bg-marca px-5 text-sm font-medium text-marca-conteudo disabled:opacity-50"
+      >
+        Iniciar saída
+      </button>
+    );
+  }
+  if (saida.status === "em_andamento") {
+    return (
+      <p data-saida-em-andamento className="text-xs font-medium text-marca">
+        Saída em andamento
+      </p>
+    );
+  }
+  return null;
 }
 
 /**
@@ -337,7 +391,7 @@ export function ListaMinhasEntregas({ entregas }: { entregas: EntregaAtribuida[]
     <ol aria-label="Entregas atribuídas" className="flex flex-col divide-y divide-borda rounded-jaa border border-borda text-sm">
       {entregas.map((entrega) => (
         <li key={entrega.pedidoId} data-entrega={entrega.pedidoId} className="flex flex-col gap-0.5 px-3 py-2">
-          <span className="font-medium">{entrega.empresa.nome}</span>
+          <span className="font-medium">Pedido #{entrega.numeroPedido} · {entrega.empresa.nome}</span>
           <span className="text-xs">{formatarEnderecoResumido(entrega.destino)}</span>
           <span className="text-xs text-conteudo-suave">
             {entrega.destino.bairro}, {entrega.destino.cidade}/{entrega.destino.uf} · CEP {formatarCep(entrega.destino.cep)}

@@ -119,13 +119,14 @@ describe("lista de pedidos da empresa", () => {
     assert.ok(ids.indexOf(recente.id) < ids.indexOf(antigo.id), "mais recente primeiro");
     const linha = lista.pedidos.find((item) => item.id === recente.id);
     assert.equal(linha?.cliente.nomeExibicao, "Bruna Cliente");
+    assert.equal(linha?.numero, recente.numero);
     assert.equal(linha?.quantidadeItens, 1);
     assert.equal(linha?.totalCentavos, 7980);
     assert.equal(linha?.formaPagamentoNaEntrega, "dinheiro");
     assert.equal(linha?.trocoParaCentavos, 10000);
     assert.equal(linha?.status, "recebido");
     // Nada de conta, operador ou empresaId interno na linha da lista.
-    assert.deepEqual(Object.keys(linha ?? {}).sort(), ["cliente", "conversaId", "criadoEm", "formaPagamentoNaEntrega", "id", "quantidadeItens", "status", "totalCentavos", "trocoParaCentavos"]);
+    assert.deepEqual(Object.keys(linha ?? {}).sort(), ["cliente", "conversaId", "criadoEm", "formaPagamentoNaEntrega", "id", "numero", "quantidadeItens", "status", "totalCentavos", "trocoParaCentavos"]);
   });
 
   it("filtra por status e pagina com cursor determinístico", async () => {
@@ -295,6 +296,7 @@ describe("realtime e card na conversa", () => {
 
     const evento = doCliente[0];
     assert.equal(evento?.pedido.id, pedido.id);
+    assert.equal(evento?.pedido.numero, pedido.numero);
     assert.equal(evento?.pedido.status, "confirmado");
     assert.equal(evento?.conversaId, conversaBP);
     assert.equal(evento?.motivoCancelamento, null);
@@ -319,6 +321,7 @@ describe("realtime e card na conversa", () => {
     const antes = await ctx.historico(B, conversaBP);
     const cardAntes = antes.mensagens.find((mensagem) => mensagem.pedido?.id === pedido.id);
     assert.equal(cardAntes?.pedido?.status, "recebido");
+    assert.equal(cardAntes?.pedido?.numero, pedido.numero);
 
     await levarAte(pedido, "pronto");
 

@@ -19,6 +19,7 @@ const evento = (status: StatusPedido, minuto: string, motivo: string | null = nu
 
 const pedido = (status: StatusPedido, historico: Pedido["historico"], motivoCancelamento: string | null = null): Pedido => ({
   id: uuid(4),
+  numero: 4,
   status,
   motivoCancelamento,
   historico,
@@ -118,6 +119,7 @@ describe("ações operacionais da empresa", () => {
 describe("lista operacional da empresa", () => {
   const linha: PedidoDaEmpresa = {
     id: uuid(4),
+    numero: 4,
     status: "recebido",
     cliente: { identidadeId: uuid(7), nomeExibicao: "Bruna Cliente", nomeUsuario: "bruna", tipo: "pessoal" },
     conversaId: uuid(5),
@@ -130,7 +132,7 @@ describe("lista operacional da empresa", () => {
 
   it("cada linha mostra cliente, itens, total, pagamento e status", () => {
     const conteudo = texto(renderToStaticMarkup(createElement(ListaPedidosEmpresa, { pedidos: [linha], aoAbrir: () => {} })));
-    for (const esperado of ["Bruna Cliente", "3 itens", "R$ 91,80", "Dinheiro na entrega", "Pedido recebido", "Abrir"]) {
+    for (const esperado of ["Pedido #4", "Bruna Cliente", "3 itens", "R$ 91,80", "Dinheiro na entrega", "Pedido recebido", "Abrir"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
   });

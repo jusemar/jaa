@@ -10,11 +10,12 @@ import {
   formatarCep,
   type BaseEmpresa,
   type PainelOperacional,
+  type Coordenadas,
 } from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
 import { MENSAGEM_CEP, useCep } from "@/features/enderecos/hooks/use-cep";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
-import { confirmarPontoBase, obterBase, obterPainelOperacional, salvarBase } from "../lib/api-entregas";
+import { confirmarPontoBase, obterBase, obterPainelOperacional, obterSugestaoLocalizacaoBase, salvarBase } from "../lib/api-entregas";
 import { ConfirmarPontoBase } from "./confirmar-ponto-base";
 import { QuadroDaFila } from "./fila-apresentacao";
 
@@ -28,6 +29,7 @@ export function PainelOperacionalEmpresa({ empresaId, nomeEmpresa }: { empresaId
   const [painel, setPainel] = useState<PainelOperacional | null>(null);
   const [editando, setEditando] = useState(false);
   const [confirmandoPonto, setConfirmandoPonto] = useState(false);
+  const [sugestaoBase, setSugestaoBase] = useState<Coordenadas | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   // Endereço da base preenchido pelo CEP (ViaCEP via servidor). O PONTO continua sendo confirmado no mapa.
@@ -98,6 +100,18 @@ export function PainelOperacionalEmpresa({ empresaId, nomeEmpresa }: { empresaId
 
   const confirmado = baseTemPontoConfirmado(base);
 
+  async function abrirConfirmacaoDaBase() {
+    if (!base) return;
+    setOcupado(true);
+    try {
+      const sugestao = confirmado ? null : await obterSugestaoLocalizacaoBase(empresaId);
+      setSugestaoBase(sugestao?.ok ? sugestao.dados.coordenadas : null);
+      setConfirmandoPonto(true);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   return (
     <section aria-label="Operação da base" className="flex flex-col gap-3 rounded-jaa border border-borda p-3">
       <h3 className="text-sm font-semibold">Operação da base — {nomeEmpresa}</h3>
@@ -116,7 +130,7 @@ export function PainelOperacionalEmpresa({ empresaId, nomeEmpresa }: { empresaId
               <button type="button" onClick={() => setEditando(true)} className="self-start rounded-jaa border px-2 py-1 text-xs">
                 Editar base
               </button>
-              <button type="button" data-confirmar-base onClick={() => setConfirmandoPonto(true)} className="self-start rounded-jaa border px-2 py-1 text-xs">
+              <button type="button" data-confirmar-base disabled={ocupado} onClick={() => void abrirConfirmacaoDaBase()} className="self-start rounded-jaa border px-2 py-1 text-xs disabled:opacity-50">
                 {confirmado ? "Ajustar ponto no mapa" : "Confirmar ponto no mapa"}
               </button>
             </span>
@@ -189,6 +203,7 @@ export function PainelOperacionalEmpresa({ empresaId, nomeEmpresa }: { empresaId
       {confirmandoPonto && base && (
         <ConfirmarPontoBase
           base={base}
+          sugestao={sugestaoBase}
           enviando={ocupado}
           erro={erro}
           aoConfirmar={(coordenadas) => {

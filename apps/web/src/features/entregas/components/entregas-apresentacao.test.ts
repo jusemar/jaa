@@ -135,6 +135,7 @@ describe("empresas em que trabalho (disponibilidade do entregador)", () => {
 describe("minhas entregas (área do entregador)", () => {
   const entrega: EntregaAtribuida = {
     pedidoId: uuid(6),
+    numeroPedido: 6,
     empresa: { identidadeId: uuid(7), nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh" },
     status: "saiu_para_entrega",
     destino: {
@@ -164,7 +165,7 @@ describe("minhas entregas (área do entregador)", () => {
   it("mostra o necessário para entregar: empresa, endereço, cliente, itens e pagamento", () => {
     const html = lista([entrega]);
     const conteudo = texto(html);
-    for (const esperado of ["Pizzaria BH", "Rua das Flores, 150 — Apto 302", "Centro, Belo Horizonte/MG", "CEP 30123-000", "Referência: Portão azul", "Cliente: Bruna Cliente", "2× Pizza Calabresa", "R$ 79,80", "Dinheiro na entrega", "Troco para R$ 100,00", "Saiu para entrega"]) {
+    for (const esperado of ["Pedido #6", "Pizzaria BH", "Rua das Flores, 150 — Apto 302", "Centro, Belo Horizonte/MG", "CEP 30123-000", "Referência: Portão azul", "Cliente: Bruna Cliente", "2× Pizza Calabresa", "R$ 79,80", "Dinheiro na entrega", "Troco para R$ 100,00", "Saiu para entrega"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
     assert.ok(conteudo.includes("📍 Ponto de entrega confirmado"));

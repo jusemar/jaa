@@ -43,6 +43,7 @@ export const LIMITE_MAXIMO_PEDIDOS_EMPRESA = 50;
 // Linha da lista operacional: o suficiente para triagem, sem carregar os itens de todos os pedidos.
 export const pedidoDaEmpresaSchema = z.object({
   id: z.uuid(),
+  numero: z.number().int().positive(),
   status: statusPedidoSchema,
   cliente: participanteConversaSchema,
   conversaId: z.uuid().nullable(),

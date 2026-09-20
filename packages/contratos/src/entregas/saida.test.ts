@@ -34,6 +34,7 @@ const destino = {
 const parada = (n: number, posicao: number, encerradaEm: string | null = null): ParadaSaida => ({
   id: uuid(n),
   pedidoId: uuid(n + 50),
+  numeroPedido: n,
   posicao,
   statusPedido: encerradaEm ? "entregue" : "saiu_para_entrega",
   destino,

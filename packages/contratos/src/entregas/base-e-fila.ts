@@ -67,6 +67,14 @@ export const baseEmpresaSchema = z.object({
 
 export type BaseEmpresa = z.infer<typeof baseEmpresaSchema>;
 
+// Mesmo formato da sugestão de endereço do cliente: coordenada opcional, nunca confirmação.
+export const sugestaoLocalizacaoBaseSchema = z.object({
+  disponivel: z.boolean(),
+  coordenadas: coordenadasSchema.nullable(),
+});
+
+export type SugestaoLocalizacaoBase = z.infer<typeof sugestaoLocalizacaoBaseSchema>;
+
 export function baseTemPontoConfirmado(base: Pick<BaseEmpresa, "latitude" | "longitude" | "localizacaoConfirmadaEm"> | null): boolean {
   return base !== null && base.localizacaoConfirmadaEm !== null && base.latitude !== null && base.longitude !== null;
 }

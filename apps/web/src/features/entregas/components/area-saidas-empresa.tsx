@@ -162,7 +162,7 @@ export function AreaSaidasEmpresa({ empresaId, nomeEmpresa }: { empresaId: strin
             <li key={pedido.id}>
               <label className="flex items-center gap-2 text-xs">
                 <input type="checkbox" name="pedidoDaSaida" value={pedido.id} checked={selecionados.includes(pedido.id)} onChange={() => alternar(pedido.id)} />
-                {pedido.cliente.nomeExibicao} · {pedido.quantidadeItens} {pedido.quantidadeItens === 1 ? "item" : "itens"} · {formatarPrecoCentavos(pedido.totalCentavos)}
+                Pedido #{pedido.numero} · {pedido.cliente.nomeExibicao} · {pedido.quantidadeItens} {pedido.quantidadeItens === 1 ? "item" : "itens"} · {formatarPrecoCentavos(pedido.totalCentavos)}
               </label>
             </li>
           ))}

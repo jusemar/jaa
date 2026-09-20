@@ -55,6 +55,12 @@ export const pedidos = pgTable(
     totalCentavos: integer().notNull(),
     // Chave de idempotência da TENTATIVA do cliente: tocar "Confirmar" duas vezes não cria dois pedidos.
     idCliente: uuid().notNull(),
+    /*
+     * NÚMERO DO PEDIDO DENTRO DA EMPRESA ("Pedido #12"): a sequência é DA EMPRESA, não do Jaa, então
+     * duas empresas podem ter o #1. Atribuído na criação e imutável — é por ele que cliente, balcão e
+     * entregador se referem ao pedido. O id (UUIDv7) continua sendo a chave técnica.
+     */
+    numero: integer().notNull(),
     criadoEm: timestamp({ withTimezone: true }).notNull().defaultNow(),
     atualizadoEm: timestamp({ withTimezone: true })
       .notNull()
@@ -63,6 +69,9 @@ export const pedidos = pgTable(
   },
   (tabela) => [
     uniqueIndex("pedidos_id_cliente_por_identidade_unico").on(tabela.clienteIdentidadeId, tabela.idCliente),
+    // Garantia final contra número repetido, mesmo com dois pedidos simultâneos na mesma empresa.
+    uniqueIndex("pedidos_numero_por_empresa_unico").on(tabela.empresaId, tabela.numero),
+    check("pedidos_numero_valido", sql`${tabela.numero} > 0`),
     // Alvo da FK composta dos itens: garante item e pedido na MESMA empresa.
     uniqueIndex("pedidos_id_empresa_id_unico").on(tabela.id, tabela.empresaId),
     // "Pedidos desta empresa" e "pedidos deste cliente", do mais recente para o mais antigo.

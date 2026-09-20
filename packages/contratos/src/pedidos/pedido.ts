@@ -104,6 +104,7 @@ export type DestinoPedido = z.infer<typeof destinoPedidoSchema>;
 
 export const pedidoSchema = z.object({
   id: z.uuid(),
+  numero: z.number().int().positive(),
   origem: origemPedidoSchema,
   conversaId: z.uuid().nullable(),
   empresa: empresaPublicaSchema,
@@ -130,6 +131,7 @@ export type Pedido = z.infer<typeof pedidoSchema>;
 // Card do pedido na conversa: referencia o Pedido real (id) e traz o resumo para exibir.
 export const resumoPedidoSchema = z.object({
   id: z.uuid(),
+  numero: z.number().int().positive(),
   status: statusPedidoSchema,
   formaPagamentoNaEntrega: formaPagamentoEntregaSchema,
   trocoParaCentavos: z.number().int().nullable(),

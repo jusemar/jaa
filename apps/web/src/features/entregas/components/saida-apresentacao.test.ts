@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { FilaDoPedido, ParadaSaida, SaidaEntrega } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { AcaoIniciarSaida } from "./area-minhas-entregas.tsx";
 import { FilaDoCliente, SequenciaDaSaida } from "./saida-apresentacao.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
@@ -11,6 +12,7 @@ const uuid = (n: number) => `${String(n).repeat(8)}-0000-4000-8000-000000000000`
 const parada = (n: number, posicao: number, encerradaEm: string | null = null): ParadaSaida => ({
   id: uuid(n),
   pedidoId: uuid(n + 1),
+  numeroPedido: n,
   posicao,
   statusPedido: encerradaEm ? "entregue" : "saiu_para_entrega",
   destino: {
@@ -60,8 +62,8 @@ describe("sequência da saída", () => {
   it("numera as paradas ativas e marca a próxima (posição operacional, não localização)", () => {
     const html = render(saida([parada(1, 1), parada(2, 2), parada(3, 3)]));
     const conteudo = texto(html);
-    assert.ok(conteudo.includes("1. Cliente 1"));
-    assert.ok(conteudo.includes("3. Cliente 3"));
+    assert.ok(conteudo.includes("1. Pedido #1 · Cliente 1"));
+    assert.ok(conteudo.includes("3. Pedido #3 · Cliente 3"));
     assert.ok(html.includes("data-proxima-parada"), "a primeira ativa é a próxima");
     assert.equal((html.match(/data-proxima-parada/g) ?? []).length, 1);
     // Nada de prometer rota/tempo sem motor de roteamento.
@@ -74,9 +76,9 @@ describe("sequência da saída", () => {
   it("paradas encerradas saem da sequência ativa e viram histórico", () => {
     const html = render(saida([parada(1, 1, "2026-09-16T12:40:00.000Z"), parada(2, 2), parada(3, 3)]));
     assert.ok(html.includes("data-parada-encerrada"));
-    assert.ok(texto(html).includes("Cliente 1 — Pedido entregue"));
+    assert.ok(texto(html).includes("Pedido #1 · Cliente 1 — Pedido entregue"));
     // A sequência ativa renumera a partir da primeira que sobrou.
-    assert.ok(texto(html).includes("1. Cliente 2"));
+    assert.ok(texto(html).includes("1. Pedido #2 · Cliente 2"));
   });
 
   it("só oferece reordenar quando quem exibe é o entregador", () => {
@@ -114,5 +116,33 @@ describe("fila do cliente", () => {
   it("pedido fora de saída (ou encerrado) não mostra fila nenhuma", () => {
     assert.equal(render({ pedidoId: uuid(9), situacao: "sem_saida", entregasAntes: null }), "");
     assert.equal(render({ pedidoId: uuid(9), situacao: "encerrado", entregasAntes: null }), "");
+  });
+});
+
+describe("iniciar a saída (tela do entregador)", () => {
+  const render = (status: SaidaEntrega["status"], ocupado = false) =>
+    renderToStaticMarkup(createElement(AcaoIniciarSaida, { saida: { ...saida([parada(1, 1)]), status }, ocupado, aoIniciar: () => {} }));
+
+  it("atribuída e ainda não iniciada: mostra 'Iniciar saída'", () => {
+    const html = render("preparada");
+    assert.ok(html.includes("data-iniciar-saida"));
+    assert.ok(texto(html).includes("Iniciar saída"));
+    assert.equal(html.includes('disabled=""'), false);
+  });
+
+  it("enquanto a ação está em curso, o botão fica desabilitado (sem toque duplo)", () => {
+    assert.ok(render("preparada", true).includes('disabled=""'));
+  });
+
+  it("já em andamento: não oferece iniciar de novo, só informa", () => {
+    const html = render("em_andamento");
+    assert.equal(html.includes("data-iniciar-saida"), false);
+    assert.ok(texto(html).includes("Saída em andamento"));
+  });
+
+  it("em formação, aguardando entregador ou concluída: nenhuma ação de início", () => {
+    for (const status of ["em_formacao", "aguardando_entregador", "concluida"] as const) {
+      assert.equal(render(status).includes("data-iniciar-saida"), false, status);
+    }
   });
 });

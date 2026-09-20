@@ -93,7 +93,7 @@ export function PendenciasForaDeZona({ painel }: { painel: PainelDespacho }) {
       <ol aria-label="Pedidos fora das zonas" className="flex flex-col divide-y divide-borda rounded-jaa border border-ouro/60 bg-aviso/5">
         {painel.pedidosForaDeZona.map((pedido) => (
           <li key={pedido.id} data-pedido-fora-de-zona={pedido.id} className="px-3 py-1.5 text-xs">
-            {pedido.cliente.nomeExibicao} · {pedido.quantidadeItens} {pedido.quantidadeItens === 1 ? "item" : "itens"} — trate manualmente (monte a saída ou ajuste as zonas).
+            Pedido #{pedido.numero} · {pedido.cliente.nomeExibicao} · {pedido.quantidadeItens} {pedido.quantidadeItens === 1 ? "item" : "itens"} — trate manualmente (monte a saída ou ajuste as zonas).
           </li>
         ))}
       </ol>

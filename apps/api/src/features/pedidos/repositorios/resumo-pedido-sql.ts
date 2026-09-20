@@ -12,6 +12,7 @@ export function resumoPedidoSql(tabelaMensagens = "mensagens"): SQL<ResumoPedido
   return sql<ResumoPedido | null>`(
     select json_build_object(
       'id', pedido.id,
+      'numero', pedido.numero,
       'status', pedido.status,
       'formaPagamentoNaEntrega', pedido.forma_pagamento_na_entrega,
       'trocoParaCentavos', pedido.troco_para_centavos,

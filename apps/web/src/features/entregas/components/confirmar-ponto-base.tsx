@@ -15,12 +15,14 @@ import { CENTRO_PADRAO, type MapaPonto } from "@/features/enderecos/mapa/provedo
  */
 export function ConfirmarPontoBase({
   base,
+  sugestao,
   enviando,
   erro,
   aoConfirmar,
   aoCancelar,
 }: {
   base: BaseEmpresa;
+  sugestao: Coordenadas | null;
   enviando: boolean;
   erro: string | null;
   aoConfirmar: (coordenadas: Coordenadas) => void;
@@ -29,15 +31,21 @@ export function ConfirmarPontoBase({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<MapaPonto | null>(null);
   const pontoSalvo = base.latitude !== null && base.longitude !== null ? { latitude: base.latitude, longitude: base.longitude } : null;
-  const centroInicial = pontoSalvo ?? CENTRO_PADRAO;
-  const [ponto, setPonto] = useState<Coordenadas>(centroInicial);
+  // CENTRO_PADRAO serve só para ABRIR o mapa em algum lugar quando não há ponto: ele nunca é um ponto.
+  const centroInicial = pontoSalvo ?? sugestao ?? CENTRO_PADRAO;
+  /*
+   * Confirmável só o que veio de algo real: o ponto já confirmado antes ou o que o gestor marcar no
+   * mapa. Nascendo com o CENTRO_PADRAO, abrir a tela e clicar em confirmar gravava o centro de Belo
+   * Horizonte como sendo a base — foi o que aconteceu no fluxo do endereço de entrega.
+   */
+  const [ponto, setPonto] = useState<Coordenadas | null>(pontoSalvo ?? sugestao);
 
   useEffect(() => {
     const elemento = containerRef.current;
     if (!elemento) return;
     let ativo = true;
 
-    void criarMapaLeaflet({ elemento, centro: centroInicial, aoMoverPonto: setPonto, urlTiles: URL_TILES_MAPA, atribuicao: ATRIBUICAO_TILES }).then((mapa) => {
+    void criarMapaLeaflet({ elemento, centro: centroInicial, pontoInicial: pontoSalvo ?? sugestao, aoMoverPonto: setPonto, urlTiles: URL_TILES_MAPA, atribuicao: ATRIBUICAO_TILES }).then((mapa) => {
       if (!ativo) {
         mapa.destruir();
         return;
@@ -61,23 +69,31 @@ export function ConfirmarPontoBase({
         {formatarEnderecoResumido(base)} — {base.bairro}, {base.cidade}/{base.uf}
       </p>
       <p className="text-xs text-conteudo-suave">
-        Arraste o mapa para deixar o marcador na porta de saída dos entregadores. O endereço digitado não muda: o ponto é só a referência da base.
+        Arraste o marcador (ou toque no mapa) para deixá-lo na porta de saída dos entregadores. O endereço digitado não muda: o ponto é só a referência da base.
       </p>
 
-      <div className="relative h-64 w-full overflow-hidden rounded-jaa border border-borda">
+      <div className="h-64 w-full overflow-hidden rounded-jaa border border-borda">
         <div ref={containerRef} data-mapa-base className="h-full w-full" />
-        {/* Marcador fixo no centro: move-se o mapa embaixo dele (fácil no celular). */}
-        <span aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-[400] -translate-x-1/2 -translate-y-full text-2xl">
-          📍
-        </span>
       </div>
 
-      <p data-ponto-base={`${ponto.latitude},${ponto.longitude}`} className="text-xs text-conteudo-suave">
-        Quem estiver a até {base.raioMetros} m deste ponto é considerado na base.
-      </p>
+      {ponto ? (
+        <p data-ponto-base={`${ponto.latitude},${ponto.longitude}`} className="text-xs text-conteudo-suave">
+          Quem estiver a até {base.raioMetros} m deste ponto é considerado na base.
+        </p>
+      ) : (
+        <p data-ponto-base-pendente className="text-xs text-aviso">
+          Toque no mapa para marcar a porta de saída dos entregadores e liberar a confirmação.
+        </p>
+      )}
 
       <div className="flex gap-2">
-        <button type="button" data-confirmar-ponto-base disabled={enviando} onClick={() => aoConfirmar(ponto)} className="rounded bg-marca px-3 py-2 text-white disabled:opacity-50">
+        <button
+          type="button"
+          data-confirmar-ponto-base
+          disabled={enviando || !ponto}
+          onClick={() => ponto && aoConfirmar(ponto)}
+          className="rounded bg-marca px-3 py-2 text-white disabled:opacity-50"
+        >
           Confirmar ponto da base
         </button>
         <button type="button" onClick={aoCancelar} className="rounded-jaa border px-3 py-2">

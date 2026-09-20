@@ -40,7 +40,7 @@ export function CardPedido({ pedido, aoAbrir }: { pedido: ResumoPedido; aoAbrir:
      * verde-claro, praticamente ilegível. Quem identifica "fui eu que enviei" é o balão em volta.
      */
     <div data-card-pedido={pedido.id} className="flex min-w-0 flex-col gap-1 rounded-jaa border border-marca/40 bg-mensagem-recebida p-2 text-left text-conteudo shadow-balao">
-      <p className="text-xs font-semibold text-marca">Pedido</p>
+      <p className="text-xs font-semibold text-marca">Pedido #{pedido.numero}</p>
       <ul className="text-xs">
         {pedido.itens.map((item) => (
           <li key={item.nomeProduto}>
@@ -121,7 +121,7 @@ export function DetalhePedido({ pedido, aoFechar, acoes, aoVerPontoNoMapa }: { p
       <button type="button" onClick={aoFechar} className="self-end text-xs underline">
         Fechar pedido
       </button>
-      <h3 className="font-semibold">Pedido — {pedido.empresa.nome}</h3>
+      <h3 className="font-semibold">Pedido #{pedido.numero} — {pedido.empresa.nome}</h3>
       <p className="text-xs text-conteudo-suave">Cliente: {pedido.cliente.nomeExibicao}</p>
       <ol aria-label="Itens do pedido" className="flex flex-col gap-0.5 text-xs">
         {pedido.itens.map((item) => (

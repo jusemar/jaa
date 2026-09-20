@@ -98,6 +98,7 @@ describe("criar pedido a partir da conversa", () => {
     pedido = resposta.json();
 
     assert.equal(pedido.totalCentavos, 9180, "total recalculado no servidor");
+    assert.equal(Number.isInteger(pedido.numero) && pedido.numero > 0, true, "API expõe o número persistente da empresa");
     assert.equal(pedido.status, "recebido");
     assert.equal(pedido.cliente.identidadeId, B.identidadeId, "cliente vem da sessão, não do corpo");
     assert.equal(pedido.empresa.identidadeId, pizzaria.identidadeId);
@@ -118,6 +119,7 @@ describe("criar pedido a partir da conversa", () => {
     assert.equal(card.remetenteIdentidadeId, B.identidadeId);
     assert.deepEqual(card.pedido, {
       id: pedido.id,
+      numero: pedido.numero,
       status: "recebido",
       formaPagamentoNaEntrega: "dinheiro",
       trocoParaCentavos: 10000,
@@ -138,6 +140,7 @@ describe("criar pedido a partir da conversa", () => {
     const guardado: Pedido = (await ctx.api(B, "GET", `/pedidos/${pedido.id}`)).json();
     assert.deepEqual(guardado.itens.find((item) => item.produtoId === pizza.id), pedido.itens.find((item) => item.produtoId === pizza.id));
     assert.equal(guardado.totalCentavos, 9180);
+    assert.equal(guardado.numero, pedido.numero, "o número do pedido não muda");
 
     // Volta ao normal, com preço NOVO: o próximo pedido usa o preço atual do banco.
     assert.equal((await ctx.api(A, "PATCH", `/empresas/${pizzaria.id}/produtos/${pizza.id}/disponibilidade`, { disponibilidade: "disponivel" })).statusCode, 200);

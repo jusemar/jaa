@@ -9,6 +9,7 @@ const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
 
 const resumo: ResumoPedido = {
   id: "dddddddd-0000-4000-8000-000000000000",
+  numero: 15,
   status: "recebido",
   formaPagamentoNaEntrega: "dinheiro",
   trocoParaCentavos: null,
@@ -21,6 +22,7 @@ const resumo: ResumoPedido = {
 
 const pedido: Pedido = {
   id: resumo.id,
+  numero: resumo.numero,
   status: "recebido",
   origem: "conversa",
   conversaId: "eeeeeeee-0000-4000-8000-000000000000",
@@ -59,7 +61,7 @@ describe("card e detalhe do Pedido Jaa (Web técnica)", () => {
   it("card mostra itens, total, pagamento, status e abre o pedido", () => {
     const html = card(resumo);
     const conteudo = texto(html);
-    for (const esperado of ["Pedido", "2× Pizza Calabresa — R$ 79,80", "1× Refrigerante 2L — R$ 12,00", "Total: R$ 91,80", "Pagamento: Dinheiro na entrega", "Status: Pedido recebido", "Ver pedido"]) {
+    for (const esperado of ["Pedido #15", "2× Pizza Calabresa — R$ 79,80", "1× Refrigerante 2L — R$ 12,00", "Total: R$ 91,80", "Pagamento: Dinheiro na entrega", "Status: Pedido recebido", "Ver pedido"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
     assert.ok(html.includes(`data-card-pedido="${resumo.id}"`));
@@ -96,7 +98,7 @@ describe("card e detalhe do Pedido Jaa (Web técnica)", () => {
 
   it("detalhe mostra cliente, preço unitário de cada item, total e status", () => {
     const conteudo = texto(renderToStaticMarkup(createElement(DetalhePedido, { pedido, aoFechar: () => {} })));
-    for (const esperado of ["Pedido — Pizzaria BH", "Cliente: Junior Rocha", "2× Pizza Calabresa — R$ 39,90 cada = R$ 79,80", "1× Refrigerante 2L — R$ 12,00 cada = R$ 12,00", "Total: R$ 91,80", "Status: Pedido recebido"]) {
+    for (const esperado of ["Pedido #15 — Pizzaria BH", "Cliente: Junior Rocha", "2× Pizza Calabresa — R$ 39,90 cada = R$ 79,80", "1× Refrigerante 2L — R$ 12,00 cada = R$ 12,00", "Total: R$ 91,80", "Status: Pedido recebido"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
   });

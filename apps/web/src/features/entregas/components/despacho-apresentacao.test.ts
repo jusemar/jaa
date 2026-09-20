@@ -32,6 +32,7 @@ const saida = (dados: Partial<SaidaEntrega> = {}): SaidaEntrega => ({
 const parada = (n: number) => ({
   id: uuid(n + 30),
   pedidoId: uuid(n + 40),
+  numeroPedido: n,
   posicao: n,
   statusPedido: "pronto" as const,
   destino: {
@@ -92,6 +93,7 @@ describe("pendências fora das zonas", () => {
           pedidosForaDeZona: [
             {
               id: uuid(9),
+              numero: 9,
               status: "pronto",
               cliente: { identidadeId: uuid(8), tipo: "pessoal", nomeExibicao: "Bruna Cliente", nomeUsuario: "bruna" },
               conversaId: uuid(7),
@@ -107,6 +109,7 @@ describe("pendências fora das zonas", () => {
     );
     assert.ok(texto(html).includes("Pedidos fora das zonas configuradas"));
     assert.ok(texto(html).includes("Bruna Cliente"));
+    assert.ok(texto(html).includes("Pedido #9"));
     assert.ok(texto(html).includes("trate manualmente"));
     assert.ok(html.includes(`data-pedido-fora-de-zona="${uuid(9)}"`));
   });

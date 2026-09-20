@@ -6,6 +6,7 @@ import type { PedidoComItensRegistro } from "../repositorios/repositorio-pedidos
 export function montarResumoPedido({ pedido, itens }: PedidoComItensRegistro): ResumoPedido {
   return {
     id: pedido.id,
+    numero: pedido.numero,
     status: pedido.status,
     formaPagamentoNaEntrega: pedido.formaPagamentoNaEntrega,
     trocoParaCentavos: pedido.trocoParaCentavos,

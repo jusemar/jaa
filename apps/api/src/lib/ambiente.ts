@@ -20,20 +20,12 @@ const ambienteSchema = z
     // Único mecanismo disponível hoje. Um provedor de SMS real entrará como nova opção.
     OTP_ENTREGA: z.enum(["desenvolvimento"]),
     /*
-     * Geocodificação (endereço textual → coordenada SUGERIDA para abrir o mapa). OPCIONAL: sem a URL,
-     * nenhum serviço externo é chamado e o cliente confirma o ponto do mesmo jeito. Espera-se uma API
-     * compatível com a busca do Nominatim/OpenStreetMap, que não exige chave nem cobrança.
-     */
-    GEOCODIFICACAO_URL: z.url().optional(),
-    // Identificação do aplicativo exigida pela política de uso do Nominatim.
-    GEOCODIFICACAO_CONTATO: z.string().min(1).optional(),
-    /*
      * Roteamento real (sequência sugerida + percurso pelas ruas). OPCIONAL: sem o token, o Jaa não
      * chama serviço nenhum e a operação segue com a aproximação local determinística.
      * O token é SEGREDO DE SERVIDOR — nunca vai para o Web nem para o Mobile.
      */
     MAPBOX_TOKEN: z.string().min(1).optional(),
-    // Base da API (permite apontar para um ambiente próprio/homologação sem tocar no código).
+    // Base compartilhada pelas APIs Mapbox de rotas e geocodificação (útil em testes/homologação).
     MAPBOX_URL: z.url().optional(),
     /*
      * ARMAZENAMENTO DE ARQUIVOS (fotos de perfil, logo da empresa, imagens de produto) no Cloudflare

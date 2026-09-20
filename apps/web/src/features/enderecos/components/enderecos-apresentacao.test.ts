@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EnderecoDoPedido } from "@/features/pedidos/components/apresentacao-pedido.tsx";
 import { FormularioEndereco } from "./formulario-endereco.tsx";
+import { ConfirmarPontoEntrega } from "./confirmar-ponto-entrega.tsx";
 import { ListaEnderecos } from "./lista-enderecos.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
@@ -87,6 +88,27 @@ describe("formulário de endereço", () => {
     assert.ok(html.includes('value="30123-000"'));
     // Sem alteração ainda, nenhum aviso de perda da confirmação.
     assert.equal(html.includes("data-aviso-confirmacao"), false);
+  });
+});
+
+describe("sugestão no mapa de entrega", () => {
+  it("usa a coordenada recebida da API como ponto inicial confirmável", () => {
+    const sugestao = { latitude: -20.004977, longitude: -44.01567 };
+    const html = renderToStaticMarkup(
+      createElement(ConfirmarPontoEntrega, {
+        endereco: { ...semPonto, cep: "30626497", logradouro: "Rua Sílvio Giuseppe Rosso", numero: "24", bairro: "Novo Santa Cecília (Barreiro)" },
+        sugestao,
+        enviando: false,
+        erro: null,
+        aoConfirmar: () => {},
+        aoCancelar: () => {},
+      }),
+    );
+
+    assert.ok(html.includes('data-ponto-selecionado="-20.004977,-44.01567"'));
+    assert.equal(html.includes("data-ponto-pendente"), false);
+    assert.equal(html.includes("data-confirmar-ponto"), true);
+    assert.equal(html.includes("disabled=\"\""), false);
   });
 });
 

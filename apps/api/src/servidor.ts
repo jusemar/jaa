@@ -4,7 +4,8 @@ import { criarAutenticacao } from "./features/autenticacao/autenticacao.js";
 import { criarEntregadorOtp } from "./features/autenticacao/entrega-otp/entregador-otp.js";
 import { criarAvisoSessoesEncerradas } from "./features/autenticacao/lib/sessoes-encerradas.js";
 import { criarCanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
-import { criarGeocodificadorNominatim, geocodificadorIndisponivel } from "./features/enderecos/lib/geocodificador.js";
+import { criarGeocodificadorMapbox } from "./features/enderecos/lib/geocodificador-mapbox.js";
+import { geocodificadorIndisponivel } from "./features/enderecos/lib/geocodificador.js";
 import { criarCanalEventosEntregas } from "./features/entregas/lib/eventos-entregas.js";
 import { criarMotorDeRotas } from "./features/entregas/lib/motor-rotas.js";
 import { criarProvedorMapbox } from "./features/entregas/lib/provedores/provedor-mapbox.js";
@@ -20,9 +21,9 @@ const sessoesEncerradas = criarAvisoSessoesEncerradas();
 const eventosMensagens = criarCanalEventosMensagens();
 const eventosPedidos = criarCanalEventosPedidos();
 const eventosEntregas = criarCanalEventosEntregas();
-// Sem GEOCODIFICACAO_URL o Jaa não chama serviço externo nenhum: o mapa abre sem palpite.
-const geocodificador = ambiente.GEOCODIFICACAO_URL
-  ? criarGeocodificadorNominatim({ url: ambiente.GEOCODIFICACAO_URL, contato: ambiente.GEOCODIFICACAO_CONTATO })
+// O mesmo token server-side das rotas atende a geocodificação; nunca é enviado ao navegador.
+const geocodificador = ambiente.MAPBOX_TOKEN
+  ? criarGeocodificadorMapbox({ token: ambiente.MAPBOX_TOKEN, urlBase: ambiente.MAPBOX_URL })
   : geocodificadorIndisponivel;
 
 /*

@@ -121,16 +121,45 @@ export async function iniciarSaidaAutorizada(
 
   const atual = await buscarSaidaDaEmpresa(banco, empresaId, saidaId);
   if (!atual) return { tipo: "saida-nao-encontrada" };
+  return iniciarSaida(banco, atual, avancarPedido);
+}
+
+/**
+ * O MESMO início, pedido pelo ENTREGADOR ATUAL da saída — é ele quem sai com os pedidos, e o
+ * rastreamento só começa com a saída em andamento. A autorização é a de sempre para o lado dele:
+ * só quem está com a saída (vínculo ativo) a enxerga; de outra pessoa é indistinguível de inexistente.
+ */
+export async function iniciarMinhaSaida(
+  banco: Banco,
+  usuarioId: string,
+  saidaId: string,
+  avancarPedido: (empresaId: string, pedidoId: string) => Promise<void>,
+): Promise<{ tipo: "iniciada"; saida: SaidaComParadasRegistro } | SemSaida | { tipo: "status-invalido" }> {
+  const atual = await saidaDoEntregador(banco, usuarioId, saidaId);
+  if (!atual) return { tipo: "saida-nao-encontrada" };
+  return iniciarSaida(banco, atual, (pedidoId) => avancarPedido(atual.saida.empresaId, pedidoId));
+}
+
+/**
+ * Núcleo do início, único para empresa e entregador: só sai de PREPARADA (atribuída e ainda não
+ * iniciada), a troca de status é condicional no banco (dois toques simultâneos: um vence) e cada
+ * pedido PRONTO avança pela máquina de estados do pedido.
+ */
+async function iniciarSaida(
+  banco: Banco,
+  atual: SaidaComParadasRegistro,
+  avancarPedido: (pedidoId: string) => Promise<void>,
+): Promise<{ tipo: "iniciada"; saida: SaidaComParadasRegistro } | { tipo: "status-invalido" }> {
   if (atual.saida.status !== "preparada") return { tipo: "status-invalido" };
 
-  const iniciada = await marcarSaidaIniciada(banco, saidaId);
+  const iniciada = await marcarSaidaIniciada(banco, atual.saida.id);
   if (!iniciada) return { tipo: "status-invalido" };
 
   for (const parada of atual.paradas) {
     if (parada.encerradaEm === null && parada.statusPedido === "pronto") await avancarPedido(parada.pedidoId);
   }
 
-  const saida = await buscarSaidaDaEmpresa(banco, empresaId, saidaId);
+  const saida = await buscarSaidaDaEmpresa(banco, atual.saida.empresaId, atual.saida.id);
   if (!saida) throw new Error("Saída iniciada não encontrada.");
   return { tipo: "iniciada", saida };
 }

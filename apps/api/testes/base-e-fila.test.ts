@@ -121,6 +121,16 @@ describe("base operacional da empresa", () => {
     assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/base/localizacao`, { latitude: 100, longitude: 0 })).statusCode, 400);
   });
 
+  it("oferece sugestão de geocodificação sem confirmar nem alterar a base", async () => {
+    const antes: BaseEmpresa = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/base`)).json();
+    const resposta = await ctx.api(A, "GET", `/empresas/${pizzaria.id}/base/sugestao-localizacao`);
+    assert.equal(resposta.statusCode, 200, resposta.body);
+    assert.deepEqual(resposta.json(), { disponivel: false, coordenadas: null });
+    const depois: BaseEmpresa = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/base`)).json();
+    assert.equal(depois.localizacaoConfirmadaEm, antes.localizacaoConfirmadaEm);
+    assert.equal(depois.logradouro, antes.logradouro);
+  });
+
   it("mudar o endereço estrutural invalida o ponto confirmado", async () => {
     const outra = (await ctx.api(A, "POST", "/empresas", { nome: "Loja Teste", nomeUsuario: `${PREFIXO}_loja`, slug: `${PREFIXO}-loja` })).json();
     await ctx.api(A, "POST", `/empresas/${outra.id}/base`, { cep: "30112-000", logradouro: "Rua A", numero: "10", bairro: "Centro", cidade: "BH", uf: "MG" });

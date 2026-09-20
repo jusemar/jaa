@@ -7,6 +7,7 @@ export function serializarPedido(registro: PedidoComItensRegistro, empresa: Empr
   const { pedido, itens, cliente, historico, destino } = registro;
   return {
     id: pedido.id,
+    numero: pedido.numero,
     origem: pedido.origem,
     conversaId: pedido.conversaId,
     empresa,
@@ -28,6 +29,7 @@ export function serializarPedido(registro: PedidoComItensRegistro, empresa: Empr
 export function serializarPedidoDaEmpresa(registro: PedidoDaEmpresaRegistro): PedidoDaEmpresa {
   return {
     id: registro.id,
+    numero: registro.numero,
     status: registro.status,
     cliente: registro.cliente,
     conversaId: registro.conversaId,

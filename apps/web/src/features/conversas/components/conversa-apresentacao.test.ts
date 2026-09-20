@@ -203,6 +203,7 @@ describe("mensagem de pedido no balão", () => {
     conteudo: "",
     pedido: {
       id: "dddddddd-0000-4000-8000-000000000000",
+      numero: 9,
       status: "recebido",
       formaPagamentoNaEntrega: "dinheiro",
       trocoParaCentavos: null,
@@ -215,7 +216,7 @@ describe("mensagem de pedido no balão", () => {
     const marcacao = balao(comPedido);
     assert.ok(marcacao.includes('data-card-pedido="dddddddd-0000-4000-8000-000000000000"'));
     const conteudo = texto(marcacao).replace(/ /g, " ");
-    for (const esperado of ["2× Pizza Calabresa", "Total: R$ 91,80", "Pagamento: Dinheiro na entrega", "Status: Pedido recebido", "Ver pedido"]) {
+    for (const esperado of ["Pedido #9", "2× Pizza Calabresa", "Total: R$ 91,80", "Pagamento: Dinheiro na entrega", "Status: Pedido recebido", "Ver pedido"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
   });

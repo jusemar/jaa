@@ -15,7 +15,7 @@ import { geocodificadorIndisponivel, type GeocodificadorEndereco } from "./featu
 import { criarCanalEventosEntregas, type CanalEventosEntregas } from "./features/entregas/lib/eventos-entregas.js";
 import { criarMotorDeRotas, type MotorDeRotas } from "./features/entregas/lib/motor-rotas.js";
 import { registrarRotasEntregas } from "./features/entregas/rotas/rotas-entregas.js";
-import { alterarStatusPedidoAutorizado } from "./features/pedidos/casos-de-uso/gerir-pedidos-empresa.js";
+import { alterarStatusPedidoAutorizado, executarAlteracaoStatusPedido } from "./features/pedidos/casos-de-uso/gerir-pedidos-empresa.js";
 import { registrarRotasEnderecos } from "./features/enderecos/rotas/rotas-enderecos.js";
 import { criarCanalEventosPedidos, type CanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
 import { registrarRotasPedidos } from "./features/pedidos/rotas/rotas-pedidos.js";
@@ -100,11 +100,16 @@ export async function criarAplicacao({
     banco,
     autenticacao,
     eventosEntregas,
+    geocodificador,
     motorRotas,
     // Iniciar a saída avança cada pedido pronto pela MESMA máquina de estados da empresa (com
     // histórico, realtime e as validações de sempre) — nunca por atalho.
     avancarPedidoParaEntrega: async (usuarioId, empresaId, pedidoId) => {
       await alterarStatusPedidoAutorizado({ banco, eventosPedidos, eventosEntregas }, usuarioId, empresaId, pedidoId, { tipo: "avancar", statusAtual: "pronto" });
+    },
+    // Início pelo entregador: a saída já foi autorizada para ele; o pedido passa pela mesma máquina.
+    avancarPedidoPeloEntregador: async (usuarioId, empresaId, pedidoId) => {
+      await executarAlteracaoStatusPedido({ banco, eventosPedidos, eventosEntregas }, usuarioId, empresaId, pedidoId, { tipo: "avancar", statusAtual: "pronto" });
     },
   });
   registrarRotasContatos(servidor, { banco, autenticacao });

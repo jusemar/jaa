@@ -20,6 +20,7 @@ export function serializarSaida(registro: SaidaComParadasRegistro, empresa: Empr
     paradas: paradas.map((parada) => ({
       id: parada.id,
       pedidoId: parada.pedidoId,
+      numeroPedido: parada.numeroPedido,
       posicao: parada.posicao,
       statusPedido: parada.statusPedido,
       destino: { ...parada.destino, localizacaoConfirmadaEm: parada.destino.localizacaoConfirmadaEm.toISOString() },

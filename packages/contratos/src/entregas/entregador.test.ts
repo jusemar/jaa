@@ -79,6 +79,7 @@ describe("vínculo x disponibilidade", () => {
 describe("entrega vista pelo entregador", () => {
   const entrega = {
     pedidoId: uuid,
+    numeroPedido: 3,
     empresa: { identidadeId: uuid, nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh" },
     status: "saiu_para_entrega",
     destino: {

@@ -17,6 +17,8 @@ export interface MapaPonto {
 export interface OpcoesMapaPonto {
   elemento: HTMLElement;
   centro: Coordenadas;
+  // Ponto já escolhido (salvo ou sugerido). Ausente = nenhum marcador até a pessoa marcar um.
+  pontoInicial?: Coordenadas | null | undefined;
   // Chamado enquanto o cliente ajusta o pin; o valor só vira ponto oficial quando ele confirma.
   aoMoverPonto: (coordenadas: Coordenadas) => void;
   // URL do serviço de "tiles". Ausente = mapa sem imagem de fundo (o ajuste continua funcionando).

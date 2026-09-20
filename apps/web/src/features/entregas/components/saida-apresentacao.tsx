@@ -44,7 +44,7 @@ export function SequenciaDaSaida({
             <span className="flex min-w-0 flex-col">
               <span className="font-medium">
                 <span aria-hidden>{indice === 0 ? "● " : "○ "}</span>
-                {indice + 1}. {parada.cliente.nomeExibicao}
+                {indice + 1}. Pedido #{parada.numeroPedido} · {parada.cliente.nomeExibicao}
                 {indice === 0 && <span data-proxima-parada className="ml-2 text-xs font-normal text-marca">Próxima</span>}
               </span>
               <span className="text-xs">{formatarEnderecoResumido(parada.destino)}</span>
@@ -90,7 +90,7 @@ export function SequenciaDaSaida({
           {encerradas.map((parada) => (
             <li key={parada.id} data-parada-encerrada={parada.pedidoId}>
               <span aria-hidden>✓ </span>
-              {parada.cliente.nomeExibicao} — {parada.motivoEncerramento ?? ROTULO_STATUS_PEDIDO[parada.statusPedido]}
+              Pedido #{parada.numeroPedido} · {parada.cliente.nomeExibicao} — {parada.motivoEncerramento ?? ROTULO_STATUS_PEDIDO[parada.statusPedido]}
             </li>
           ))}
         </ol>

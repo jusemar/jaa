@@ -8,6 +8,7 @@ export type SaidaRegistro = typeof saidasEntrega.$inferSelect;
 export interface ParadaRegistro {
   id: string;
   pedidoId: string;
+  numeroPedido: number;
   posicao: number;
   statusPedido: (typeof pedidos.$inferSelect)["status"];
   totalCentavos: number;
@@ -49,6 +50,7 @@ async function listarParadas(banco: Banco, saidaId: string): Promise<ParadaRegis
     .select({
       id: paradasSaida.id,
       pedidoId: paradasSaida.pedidoId,
+      numeroPedido: pedidos.numero,
       posicao: paradasSaida.posicao,
       encerradaEm: paradasSaida.encerradaEm,
       motivoEncerramento: paradasSaida.motivoEncerramento,

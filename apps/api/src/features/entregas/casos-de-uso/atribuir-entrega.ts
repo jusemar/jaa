@@ -131,6 +131,7 @@ export async function montarEntrega(banco: Banco, pedidoId: string): Promise<Ent
 
   return {
     pedidoId,
+    numeroPedido: pedido.pedido.numero,
     empresa: serializarEmpresaPublica(empresa),
     status: pedido.pedido.status,
     destino: pedido.destino,

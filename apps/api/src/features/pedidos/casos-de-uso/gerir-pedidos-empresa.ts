@@ -99,7 +99,22 @@ export async function alterarStatusPedidoAutorizado(
 ): Promise<ResultadoAlterar> {
   const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-pedidos");
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
+  return executarAlteracaoStatusPedido({ banco, eventosPedidos, eventosEntregas }, usuarioId, empresaId, pedidoId, intencao);
+}
 
+/**
+ * A TRANSIÇÃO em si, com todas as regras da máquina de estados, histórico e realtime — sem decidir
+ * QUEM pode pedi-la. Existe separada para que a saída iniciada pelo próprio ENTREGADOR avance os
+ * pedidos pelo MESMO caminho (nunca por atalho), com a autorização feita antes pelo caso de uso da
+ * saída (ele é o entregador atual dela). Quem chama é sempre um caso de uso que já autorizou.
+ */
+export async function executarAlteracaoStatusPedido(
+  { banco, eventosPedidos, eventosEntregas }: { banco: Banco; eventosPedidos: CanalEventosPedidos; eventosEntregas: CanalEventosEntregas },
+  usuarioId: string,
+  empresaId: string,
+  pedidoId: string,
+  intencao: IntencaoStatus,
+): Promise<ResultadoAlterar> {
   const atual = await buscarPedidoDaEmpresa(banco, empresaId, pedidoId);
   if (!atual) return { tipo: "pedido-nao-encontrado" };
 

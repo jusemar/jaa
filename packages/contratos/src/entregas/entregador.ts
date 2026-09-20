@@ -160,6 +160,7 @@ export type EventoAtribuicao = z.infer<typeof eventoAtribuicaoSchema>;
  */
 export const entregaAtribuidaSchema = z.object({
   pedidoId: z.uuid(),
+  numeroPedido: z.number().int().positive(),
   empresa: empresaPublicaSchema,
   status: statusPedidoSchema,
   // Snapshot congelado no pedido: o entregador NUNCA geocodifica o endereço de novo.

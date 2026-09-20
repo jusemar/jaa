@@ -73,9 +73,22 @@ export async function inserirPedidoComItens(
 ): Promise<{ pedidoId: string; mensagemId: string }> {
   try {
     return await banco.transaction(async (transacao) => {
+      /*
+       * NÚMERO DO PEDIDO NA EMPRESA. A trava é por EMPRESA e dura só esta transação: dois pedidos
+       * simultâneos da mesma empresa são serializados aqui (um espera o outro), enquanto empresas
+       * diferentes seguem em paralelo. Sem ela, dois `max+1` concorrentes leriam o mesmo valor.
+       * O índice único (empresa_id, numero) é a garantia final, caso alguém insira por fora daqui.
+       */
+      await transacao.execute(sql`select pg_advisory_xact_lock(hashtextextended(${dados.empresaId}, 0))`);
+      const [ultimo] = await transacao
+        .select({ numero: sql<number>`coalesce(max(${pedidos.numero}), 0)` })
+        .from(pedidos)
+        .where(eq(pedidos.empresaId, dados.empresaId));
+
       const [pedido] = await transacao
         .insert(pedidos)
         .values({
+          numero: (ultimo?.numero ?? 0) + 1,
           empresaId: dados.empresaId,
           clienteIdentidadeId: dados.clienteIdentidadeId,
           origem: "conversa",
@@ -204,6 +217,7 @@ export async function buscarPedidoDaEmpresa(banco: Banco, empresaId: string, ped
 
 export interface PedidoDaEmpresaRegistro {
   id: string;
+  numero: number;
   status: StatusPedido;
   cliente: ClientePublico;
   conversaId: string | null;
@@ -230,6 +244,7 @@ export async function listarPedidosDaEmpresa(
   return banco
     .select({
       id: pedidos.id,
+      numero: pedidos.numero,
       status: pedidos.status,
       conversaId: pedidos.conversaId,
       totalCentavos: pedidos.totalCentavos,

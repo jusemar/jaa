@@ -30,10 +30,12 @@ import {
   type PainelOperacional,
   type ListaVinculosEntregador,
   type VinculoEntregador,
+  type SugestaoLocalizacaoBase,
 } from "@jaa/contratos";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as z from "zod";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
+import type { GeocodificadorEndereco } from "../../enderecos/lib/geocodificador.js";
 import { exigirIdentidadeAutenticada, obterIdentidadeExigida } from "../../autenticacao/lib/exigir-identidade-autenticada.js";
 import { serializarEmpresaPublica } from "../../catalogo/lib/serializar-catalogo.js";
 import { buscarEmpresaPublicaPorId } from "../../catalogo/repositorios/repositorio-empresas-publicas.js";
@@ -50,6 +52,7 @@ import {
 } from "../casos-de-uso/gerir-entregadores.js";
 import {
   criarSaidaAutorizada,
+  iniciarMinhaSaida,
   iniciarSaidaAutorizada,
   listarMinhasSaidas,
   listarSaidasAutorizado,
@@ -129,10 +132,13 @@ export function registrarRotasEntregas(
     banco: Banco;
     autenticacao: Autenticacao;
     eventosEntregas: CanalEventosEntregas;
+    geocodificador: GeocodificadorEndereco;
     // Motor de rotas: usado só ao planejar a saída e ao recalcular a ordem do entregador.
     motorRotas?: MotorDeRotas | undefined;
     // Iniciar a saída avança os pedidos pela máquina de estados existente (nunca por atalho).
     avancarPedidoParaEntrega: (usuarioId: string, empresaId: string, pedidoId: string) => Promise<void>;
+    // O mesmo avanço quando quem inicia é o ENTREGADOR da saída (autorizado pelo caso de uso da saída).
+    avancarPedidoPeloEntregador: (usuarioId: string, empresaId: string, pedidoId: string) => Promise<void>;
   },
 ) {
   const preHandler = exigirIdentidadeAutenticada(dependencias);
@@ -303,6 +309,23 @@ export function registrarRotasEntregas(
     if (resultado.tipo === "empresa-nao-encontrada") return responder(resposta, 404, EMPRESA_NAO_ENCONTRADA);
     if (resultado.tipo !== "base") return responder(resposta, 404, { codigo: "BASE_NAO_CONFIGURADA", mensagem: "Configure o endereço da base antes de confirmar o ponto." });
     return serializarBase(resultado.base);
+  });
+
+  // Sugestão reutiliza o mesmo geocodificador dos endereços de entrega e nunca confirma o ponto.
+  servidor.get("/empresas/:empresaId/base/sugestao-localizacao", { preHandler }, async (requisicao, resposta) => {
+    const { usuarioId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosEmpresaSchema.safeParse(requisicao.params);
+    if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Empresa inválida." });
+
+    const resultado = await obterBaseAutorizada(banco, usuarioId, parametros.data.empresaId);
+    if (resultado.tipo !== "base") return responder(resposta, 404, EMPRESA_NAO_ENCONTRADA);
+    if (!resultado.base) return responder(resposta, 404, { codigo: "BASE_NAO_CONFIGURADA", mensagem: "Configure o endereço da base antes de buscar o ponto." });
+
+    const sugestao: SugestaoLocalizacaoBase = {
+      disponivel: dependencias.geocodificador.disponivel,
+      coordenadas: dependencias.geocodificador.disponivel ? await dependencias.geocodificador.sugerir(resultado.base) : null,
+    };
+    return sugestao;
   });
 
   // Painel operacional: fila da base, disponíveis fora da base e indisponíveis (estados derivados).
@@ -648,6 +671,28 @@ export function registrarRotasEntregas(
     const saida = await obterMinhaSaida(banco, usuarioId, parametros.data.saidaId);
     if (!saida) return responder(resposta, 404, SAIDA_NAO_ENCONTRADA);
     return serializarSaidaComEmpresa(banco, saida);
+  });
+
+  /**
+   * INICIAR pelo ENTREGADOR: é ele quem sai com os pedidos. Mesmo núcleo do início pela empresa
+   * (só de "preparada", troca condicional, pedidos avançam pela máquina de estados) — e o rastreamento
+   * só passa a valer depois disto. Iniciar de novo é recusado: nada muda numa saída em andamento.
+   */
+  servidor.post("/entregas/saidas/:saidaId/iniciar", { preHandler }, async (requisicao, resposta) => {
+    const { usuarioId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosSaidaSchema.safeParse(requisicao.params);
+    if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Saída inválida." });
+
+    const resultado = await iniciarMinhaSaida(banco, usuarioId, parametros.data.saidaId, (empresaId, pedidoId) =>
+      dependencias.avancarPedidoPeloEntregador(usuarioId, empresaId, pedidoId),
+    );
+    if (resultado.tipo === "saida-nao-encontrada") return responder(resposta, 404, SAIDA_NAO_ENCONTRADA);
+    if (resultado.tipo !== "iniciada") {
+      return responder(resposta, 409, { codigo: "SAIDA_EM_ANDAMENTO", mensagem: "Esta saída já foi iniciada ou concluída." });
+    }
+    // Empresa e entregador recebem a saída em andamento sem F5.
+    await publicarSaida(dependencias, resultado.saida);
+    return serializarSaidaComEmpresa(banco, resultado.saida);
   });
 
   /**

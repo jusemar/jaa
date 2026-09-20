@@ -68,6 +68,7 @@ describe("pedido e card na conversa", () => {
   it("pedido exige itens e mensagem de card referencia o pedido (texto tem pedido null)", () => {
     const pedido = {
       id: uuid,
+      numero: 3,
       origem: "conversa",
       conversaId: uuid,
       empresa: { identidadeId: uuid, nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh" },
@@ -107,7 +108,7 @@ describe("pedido e card na conversa", () => {
     // O pedido público não expõe a empresa por id interno nem dados de cartão.
     assert.deepEqual(Object.keys(pedidoSchema.parse(pedido).empresa).sort(), ["identidadeId", "nome", "nomeUsuario", "slug"]);
 
-    const card = { id: uuid, conversaId: uuid, remetenteIdentidadeId: uuid, tipo: "pedido", conteudo: "", criadoEm: "2026-09-15T12:00:00.000Z", estado: "enviada", mensagemRespondida: null, editadaEm: null, excluidaEm: null, pedido: { id: uuid, status: "recebido", formaPagamentoNaEntrega: "cartao", trocoParaCentavos: null, totalCentavos: 1200, itens: [{ nomeProduto: "Refrigerante", quantidade: 1, subtotalCentavos: 1200 }] } };
+    const card = { id: uuid, conversaId: uuid, remetenteIdentidadeId: uuid, tipo: "pedido", conteudo: "", criadoEm: "2026-09-15T12:00:00.000Z", estado: "enviada", mensagemRespondida: null, editadaEm: null, excluidaEm: null, pedido: { id: uuid, numero: 3, status: "recebido", formaPagamentoNaEntrega: "cartao", trocoParaCentavos: null, totalCentavos: 1200, itens: [{ nomeProduto: "Refrigerante", quantidade: 1, subtotalCentavos: 1200 }] } };
     assert.equal(mensagemSchema.safeParse(card).success, true);
     assert.equal(mensagemSchema.safeParse({ ...card, tipo: "audio" }).success, false);
   });

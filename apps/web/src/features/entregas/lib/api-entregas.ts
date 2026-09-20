@@ -10,6 +10,7 @@ import {
   listaSituacoesOperacionaisSchema,
   painelOperacionalSchema,
   situacaoOperacionalSchema,
+  sugestaoLocalizacaoBaseSchema,
   listaSaidasSchema,
   listaVinculosEntregadorSchema,
   acompanhamentoPedidoSchema,
@@ -33,6 +34,7 @@ import {
   type PainelOperacional,
   type SalvarBaseEntrada,
   type SituacaoOperacional,
+  type SugestaoLocalizacaoBase,
   type ListaSaidas,
   type ListaVinculosEntregador,
   type AcompanhamentoPedido,
@@ -126,6 +128,11 @@ export function iniciarSaida(empresaId: string, saidaId: string): Promise<Result
   return requisitarApi(daEmpresa(empresaId, `/saidas/${encodeURIComponent(saidaId)}/iniciar`), saidaEntregaSchema, { method: "POST" });
 }
 
+// O ENTREGADOR inicia a própria saída (a mesma transição que a empresa faz, autorizada para ele).
+export function iniciarMinhaSaida(saidaId: string): Promise<ResultadoApi<SaidaEntrega>> {
+  return requisitarApi(`/entregas/saidas/${encodeURIComponent(saidaId)}/iniciar`, saidaEntregaSchema, { method: "POST" });
+}
+
 export function listarMinhasSaidas(): Promise<ResultadoApi<ListaSaidas>> {
   return requisitarApi("/entregas/saidas", listaSaidasSchema, {});
 }
@@ -158,6 +165,10 @@ export function salvarBase(empresaId: string, entrada: SalvarBaseEntrada): Promi
 
 export function confirmarPontoBase(empresaId: string, coordenadas: Coordenadas): Promise<ResultadoApi<BaseEmpresa>> {
   return requisitarApi(daEmpresa(empresaId, "/base/localizacao"), baseEmpresaSchema, { method: "POST", body: JSON.stringify(coordenadas) });
+}
+
+export function obterSugestaoLocalizacaoBase(empresaId: string): Promise<ResultadoApi<SugestaoLocalizacaoBase>> {
+  return requisitarApi(daEmpresa(empresaId, "/base/sugestao-localizacao"), sugestaoLocalizacaoBaseSchema, {});
 }
 
 export function obterPainelOperacional(empresaId: string): Promise<ResultadoApi<PainelOperacional>> {
