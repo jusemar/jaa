@@ -1,6 +1,16 @@
 import type { Banco } from "@jaa/banco";
-import { basesEmpresa, entregadoresEmpresa, historicoFilaEntregador, identidades, saidasEntrega } from "@jaa/banco/schema";
-import { participaDaFila, type StatusEntregador, type Uf } from "@jaa/contratos";
+import {
+  basesEmpresa,
+  entregadoresEmpresa,
+  historicoFilaEntregador,
+  identidades,
+  saidasEntrega,
+} from "@jaa/banco/schema";
+import {
+  participaDaFila,
+  type StatusEntregador,
+  type Uf,
+} from "@jaa/contratos";
 import { and, asc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
 export type BaseRegistro = typeof basesEmpresa.$inferSelect;
@@ -17,8 +27,15 @@ export interface DadosBase {
   raioMetros: number;
 }
 
-export async function buscarBase(banco: Banco, empresaId: string): Promise<BaseRegistro | null> {
-  const [base] = await banco.select().from(basesEmpresa).where(eq(basesEmpresa.empresaId, empresaId)).limit(1);
+export async function buscarBase(
+  banco: Banco,
+  empresaId: string,
+): Promise<BaseRegistro | null> {
+  const [base] = await banco
+    .select()
+    .from(basesEmpresa)
+    .where(eq(basesEmpresa.empresaId, empresaId))
+    .limit(1);
   return base ?? null;
 }
 
@@ -26,13 +43,23 @@ export async function buscarBase(banco: Banco, empresaId: string): Promise<BaseR
  * Salva o endereço da base. `manterLocalizacao` vem da mesma regra central do endereço do cliente:
  * mudou campo estrutural, a confirmação do ponto cai e alguém confirma de novo no mapa.
  */
-export async function salvarBase(banco: Banco, empresaId: string, dados: DadosBase, manterLocalizacao: boolean): Promise<BaseRegistro> {
+export async function salvarBase(
+  banco: Banco,
+  empresaId: string,
+  dados: DadosBase,
+  manterLocalizacao: boolean,
+): Promise<BaseRegistro> {
   const [base] = await banco
     .insert(basesEmpresa)
     .values({ ...dados, empresaId })
     .onConflictDoUpdate({
       target: basesEmpresa.empresaId,
-      set: { ...dados, ...(manterLocalizacao ? {} : { latitude: null, longitude: null, localizacaoConfirmadaEm: null }) },
+      set: {
+        ...dados,
+        ...(manterLocalizacao
+          ? {}
+          : { latitude: null, longitude: null, localizacaoConfirmadaEm: null }),
+      },
     })
     .returning();
   if (!base) throw new Error("Gravação da base não retornou registro.");
@@ -40,7 +67,11 @@ export async function salvarBase(banco: Banco, empresaId: string, dados: DadosBa
 }
 
 // Confirmação explícita do ponto da base (nunca automática, nunca pelo texto do endereço).
-export async function confirmarPontoBase(banco: Banco, empresaId: string, coordenadas: { latitude: number; longitude: number }): Promise<BaseRegistro | null> {
+export async function confirmarPontoBase(
+  banco: Banco,
+  empresaId: string,
+  coordenadas: { latitude: number; longitude: number },
+): Promise<BaseRegistro | null> {
   const [base] = await banco
     .update(basesEmpresa)
     .set({ ...coordenadas, localizacaoConfirmadaEm: new Date() })
@@ -57,9 +88,15 @@ export interface EntregadorOperacionalRegistro {
   disponivel: boolean;
   naBase: boolean;
   aptoParaSaida: boolean;
+  emEntrega: boolean;
   filaEntrouEm: Date | null;
   leiturasConsecutivas: number;
-  pessoa: { identidadeId: string; tipo: "pessoal" | "empresarial"; nomeExibicao: string; nomeUsuario: string };
+  pessoa: {
+    identidadeId: string;
+    tipo: "pessoal" | "empresarial";
+    nomeExibicao: string;
+    nomeUsuario: string;
+  };
 }
 
 const colunasOperacionais = {
@@ -70,6 +107,11 @@ const colunasOperacionais = {
   disponivel: entregadoresEmpresa.disponivel,
   naBase: entregadoresEmpresa.naBase,
   aptoParaSaida: entregadoresEmpresa.aptoParaSaida,
+  emEntrega: sql<boolean>`exists (
+    select 1 from ${saidasEntrega}
+    where ${saidasEntrega.entregadorId} = ${entregadoresEmpresa.id}
+      and ${saidasEntrega.status} = 'em_andamento'
+  )`,
   filaEntrouEm: entregadoresEmpresa.filaEntrouEm,
   leiturasConsecutivas: entregadoresEmpresa.leiturasConsecutivas,
   pessoa: {
@@ -84,33 +126,66 @@ const consultaOperacional = (banco: Banco) =>
   banco
     .select(colunasOperacionais)
     .from(entregadoresEmpresa)
-    .innerJoin(identidades, and(eq(identidades.usuarioId, entregadoresEmpresa.usuarioId), eq(identidades.tipo, "pessoal")));
+    .innerJoin(
+      identidades,
+      and(
+        eq(identidades.usuarioId, entregadoresEmpresa.usuarioId),
+        eq(identidades.tipo, "pessoal"),
+      ),
+    );
 
 // Quadro operacional da empresa: fila primeiro (por ordem de chegada), depois os demais.
-export function listarOperacionaisDaEmpresa(banco: Banco, empresaId: string): Promise<EntregadorOperacionalRegistro[]> {
+export function listarOperacionaisDaEmpresa(
+  banco: Banco,
+  empresaId: string,
+): Promise<EntregadorOperacionalRegistro[]> {
   return consultaOperacional(banco)
     .where(eq(entregadoresEmpresa.empresaId, empresaId))
-    .orderBy(asc(entregadoresEmpresa.filaEntrouEm), asc(entregadoresEmpresa.id));
+    .orderBy(
+      asc(entregadoresEmpresa.filaEntrouEm),
+      asc(entregadoresEmpresa.id),
+    );
 }
 
-export async function buscarOperacional(banco: Banco, entregadorId: string): Promise<EntregadorOperacionalRegistro | null> {
-  const [registro] = await consultaOperacional(banco).where(eq(entregadoresEmpresa.id, entregadorId)).limit(1);
+export async function buscarOperacional(
+  banco: Banco,
+  entregadorId: string,
+): Promise<EntregadorOperacionalRegistro | null> {
+  const [registro] = await consultaOperacional(banco)
+    .where(eq(entregadoresEmpresa.id, entregadorId))
+    .limit(1);
   return registro ?? null;
 }
 
 // Vínculos da pessoa (todas as empresas): a visão "em que empresas eu trabalho e como estou agora".
-export function listarOperacionaisDaPessoa(banco: Banco, usuarioId: string): Promise<EntregadorOperacionalRegistro[]> {
-  return consultaOperacional(banco).where(eq(entregadoresEmpresa.usuarioId, usuarioId)).orderBy(asc(entregadoresEmpresa.id));
+export function listarOperacionaisDaPessoa(
+  banco: Banco,
+  usuarioId: string,
+): Promise<EntregadorOperacionalRegistro[]> {
+  return consultaOperacional(banco)
+    .where(eq(entregadoresEmpresa.usuarioId, usuarioId))
+    .orderBy(asc(entregadoresEmpresa.id));
 }
 
 /**
  * Fila da base, na ORDEM DO SERVIDOR: momento de entrada, com o id como desempate determinístico
  * (dois entregadores elegíveis no mesmo instante nunca produzem ordem ambígua).
  */
-export function listarFila(banco: Banco, empresaId: string): Promise<EntregadorOperacionalRegistro[]> {
+export function listarFila(
+  banco: Banco,
+  empresaId: string,
+): Promise<EntregadorOperacionalRegistro[]> {
   return consultaOperacional(banco)
-    .where(and(eq(entregadoresEmpresa.empresaId, empresaId), isNotNull(entregadoresEmpresa.filaEntrouEm)))
-    .orderBy(asc(entregadoresEmpresa.filaEntrouEm), asc(entregadoresEmpresa.id));
+    .where(
+      and(
+        eq(entregadoresEmpresa.empresaId, empresaId),
+        isNotNull(entregadoresEmpresa.filaEntrouEm),
+      ),
+    )
+    .orderBy(
+      asc(entregadoresEmpresa.filaEntrouEm),
+      asc(entregadoresEmpresa.id),
+    );
 }
 
 export interface MudancaOperacional {
@@ -165,7 +240,12 @@ export async function aplicarMudancaOperacional(
     const [comSaida] = await transacao
       .select({ id: saidasEntrega.id })
       .from(saidasEntrega)
-      .where(and(eq(saidasEntrega.entregadorId, entregadorId), ne(saidasEntrega.status, "concluida")))
+      .where(
+        and(
+          eq(saidasEntrega.entregadorId, entregadorId),
+          ne(saidasEntrega.status, "concluida"),
+        ),
+      )
       .limit(1);
 
     const elegivel = participaDaFila(depois) && !comSaida;
@@ -174,32 +254,50 @@ export async function aplicarMudancaOperacional(
     const saindo = !elegivel && jaEstava;
 
     const camposParaGravar = {
-        ...(mudanca.status === undefined ? {} : { status: mudanca.status }),
-        ...(mudanca.disponivel === undefined ? {} : { disponivel: mudanca.disponivel, disponibilidadeAtualizadaEm: new Date() }),
-        ...(mudanca.aptoParaSaida === undefined ? {} : { aptoParaSaida: mudanca.aptoParaSaida }),
-        ...(mudanca.naBase === undefined
-          ? {}
-          : {
-              naBase: mudanca.naBase,
-              leiturasConsecutivas: mudanca.leiturasConsecutivas ?? 0,
-              ultimaLeituraEm: new Date(),
-              ...(mudanca.presencaMudou ? { presencaAtualizadaEm: new Date() } : {}),
-            }),
-        // `now()` do banco: a ordem da fila é do servidor, nunca do relógio de quem chegou.
-        ...(entrando ? { filaEntrouEm: sql`now()` } : {}),
-        ...(saindo ? { filaEntrouEm: null } : {}),
+      ...(mudanca.status === undefined ? {} : { status: mudanca.status }),
+      ...(mudanca.disponivel === undefined
+        ? {}
+        : {
+            disponivel: mudanca.disponivel,
+            disponibilidadeAtualizadaEm: new Date(),
+          }),
+      ...(mudanca.aptoParaSaida === undefined
+        ? {}
+        : { aptoParaSaida: mudanca.aptoParaSaida }),
+      ...(mudanca.naBase === undefined
+        ? {}
+        : {
+            naBase: mudanca.naBase,
+            leiturasConsecutivas: mudanca.leiturasConsecutivas ?? 0,
+            ultimaLeituraEm: new Date(),
+            ...(mudanca.presencaMudou
+              ? { presencaAtualizadaEm: new Date() }
+              : {}),
+          }),
+      // `now()` do banco: a ordem da fila é do servidor, nunca do relógio de quem chegou.
+      ...(entrando ? { filaEntrouEm: sql`now()` } : {}),
+      ...(saindo ? { filaEntrouEm: null } : {}),
     };
     // Reavaliação que não mudou nada não escreve no banco.
     if (Object.keys(camposParaGravar).length > 0) {
-      await transacao.update(entregadoresEmpresa).set(camposParaGravar).where(eq(entregadoresEmpresa.id, entregadorId));
+      await transacao
+        .update(entregadoresEmpresa)
+        .set(camposParaGravar)
+        .where(eq(entregadoresEmpresa.id, entregadorId));
     }
 
-    if (entrando) await transacao.insert(historicoFilaEntregador).values({ entregadorId });
+    if (entrando)
+      await transacao.insert(historicoFilaEntregador).values({ entregadorId });
     if (saindo) {
       await transacao
         .update(historicoFilaEntregador)
         .set({ saiuEm: new Date(), motivoSaida })
-        .where(and(eq(historicoFilaEntregador.entregadorId, entregadorId), isNull(historicoFilaEntregador.saiuEm)));
+        .where(
+          and(
+            eq(historicoFilaEntregador.entregadorId, entregadorId),
+            isNull(historicoFilaEntregador.saiuEm),
+          ),
+        );
     }
 
     return entrando ? "entrou" : saindo ? "saiu" : "sem-mudanca";
@@ -207,7 +305,11 @@ export async function aplicarMudancaOperacional(
 }
 
 // Reavaliação sem mudar campo nenhum (ex.: depois de receber ou concluir uma saída).
-export function sincronizarFila(banco: Banco, entregadorId: string, motivoSaida: string): Promise<"entrou" | "saiu" | "sem-mudanca"> {
+export function sincronizarFila(
+  banco: Banco,
+  entregadorId: string,
+  motivoSaida: string,
+): Promise<"entrou" | "saiu" | "sem-mudanca"> {
   return aplicarMudancaOperacional(banco, entregadorId, {}, motivoSaida);
 }
 

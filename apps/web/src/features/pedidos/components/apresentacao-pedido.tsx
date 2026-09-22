@@ -1,6 +1,7 @@
 import {
   ROTULO_PAGAMENTO_ENTREGA,
   ROTULO_STATUS_PEDIDO,
+  ROTULO_STATUS_PEDIDO_CLIENTE,
   formatarCep,
   formatarEnderecoResumido,
   montarTimelinePedido,
@@ -32,7 +33,8 @@ function LinhaPagamento({ pedido }: { pedido: Pick<Pedido, "formaPagamentoNaEntr
   );
 }
 
-export function CardPedido({ pedido, aoAbrir }: { pedido: ResumoPedido; aoAbrir: (pedidoId: string) => void }) {
+export function CardPedido({ pedido, aoAbrir, visaoCliente = false }: { pedido: ResumoPedido; aoAbrir: (pedidoId: string) => void; visaoCliente?: boolean }) {
+  const rotulos = visaoCliente ? ROTULO_STATUS_PEDIDO_CLIENTE : ROTULO_STATUS_PEDIDO;
   return (
     /*
      * O card tem SEMPRE fundo claro e texto escuro, inclusive dentro de um balão próprio (que é
@@ -53,7 +55,7 @@ export function CardPedido({ pedido, aoAbrir }: { pedido: ResumoPedido; aoAbrir:
       </p>
       <LinhaPagamento pedido={pedido} />
       <p data-status-pedido={pedido.status} className="text-xs text-conteudo-suave">
-        Status: {ROTULO_STATUS_PEDIDO[pedido.status]}
+        Status: {rotulos[pedido.status]}
       </p>
       <button type="button" onClick={() => aoAbrir(pedido.id)} className="self-start rounded-full border border-borda px-2.5 py-0.5 text-xs font-medium text-marca hover:bg-marca-suave">
         Ver pedido
@@ -66,16 +68,17 @@ export function CardPedido({ pedido, aoAbrir }: { pedido: ResumoPedido; aoAbrir:
  * Acompanhamento: etapas concluídas (com o horário real), a atual e as futuras. As futuras são
  * derivadas da máquina de estados só para exibir — não existem no histórico até acontecerem.
  */
-export function TimelinePedido({ pedido }: { pedido: Pick<Pedido, "status" | "historico"> }) {
+export function TimelinePedido({ pedido, visaoCliente = false }: { pedido: Pick<Pedido, "status" | "historico">; visaoCliente?: boolean }) {
   const etapas = montarTimelinePedido(pedido.status, pedido.historico);
   const marca = { concluida: "✓", atual: "●", futura: "○" } as const;
+  const rotulos = visaoCliente ? ROTULO_STATUS_PEDIDO_CLIENTE : ROTULO_STATUS_PEDIDO;
 
   return (
     <ol aria-label="Acompanhamento do pedido" className="flex flex-col gap-0.5 text-xs">
       {etapas.map((etapa) => (
         <li key={etapa.status} data-etapa={etapa.status} data-situacao={etapa.situacao} className={etapa.situacao === "futura" ? "text-conteudo-suave/70" : etapa.situacao === "atual" ? "font-semibold" : ""}>
           <span aria-hidden>{marca[etapa.situacao]} </span>
-          {ROTULO_STATUS_PEDIDO[etapa.status]}
+          {rotulos[etapa.status]}
           {etapa.ocorridoEm && <span className="text-conteudo-suave"> — {formatarHorarioMensagem(etapa.ocorridoEm)}</span>}
         </li>
       ))}
@@ -115,7 +118,20 @@ export function EnderecoDoPedido({ destino, aoVerNoMapa }: { destino: DestinoPed
   );
 }
 
-export function DetalhePedido({ pedido, aoFechar, acoes, aoVerPontoNoMapa }: { pedido: Pedido; aoFechar: () => void; acoes?: React.ReactNode; aoVerPontoNoMapa?: ((destino: DestinoPedido) => void) | undefined }) {
+export function DetalhePedido({
+  pedido,
+  aoFechar,
+  acoes,
+  aoVerPontoNoMapa,
+  visaoCliente = false,
+}: {
+  pedido: Pedido;
+  aoFechar: () => void;
+  acoes?: React.ReactNode;
+  aoVerPontoNoMapa?: ((destino: DestinoPedido) => void) | undefined;
+  visaoCliente?: boolean;
+}) {
+  const rotulos = visaoCliente ? ROTULO_STATUS_PEDIDO_CLIENTE : ROTULO_STATUS_PEDIDO;
   return (
     <article aria-label="Detalhe do pedido" className="flex flex-col gap-1 rounded-jaa border border-borda bg-superficie p-3 text-sm">
       <button type="button" onClick={aoFechar} className="self-end text-xs underline">
@@ -135,13 +151,13 @@ export function DetalhePedido({ pedido, aoFechar, acoes, aoVerPontoNoMapa }: { p
       </p>
       <EnderecoDoPedido destino={pedido.destino} aoVerNoMapa={aoVerPontoNoMapa} />
       <LinhaPagamento pedido={pedido} />
-      <p data-status-pedido={pedido.status}>Status: {ROTULO_STATUS_PEDIDO[pedido.status]}</p>
+      <p data-status-pedido={pedido.status}>Status: {rotulos[pedido.status]}</p>
       {pedido.motivoCancelamento && (
         <p data-motivo-cancelamento className="text-xs text-perigo">
           Motivo do cancelamento: {pedido.motivoCancelamento}
         </p>
       )}
-      <TimelinePedido pedido={pedido} />
+      <TimelinePedido pedido={pedido} visaoCliente={visaoCliente} />
       {acoes}
     </article>
   );

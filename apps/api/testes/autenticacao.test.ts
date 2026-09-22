@@ -1,14 +1,23 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { criarConexaoBanco } from "@jaa/banco";
-import { identidades, rateLimits, sessions, users, verifications } from "@jaa/banco/schema";
+import {
+  identidades,
+  rateLimits,
+  sessions,
+  users,
+  verifications,
+} from "@jaa/banco/schema";
 import { betterAuth } from "better-auth";
 import { testUtils } from "better-auth/plugins";
 import { and, count, eq, inArray, like, sql } from "drizzle-orm";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { criarAplicacao } from "../src/aplicacao.js";
 import { criarOpcoesAutenticacao } from "../src/features/autenticacao/autenticacao.js";
-import { derivarEmailTecnico, NOME_TECNICO_CONTA } from "../src/features/autenticacao/lib/conta-tecnica.js";
+import {
+  derivarEmailTecnico,
+  NOME_TECNICO_CONTA,
+} from "../src/features/autenticacao/lib/conta-tecnica.js";
 import { criarAvisoSessoesEncerradas } from "../src/features/autenticacao/lib/sessoes-encerradas.js";
 import { criarCanalEventosMensagens } from "../src/features/mensagens/lib/eventos-mensagens.js";
 import { carregarAmbiente } from "../src/lib/ambiente.js";
@@ -22,10 +31,20 @@ import { carregarAmbiente } from "../src/lib/ambiente.js";
 
 const ORIGEM_WEB = "http://localhost:3000";
 const PREFIXO_IP_TESTE = "198.51.100."; // TEST-NET-2 (RFC 5737)
+const SENHA_PRINCIPAL = "senha-segura-do-jaa-2026";
 
-const TELEFONES_TESTE = Array.from({ length: 14 }, (_, i) => `+55319876500${String(i + 1).padStart(2, "0")}`);
-const [TEL_PRINCIPAL, TEL_OTP_INCORRETO, TEL_OTP_EXPIRADO, TEL_MARIA, TEL_OUTRA_CONTA, ...TEL_RATE_LIMIT] =
-  TELEFONES_TESTE as [string, string, string, string, string, ...string[]];
+const TELEFONES_TESTE = Array.from(
+  { length: 14 },
+  (_, i) => `+55319876500${String(i + 1).padStart(2, "0")}`,
+);
+const [
+  TEL_PRINCIPAL,
+  TEL_OTP_INCORRETO,
+  TEL_OTP_EXPIRADO,
+  TEL_MARIA,
+  TEL_OUTRA_CONTA,
+  ...TEL_RATE_LIMIT
+] = TELEFONES_TESTE as [string, string, string, string, string, ...string[]];
 
 const ambiente = carregarAmbiente();
 // A origem do teste é definida AQUI: mudar as origens do .env local não pode quebrar a suíte.
@@ -67,36 +86,71 @@ function requisitar(opcoesRequisicao: {
     remoteAddress: opcoesRequisicao.ip,
     headers: {
       origin: ORIGEM_WEB,
-      ...(opcoesRequisicao.corpo !== undefined ? { "content-type": "application/json" } : {}),
+      ...(opcoesRequisicao.corpo !== undefined
+        ? { "content-type": "application/json" }
+        : {}),
       ...(opcoesRequisicao.cookie ? { cookie: opcoesRequisicao.cookie } : {}),
       ...opcoesRequisicao.cabecalhos,
     },
-    ...(opcoesRequisicao.corpo !== undefined ? { payload: JSON.stringify(opcoesRequisicao.corpo) } : {}),
+    ...(opcoesRequisicao.corpo !== undefined
+      ? { payload: JSON.stringify(opcoesRequisicao.corpo) }
+      : {}),
   });
 }
 
-const solicitarOtp = (telefone: string, ip: string, cabecalhos?: Record<string, string>) =>
-  requisitar({ metodo: "POST", url: "/api/auth/phone-number/send-otp", ip, corpo: { phoneNumber: telefone }, cabecalhos });
+const solicitarOtp = (
+  telefone: string,
+  ip: string,
+  cabecalhos?: Record<string, string>,
+) =>
+  requisitar({
+    metodo: "POST",
+    url: "/api/auth/phone-number/send-otp",
+    ip,
+    corpo: { phoneNumber: telefone },
+    cabecalhos,
+  });
 
 const verificarOtp = (telefone: string, codigo: string, ip: string) =>
-  requisitar({ metodo: "POST", url: "/api/auth/phone-number/verify", ip, corpo: { phoneNumber: telefone, code: codigo } });
+  requisitar({
+    metodo: "POST",
+    url: "/api/auth/phone-number/verify",
+    ip,
+    corpo: { phoneNumber: telefone, code: codigo },
+  });
 
 function extrairCookieSessao(resposta: LightMyRequestResponse): string {
-  const cookie = resposta.cookies.find((c) => c.name === "better-auth.session_token");
+  const cookie = resposta.cookies.find(
+    (c) => c.name === "better-auth.session_token",
+  );
   assert.ok(cookie?.value, "cookie de sessão ausente");
   return `${cookie.name}=${cookie.value}`;
 }
 
-async function entrarComTelefone(telefoneDigitado: string, telefoneE164: string, ip: string) {
+async function entrarComTelefone(
+  telefoneDigitado: string,
+  telefoneE164: string,
+  ip: string,
+) {
   const envio = await solicitarOtp(telefoneDigitado, ip);
   assert.equal(envio.statusCode, 200, envio.body);
-  const verificacao = await verificarOtp(telefoneDigitado, await obterOtp(telefoneE164), ip);
+  const verificacao = await verificarOtp(
+    telefoneDigitado,
+    await obterOtp(telefoneE164),
+    ip,
+  );
   assert.equal(verificacao.statusCode, 200, verificacao.body);
-  return { cookie: extrairCookieSessao(verificacao), usuario: verificacao.json().user as { id: string } };
+  return {
+    cookie: extrairCookieSessao(verificacao),
+    usuario: verificacao.json().user as { id: string },
+  };
 }
 
 async function contarUsuarios(telefone: string) {
-  const [linha] = await banco.select({ total: count() }).from(users).where(eq(users.phoneNumber, telefone));
+  const [linha] = await banco
+    .select({ total: count() })
+    .from(users)
+    .where(eq(users.phoneNumber, telefone));
   return linha?.total ?? 0;
 }
 
@@ -104,21 +158,41 @@ async function contarIdentidadesPessoais(usuarioId: string) {
   const [linha] = await banco
     .select({ total: count() })
     .from(identidades)
-    .where(and(eq(identidades.usuarioId, usuarioId), eq(identidades.tipo, "pessoal")));
+    .where(
+      and(
+        eq(identidades.usuarioId, usuarioId),
+        eq(identidades.tipo, "pessoal"),
+      ),
+    );
   return linha?.total ?? 0;
 }
 
 async function limparDadosDeTeste() {
-  const usuariosTeste = banco.select({ id: users.id }).from(users).where(inArray(users.phoneNumber, TELEFONES_TESTE));
-  await banco.delete(identidades).where(inArray(identidades.usuarioId, usuariosTeste));
+  const usuariosTeste = banco
+    .select({ id: users.id })
+    .from(users)
+    .where(inArray(users.phoneNumber, TELEFONES_TESTE));
+  await banco
+    .delete(identidades)
+    .where(inArray(identidades.usuarioId, usuariosTeste));
   await banco.delete(users).where(inArray(users.phoneNumber, TELEFONES_TESTE)); // sessions/accounts em cascata
-  await banco.delete(verifications).where(inArray(verifications.identifier, TELEFONES_TESTE));
-  await banco.delete(rateLimits).where(like(rateLimits.key, `${PREFIXO_IP_TESTE}%`));
+  await banco
+    .delete(verifications)
+    .where(inArray(verifications.identifier, TELEFONES_TESTE));
+  await banco
+    .delete(rateLimits)
+    .where(like(rateLimits.key, `${PREFIXO_IP_TESTE}%`));
 }
 
 before(async () => {
   await limparDadosDeTeste();
-  app = await criarAplicacao({ ambiente: ambienteDoTeste, banco, autenticacao, eventosMensagens: criarCanalEventosMensagens(), logger: false });
+  app = await criarAplicacao({
+    ambiente: ambienteDoTeste,
+    banco,
+    autenticacao,
+    eventosMensagens: criarCanalEventosMensagens(),
+    logger: false,
+  });
   await app.ready();
 });
 
@@ -153,33 +227,64 @@ describe("cenário principal: telefone → OTP → conta → sessão → identid
     cookie = extrairCookieSessao(verificacao);
     usuarioId = corpo.user.id;
 
-    const [conta] = await banco.select().from(users).where(eq(users.phoneNumber, TEL_PRINCIPAL));
+    const [conta] = await banco
+      .select()
+      .from(users)
+      .where(eq(users.phoneNumber, TEL_PRINCIPAL));
     assert.ok(conta);
     assert.equal(await contarUsuarios(TEL_PRINCIPAL), 1);
     assert.equal(conta.phoneNumberVerified, true);
     // Dados técnicos exigidos pelo Better Auth: nenhum deles pode expor o telefone.
-    assert.equal(conta.email, derivarEmailTecnico(TEL_PRINCIPAL, ambiente.BETTER_AUTH_SECRET));
+    assert.equal(
+      conta.email,
+      derivarEmailTecnico(TEL_PRINCIPAL, ambiente.BETTER_AUTH_SECRET),
+    );
     assert.match(conta.email, /^[0-9a-f]{64}@email-tecnico\.jaa\.invalid$/);
     assert.equal(conta.name, NOME_TECNICO_CONTA);
-    for (const trecho of [TEL_PRINCIPAL, TEL_PRINCIPAL.slice(1), TEL_PRINCIPAL.slice(3), TEL_PRINCIPAL.slice(5)]) {
-      assert.ok(!conta.email.includes(trecho), `e-mail técnico contém "${trecho}"`);
-      assert.ok(!conta.name.includes(trecho), `nome técnico contém "${trecho}"`);
+    for (const trecho of [
+      TEL_PRINCIPAL,
+      TEL_PRINCIPAL.slice(1),
+      TEL_PRINCIPAL.slice(3),
+      TEL_PRINCIPAL.slice(5),
+    ]) {
+      assert.ok(
+        !conta.email.includes(trecho),
+        `e-mail técnico contém "${trecho}"`,
+      );
+      assert.ok(
+        !conta.name.includes(trecho),
+        `nome técnico contém "${trecho}"`,
+      );
     }
   });
 
   it("OTP é consumido após uso", async () => {
-    const reutilizado = await verificarOtp(TEL_PRINCIPAL, await obterOtp(TEL_PRINCIPAL), ip);
+    const reutilizado = await verificarOtp(
+      TEL_PRINCIPAL,
+      await obterOtp(TEL_PRINCIPAL),
+      ip,
+    );
     assert.equal(reutilizado.statusCode, 400);
   });
 
   it("sessão autenticada é reconhecida pelo servidor", async () => {
-    const sessao = await requisitar({ metodo: "GET", url: "/api/auth/get-session", ip, cookie });
+    const sessao = await requisitar({
+      metodo: "GET",
+      url: "/api/auth/get-session",
+      ip,
+      cookie,
+    });
     assert.equal(sessao.statusCode, 200);
     assert.equal(sessao.json().user.id, usuarioId);
   });
 
   it("cadastro está incompleto enquanto não houver identidade pessoal", async () => {
-    const conta = await requisitar({ metodo: "GET", url: "/usuarios/eu", ip, cookie });
+    const conta = await requisitar({
+      metodo: "GET",
+      url: "/usuarios/eu",
+      ip,
+      cookie,
+    });
     assert.equal(conta.statusCode, 200);
     assert.deepEqual(conta.json(), {
       telefoneMascarado: "(31) •••••-0001",
@@ -194,7 +299,10 @@ describe("cenário principal: telefone → OTP → conta → sessão → identid
       url: "/identidades/pessoal",
       ip,
       cookie,
-      corpo: { nomeExibicao: "  Junior   Rocha ", nomeUsuario: "@Junior_Teste" },
+      corpo: {
+        nomeExibicao: "  Junior   Rocha ",
+        nomeUsuario: "@Junior_Teste",
+      },
     });
     assert.equal(criacao.statusCode, 201, criacao.body);
     const identidade = criacao.json();
@@ -216,6 +324,18 @@ describe("cenário principal: telefone → OTP → conta → sessão → identid
     assert.equal(await contarIdentidadesPessoais(usuarioId), 1);
   });
 
+  it("define a senha ao concluir o cadastro", async () => {
+    const resposta = await requisitar({
+      metodo: "POST",
+      url: "/conta/senha",
+      ip,
+      cookie,
+      corpo: { senha: SENHA_PRINCIPAL },
+    });
+    assert.equal(resposta.statusCode, 200, resposta.body);
+    assert.deepEqual(resposta.json(), { definida: true });
+  });
+
   it("recusa uma segunda identidade pessoal diferente para a mesma conta", async () => {
     const segunda = await requisitar({
       metodo: "POST",
@@ -230,44 +350,106 @@ describe("cenário principal: telefone → OTP → conta → sessão → identid
   });
 
   it("cadastro completo e rota protegida acessível com sessão", async () => {
-    const conta = await requisitar({ metodo: "GET", url: "/usuarios/eu", ip, cookie });
+    const conta = await requisitar({
+      metodo: "GET",
+      url: "/usuarios/eu",
+      ip,
+      cookie,
+    });
     assert.equal(conta.json().cadastroCompleto, true);
     assert.equal(conta.json().identidadePessoal.id, identidadeId);
 
-    const protegida = await requisitar({ metodo: "GET", url: "/autenticacao/teste-protegido", ip, cookie });
+    const protegida = await requisitar({
+      metodo: "GET",
+      url: "/autenticacao/teste-protegido",
+      ip,
+      cookie,
+    });
     assert.equal(protegida.statusCode, 200);
     assert.equal(protegida.json().autenticado, true);
   });
 
   it("logout invalida a sessão no servidor (não apenas no cookie)", async () => {
-    const saida = await requisitar({ metodo: "POST", url: "/api/auth/sign-out", ip, cookie, corpo: {} });
+    const saida = await requisitar({
+      metodo: "POST",
+      url: "/api/auth/sign-out",
+      ip,
+      cookie,
+      corpo: {},
+    });
     assert.equal(saida.statusCode, 200);
 
-    const [sessoes] = await banco.select({ total: count() }).from(sessions).where(eq(sessions.userId, usuarioId));
+    const [sessoes] = await banco
+      .select({ total: count() })
+      .from(sessions)
+      .where(eq(sessions.userId, usuarioId));
     assert.equal(sessoes?.total, 0);
 
     // Reutilizar o cookie antigo depois do logout.
-    const comCookieAntigo = await requisitar({ metodo: "GET", url: "/autenticacao/teste-protegido", ip, cookie });
+    const comCookieAntigo = await requisitar({
+      metodo: "GET",
+      url: "/autenticacao/teste-protegido",
+      ip,
+      cookie,
+    });
     assert.equal(comCookieAntigo.statusCode, 401);
 
-    const semSessao = await requisitar({ metodo: "GET", url: "/autenticacao/teste-protegido", ip });
+    const semSessao = await requisitar({
+      metodo: "GET",
+      url: "/autenticacao/teste-protegido",
+      ip,
+    });
     assert.equal(semSessao.statusCode, 401);
-    assert.deepEqual(semSessao.json(), { codigo: "NAO_AUTENTICADO", mensagem: "Sessão ausente ou expirada." });
+    assert.deepEqual(semSessao.json(), {
+      codigo: "NAO_AUTENTICADO",
+      mensagem: "Sessão ausente ou expirada.",
+    });
 
-    const contaSemSessao = await requisitar({ metodo: "GET", url: "/usuarios/eu", ip });
+    const contaSemSessao = await requisitar({
+      metodo: "GET",
+      url: "/usuarios/eu",
+      ip,
+    });
     assert.equal(contaSemSessao.statusCode, 401);
   });
 
   it("novo login com novo OTP recupera a mesma conta e a mesma identidade", async () => {
-    const segundoLogin = await entrarComTelefone("+55 31 98765-0001", TEL_PRINCIPAL, ip);
+    const segundoLogin = await entrarComTelefone(
+      "+55 31 98765-0001",
+      TEL_PRINCIPAL,
+      ip,
+    );
     assert.equal(segundoLogin.usuario.id, usuarioId);
 
-    const conta = await requisitar({ metodo: "GET", url: "/usuarios/eu", ip, cookie: segundoLogin.cookie });
+    const conta = await requisitar({
+      metodo: "GET",
+      url: "/usuarios/eu",
+      ip,
+      cookie: segundoLogin.cookie,
+    });
     assert.equal(conta.json().cadastroCompleto, true);
     assert.equal(conta.json().identidadePessoal.id, identidadeId);
 
     assert.equal(await contarUsuarios(TEL_PRINCIPAL), 1);
     assert.equal(await contarIdentidadesPessoais(usuarioId), 1);
+  });
+
+  it("depois do cadastro entra com @usuario e a senha definida", async () => {
+    const entrada = await requisitar({
+      metodo: "POST",
+      url: "/autenticacao/entrar",
+      ip,
+      corpo: { identificador: "@JUNIOR_TESTE", senha: SENHA_PRINCIPAL },
+    });
+    assert.equal(entrada.statusCode, 200, entrada.body);
+    const conta = await requisitar({
+      metodo: "GET",
+      url: "/usuarios/eu",
+      ip,
+      cookie: extrairCookieSessao(entrada),
+    });
+    assert.equal(conta.statusCode, 200, conta.body);
+    assert.equal(conta.json().identidadePessoal.id, identidadeId);
   });
 });
 
@@ -311,7 +493,10 @@ describe("OTP expirado", () => {
     // A cada busca de verificação o Better Auth remove TODAS as verificações expiradas do banco.
     // Com outros arquivos de teste autenticando em paralelo, o registro expirado pode ser removido
     // antes desta verificação: o código continua recusado, como OTP_NOT_FOUND.
-    assert.ok(["OTP_EXPIRED", "OTP_NOT_FOUND"].includes(resposta.json().code), resposta.body);
+    assert.ok(
+      ["OTP_EXPIRED", "OTP_NOT_FOUND"].includes(resposta.json().code),
+      resposta.body,
+    );
     assert.equal(await contarUsuarios(TEL_OTP_EXPIRADO), 0);
   });
 });
@@ -321,6 +506,7 @@ describe("@usuario: unicidade, maiúsculas e formato", () => {
   let cookieMaria = "";
   let usuarioMaria = "";
   let cookieOutra = "";
+  let usuarioOutra = "";
 
   before(async () => {
     const maria = await entrarComTelefone(TEL_MARIA, TEL_MARIA, ip);
@@ -334,10 +520,44 @@ describe("@usuario: unicidade, maiúsculas e formato", () => {
       corpo: { nomeExibicao: "Maria", nomeUsuario: "maria_teste" },
     });
     assert.equal(criacao.statusCode, 201, criacao.body);
-    cookieOutra = (await entrarComTelefone(TEL_OUTRA_CONTA, TEL_OUTRA_CONTA, ip)).cookie;
+    const outra = await entrarComTelefone(TEL_OUTRA_CONTA, TEL_OUTRA_CONTA, ip);
+    cookieOutra = outra.cookie;
+    usuarioOutra = outra.usuario.id;
   });
 
-  for (const variacao of ["maria_teste", "MARIA_TESTE", "@Maria_Teste", "  maria_TESTE "]) {
+  it("retoma pelo OTP a mesma conta com cadastro incompleto", async () => {
+    const antes = await requisitar({
+      metodo: "GET",
+      url: "/usuarios/eu",
+      ip,
+      cookie: cookieOutra,
+    });
+    assert.equal(antes.statusCode, 200, antes.body);
+    assert.equal(antes.json().cadastroCompleto, false);
+
+    const retomada = await entrarComTelefone(
+      "(31) 98765-0005",
+      TEL_OUTRA_CONTA,
+      `${PREFIXO_IP_TESTE}41`,
+    );
+    assert.equal(retomada.usuario.id, usuarioOutra);
+    const depois = await requisitar({
+      metodo: "GET",
+      url: "/usuarios/eu",
+      ip,
+      cookie: retomada.cookie,
+    });
+    assert.equal(depois.json().cadastroCompleto, false);
+    assert.equal(await contarUsuarios(TEL_OUTRA_CONTA), 1);
+    cookieOutra = retomada.cookie;
+  });
+
+  for (const variacao of [
+    "maria_teste",
+    "MARIA_TESTE",
+    "@Maria_Teste",
+    "  maria_TESTE ",
+  ]) {
     it(`"${variacao}" já pertence a outra conta`, async () => {
       const resposta = await requisitar({
         metodo: "POST",
@@ -348,10 +568,21 @@ describe("@usuario: unicidade, maiúsculas e formato", () => {
       });
       assert.equal(resposta.statusCode, 409);
       assert.equal(resposta.json().codigo, "NOME_USUARIO_INDISPONIVEL");
+      const informado = variacao.trim();
+      assert.equal(
+        resposta.json().mensagem,
+        `Este ${informado.startsWith("@") ? informado : `@${informado}`} não está disponível.`,
+      );
     });
   }
 
-  for (const reservado of ["jaa", "admin", "@Suporte", "SEGURANCA", " security "]) {
+  for (const reservado of [
+    "jaa",
+    "admin",
+    "@Suporte",
+    "SEGURANCA",
+    " security ",
+  ]) {
     it(`nome reservado "${reservado}" é recusado`, async () => {
       const resposta = await requisitar({
         metodo: "POST",
@@ -363,12 +594,20 @@ describe("@usuario: unicidade, maiúsculas e formato", () => {
       assert.equal(resposta.statusCode, 400);
       assert.deepEqual(resposta.json(), {
         codigo: "DADOS_INVALIDOS",
-        mensagem: "Este @usuario não está disponível.",
+        mensagem: `Este ${reservado.trim().startsWith("@") ? reservado.trim() : `@${reservado.trim()}`} não está disponível.`,
       });
     });
   }
 
-  for (const invalido of ["ab", "1maria", "_maria", "júnior", "maria rocha", "maria.rocha", "a".repeat(31)]) {
+  for (const invalido of [
+    "ab",
+    "1maria",
+    "_maria",
+    "júnior",
+    "maria rocha",
+    "maria.rocha",
+    "a".repeat(31),
+  ]) {
     it(`formato inválido "${invalido}" é recusado`, async () => {
       const resposta = await requisitar({
         metodo: "POST",
@@ -392,6 +631,29 @@ describe("@usuario: unicidade, maiúsculas e formato", () => {
     assert.equal(resposta.statusCode, 401);
   });
 
+  it("@usuario disponível conclui o cadastro incompleto", async () => {
+    const resposta = await requisitar({
+      metodo: "POST",
+      url: "/identidades/pessoal",
+      ip,
+      cookie: cookieOutra,
+      corpo: { nomeExibicao: "Outra Pessoa", nomeUsuario: "@Disponivel_Teste" },
+    });
+    assert.equal(resposta.statusCode, 201, resposta.body);
+    assert.equal(resposta.json().nomeUsuario, "disponivel_teste");
+    assert.equal(
+      (
+        await requisitar({
+          metodo: "GET",
+          url: "/usuarios/eu",
+          ip,
+          cookie: cookieOutra,
+        })
+      ).json().cadastroCompleto,
+      true,
+    );
+  });
+
   it("o banco recusa diretamente @usuario fora da forma canônica e segunda identidade pessoal", async () => {
     await assert.rejects(
       banco.insert(identidades).values({
@@ -400,7 +662,8 @@ describe("@usuario: unicidade, maiúsculas e formato", () => {
         nomeExibicao: "Maria",
         nomeUsuario: "Maria_Maiuscula",
       }),
-      (erro: Error) => /identidades_nome_usuario_formato/.test(String(erro.cause)),
+      (erro: Error) =>
+        /identidades_nome_usuario_formato/.test(String(erro.cause)),
     );
     await assert.rejects(
       banco.insert(identidades).values({
@@ -409,7 +672,8 @@ describe("@usuario: unicidade, maiúsculas e formato", () => {
         nomeExibicao: "Maria",
         nomeUsuario: "maria_segunda",
       }),
-      (erro: Error) => /identidades_pessoal_por_usuario_unico/.test(String(erro.cause)),
+      (erro: Error) =>
+        /identidades_pessoal_por_usuario_unico/.test(String(erro.cause)),
     );
     assert.equal(await contarIdentidadesPessoais(usuarioMaria), 1);
   });
@@ -419,9 +683,21 @@ describe("telefone inválido", () => {
   const ip = `${PREFIXO_IP_TESTE}5`;
 
   // Um IP por caso: tentativas inválidas também consomem a cota de 5 envios/min por IP.
-  for (const [indice, telefone] of ["123", "abc", "(31) 3222-4399", "+5531987650001999", "", "+".repeat(40), "+351 912 345 678", "+1 415 555 2671"].entries()) {
+  for (const [indice, telefone] of [
+    "123",
+    "abc",
+    "(31) 3222-4399",
+    "+5531987650001999",
+    "",
+    "+".repeat(40),
+    "+351 912 345 678",
+    "+1 415 555 2671",
+  ].entries()) {
     it(`"${telefone.slice(0, 20)}" é recusado antes de gerar OTP`, async () => {
-      const resposta = await solicitarOtp(telefone, `${PREFIXO_IP_TESTE}${20 + indice}`);
+      const resposta = await solicitarOtp(
+        telefone,
+        `${PREFIXO_IP_TESTE}${20 + indice}`,
+      );
       assert.equal(resposta.statusCode, 400);
       assert.equal(resposta.json().code, "INVALID_PHONE_NUMBER");
     });
@@ -446,7 +722,10 @@ describe("proteções contra abuso de envio de OTP", () => {
 
   it("mesmo telefone não recebe outro código antes de 60s, mesmo vindo de outro IP", async () => {
     const telefone = TEL_RATE_LIMIT[5] as string;
-    assert.equal((await solicitarOtp(telefone, `${PREFIXO_IP_TESTE}7`)).statusCode, 200);
+    assert.equal(
+      (await solicitarOtp(telefone, `${PREFIXO_IP_TESTE}7`)).statusCode,
+      200,
+    );
     const repeticao = await solicitarOtp(telefone, `${PREFIXO_IP_TESTE}8`);
     assert.equal(repeticao.statusCode, 429);
     assert.equal(repeticao.json().code, "OTP_SOLICITADO_RECENTEMENTE");
@@ -464,7 +743,9 @@ describe("proteções contra abuso de envio de OTP", () => {
     assert.ok(excedente.headers["x-retry-after"]);
     assert.notEqual(excedente.json().code, "OTP_SOLICITADO_RECENTEMENTE");
 
-    const comIpForjado = await solicitarOtp(TEL_RATE_LIMIT[8] as string, ip, { "x-jaa-ip-cliente": "203.0.113.50" });
+    const comIpForjado = await solicitarOtp(TEL_RATE_LIMIT[8] as string, ip, {
+      "x-jaa-ip-cliente": "203.0.113.50",
+    });
     assert.equal(comIpForjado.statusCode, 429);
     assert.ok(comIpForjado.headers["x-retry-after"]);
   });
@@ -478,7 +759,11 @@ describe("proteções contra abuso de envio de OTP", () => {
     });
     // 401, e não 404: a rota existe (senha é credencial válida no Jaa), mas a tentativa falha.
     assert.equal(resposta.statusCode, 401);
-    assert.equal(resposta.headers["set-cookie"], undefined, "tentativa recusada não pode criar sessão");
+    assert.equal(
+      resposta.headers["set-cookie"],
+      undefined,
+      "tentativa recusada não pode criar sessão",
+    );
   });
 
   it("não há login por e-mail e senha", async () => {
@@ -486,7 +771,11 @@ describe("proteções contra abuso de envio de OTP", () => {
       metodo: "POST",
       url: "/api/auth/sign-up/email",
       ip: `${PREFIXO_IP_TESTE}11`,
-      corpo: { email: "teste@exemplo.com", password: "senha-qualquer-123", name: "Teste" },
+      corpo: {
+        email: "teste@exemplo.com",
+        password: "senha-qualquer-123",
+        name: "Teste",
+      },
     });
     assert.notEqual(resposta.statusCode, 200);
     const [linha] = await banco

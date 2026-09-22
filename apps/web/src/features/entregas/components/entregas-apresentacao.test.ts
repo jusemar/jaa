@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { EntregaAtribuida, EntregaDoPedido, EntregadorDaEmpresa, StatusPedido, VinculoEntregador } from "@jaa/contratos";
+import type { EntregaAtribuida, EntregaDoPedido, EntregadorDaEmpresa, PainelOperacional, StatusPedido, VinculoEntregador } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EmpresasEmQueTrabalho, ListaMinhasEntregas } from "./area-minhas-entregas.tsx";
@@ -17,7 +17,27 @@ const joao: EntregadorDaEmpresa = { ...paulo, id: uuid(2), pessoa: pessoa("João
 const convidado: EntregadorDaEmpresa = { ...paulo, id: uuid(3), pessoa: pessoa("Carlos Entregador", "carlos"), status: "convidado", respondidoEm: null };
 
 describe("quadro de entregadores da empresa", () => {
-  const lista = (entregadores: EntregadorDaEmpresa[]) => renderToStaticMarkup(createElement(ListaEntregadores, { entregadores, ocupado: false, aoAlterarStatus: () => {} }));
+  const painel = (estado: "disponivel_na_base" | "disponivel_fora_base" | "indisponivel" | "em_entrega", entregador = paulo): PainelOperacional => {
+    const item = {
+      id: entregador.id,
+      pessoa: entregador.pessoa,
+      status: entregador.status,
+      disponivel: entregador.disponivel,
+      naBase: estado === "disponivel_na_base",
+      aptoParaSaida: true,
+      estado,
+      posicaoFila: estado === "disponivel_na_base" ? 1 : null,
+      filaEntrouEm: estado === "disponivel_na_base" ? "2026-09-16T12:00:00.000Z" : null,
+    };
+    return {
+      baseConfigurada: true,
+      fila: estado === "disponivel_na_base" ? [item] : [],
+      foraDaBase: estado === "disponivel_fora_base" ? [item] : [],
+      indisponiveis: estado === "indisponivel" || estado === "em_entrega" ? [item] : [],
+    };
+  };
+  const lista = (entregadores: EntregadorDaEmpresa[], operacao: PainelOperacional | null = null) =>
+    renderToStaticMarkup(createElement(ListaEntregadores, { entregadores, painel: operacao, ocupado: false, aoAlterarStatus: () => {} }));
 
   it("mostra nome público, @usuario e status de cada vínculo", () => {
     const html = lista([paulo, joao, convidado]);
@@ -35,13 +55,12 @@ describe("quadro de entregadores da empresa", () => {
     assert.equal(lista([convidado]).includes("data-alternar-entregador"), false);
   });
 
-  it("distingue ATIVO+DISPONÍVEL, ATIVO+INDISPONÍVEL e INATIVO", () => {
-    const indisponivel: EntregadorDaEmpresa = { ...paulo, id: uuid(9), pessoa: pessoa("Carlos Entregador", "carlos"), disponivel: false };
-    const conteudo = texto(lista([paulo, indisponivel, joao]));
-    assert.ok(conteudo.includes("Disponibilidade: 🟢 Disponível"));
-    assert.ok(conteudo.includes("Disponibilidade: ⚪ Indisponível"));
-    // Vínculo inativo nem fala de disponibilidade (não é decisão pendente dele).
-    assert.equal(texto(lista([joao])).includes("Disponibilidade"), false);
+  it("mostra o estado operacional real e dá precedência à rota em andamento", () => {
+    assert.ok(texto(lista([paulo], painel("disponivel_na_base"))).includes("Estado: Disponível na base"));
+    const emEntrega = texto(lista([paulo], painel("em_entrega")));
+    assert.ok(emEntrega.includes("Estado: Em entrega"));
+    assert.equal(emEntrega.includes("Disponível"), false);
+    assert.equal(emEntrega.includes("Na base"), false);
   });
 
   it("empresa sem entregadores vê o estado vazio", () => {

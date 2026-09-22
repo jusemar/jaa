@@ -109,4 +109,11 @@ describe("card e detalhe do Pedido Jaa (Web técnica)", () => {
       assert.ok(!html.includes(proibido), proibido);
     }
   });
+
+  it("na visão do cliente, pedido pronto aparece como aguardando coleta", () => {
+    const pronto = { ...resumo, status: "pronto" as const };
+    const html = renderToStaticMarkup(createElement(CardPedido, { pedido: pronto, aoAbrir: () => {}, visaoCliente: true }));
+    assert.ok(texto(html).includes("Aguardando coleta"));
+    assert.equal(texto(html).includes("Status: Pronto"), false);
+  });
 });

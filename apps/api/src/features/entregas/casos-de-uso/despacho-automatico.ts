@@ -19,7 +19,7 @@ import {
   moverParadas,
   buscarPontoDoPedido,
 } from "../repositorios/repositorio-despacho.js";
-import { buscarSaida } from "../repositorios/repositorio-saidas.js";
+import { buscarSaida, marcarSaidaLiberada } from "../repositorios/repositorio-saidas.js";
 import { planejarRotaDaSaida } from "./planejar-rota.js";
 import { buscarConfiguracaoDespacho, listarCompativeisDaZona, listarZonasAtivas } from "../repositorios/repositorio-zonas.js";
 import { listarZonasSerializadas } from "./gerir-zonas.js";
@@ -121,6 +121,7 @@ async function fecharEDespachar(dependencias: DependenciasDespacho, saidaId: str
     if (!(await fecharFormacao(banco, saidaId, relogio(dependencias)))) return;
   }
   await aplicarSequenciaSugerida(dependencias, saidaId);
+  if (configuracao.liberacaoAutomatica) await marcarSaidaLiberada(banco, saidaId, relogio(dependencias));
   await publicarSaidaPorId(dependencias, saidaId);
   await despacharPendentes(dependencias, empresaId);
 }
@@ -196,19 +197,23 @@ export async function processarFormacoesVencidas(dependencias: DependenciasDespa
     if (!(await fecharFormacao(banco, vencida.id, relogio(dependencias)))) continue;
     fechadas.push(vencida.id);
     await aplicarSequenciaSugerida(dependencias, vencida.id);
+    if (configuracao.liberacaoAutomatica) await marcarSaidaLiberada(banco, vencida.id, relogio(dependencias));
     await publicarSaidaPorId(dependencias, vencida.id);
     await despacharPendentes(dependencias, vencida.empresaId);
   }
   return fechadas;
 }
 
-// Fechamento antecipado pelo gestor: a saída para de receber pedidos e entra na fila de despacho.
-export async function fecharFormacaoManualmente(dependencias: DependenciasDespacho, empresaId: string, saidaId: string): Promise<boolean> {
+// Liberação antecipada pelo gestor: congela e planeja a formação antes de autorizar a retirada.
+export async function liberarSaidaManualmente(dependencias: DependenciasDespacho, empresaId: string, saidaId: string): Promise<boolean> {
   const { banco } = dependencias;
   const saida = await buscarSaida(banco, saidaId);
-  if (!saida || saida.saida.empresaId !== empresaId || saida.saida.status !== "em_formacao") return false;
-  if (!(await fecharFormacao(banco, saidaId, relogio(dependencias)))) return false;
-  await aplicarSequenciaSugerida(dependencias, saidaId);
+  if (!saida || saida.saida.empresaId !== empresaId) return false;
+  if (saida.saida.status === "em_formacao") {
+    if (!(await fecharFormacao(banco, saidaId, relogio(dependencias)))) return false;
+    await aplicarSequenciaSugerida(dependencias, saidaId);
+  }
+  if (!(await marcarSaidaLiberada(banco, saidaId, relogio(dependencias)))) return false;
   await publicarSaidaPorId(dependencias, saidaId);
   await despacharPendentes(dependencias, empresaId);
   return true;

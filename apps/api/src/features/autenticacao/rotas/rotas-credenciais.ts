@@ -12,7 +12,10 @@ import { fromNodeHeaders } from "better-auth/node";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Autenticacao } from "../autenticacao.js";
 import { encaminharParaBetterAuth } from "../lib/encaminhar-para-better-auth.js";
-import { exigirIdentidadeAutenticada, obterIdentidadeExigida } from "../lib/exigir-identidade-autenticada.js";
+import {
+  exigirIdentidadeAutenticada,
+  obterIdentidadeExigida,
+} from "../lib/exigir-identidade-autenticada.js";
 import { normalizarCelularBrasileiro } from "../lib/telefone.js";
 
 /*
@@ -29,8 +32,12 @@ function responder(resposta: FastifyReply, status: number, erro: ErroApi) {
   return resposta.code(status).send(erro);
 }
 
-async function telefoneDoIdentificador(banco: Banco, identificador: string): Promise<string | null> {
-  if (identificadorParecePelefone(identificador)) return normalizarCelularBrasileiro(identificador);
+async function telefoneDoIdentificador(
+  banco: Banco,
+  identificador: string,
+): Promise<string | null> {
+  if (identificadorParecePelefone(identificador))
+    return normalizarCelularBrasileiro(identificador);
 
   const nomeUsuario = identificador.replace(/^@/, "").trim().toLowerCase();
   const [linha] = await banco
@@ -38,7 +45,12 @@ async function telefoneDoIdentificador(banco: Banco, identificador: string): Pro
     .from(identidades)
     .innerJoin(users, eq(users.id, identidades.usuarioId))
     // Só identidade PESSOAL: o @usuario de uma empresa não é uma conta e não entra em lugar nenhum.
-    .where(and(eq(identidades.nomeUsuario, nomeUsuario), eq(identidades.tipo, "pessoal")))
+    .where(
+      and(
+        eq(identidades.nomeUsuario, nomeUsuario),
+        eq(identidades.tipo, "pessoal"),
+      ),
+    )
     .limit(1);
 
   return linha?.telefone ?? null;
@@ -59,18 +71,38 @@ export function registrarRotasCredenciais(
   servidor.post("/autenticacao/entrar", async (requisicao, resposta) => {
     const entrada = entrarComSenhaEntradaSchema.safeParse(requisicao.body);
     if (!entrada.success) {
-      return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: entrada.error.issues[0]?.message ?? "Dados inválidos." });
+      return responder(resposta, 400, {
+        codigo: "DADOS_INVALIDOS",
+        mensagem: entrada.error.issues[0]?.message ?? "Dados inválidos.",
+      });
     }
 
-    const telefone = await telefoneDoIdentificador(banco, entrada.data.identificador);
+    const telefone = await telefoneDoIdentificador(
+      banco,
+      entrada.data.identificador,
+    );
     if (!telefone) {
-      return responder(resposta, 401, { codigo: "CREDENCIAIS_INVALIDAS", mensagem: "Celular/@usuario ou senha incorretos." });
+      return responder(resposta, 401, {
+        codigo: "CREDENCIAIS_INVALIDAS",
+        mensagem: "Celular/@usuario ou senha incorretos.",
+      });
     }
 
-    return encaminharParaBetterAuth({ autenticacao, urlBase }, requisicao, resposta, "/sign-in/phone-number", {
-      phoneNumber: telefone,
-      password: entrada.data.senha,
-    });
+    return encaminharParaBetterAuth(
+      { autenticacao, urlBase },
+      requisicao,
+      resposta,
+      "/sign-in/phone-number",
+      {
+        phoneNumber: telefone,
+        password: entrada.data.senha,
+      },
+      {
+        codigo: "CREDENCIAIS_INVALIDAS",
+        mensagem:
+          "Celular/@usuario ou senha incorretos. Se você ainda não criou uma senha, entre com o código no celular.",
+      },
+    );
   });
 
   /** A tela precisa saber se oferece "Definir senha" ou "Alterar senha". Nunca devolve o hash. */
@@ -79,7 +111,12 @@ export function registrarRotasCredenciais(
     const [conta] = await banco
       .select({ senha: accounts.password })
       .from(accounts)
-      .where(and(eq(accounts.userId, usuarioId), eq(accounts.providerId, "credential")))
+      .where(
+        and(
+          eq(accounts.userId, usuarioId),
+          eq(accounts.providerId, "credential"),
+        ),
+      )
       .limit(1);
     const situacao: SituacaoSenha = { definida: Boolean(conta?.senha) };
     return situacao;
@@ -91,26 +128,46 @@ export function registrarRotasCredenciais(
    * Trocar EXIGE a senha atual: sessão aberta em aparelho esquecido não pode virar troca de senha.
    * Quem esqueceu a senha usa a recuperação por OTP do próprio Better Auth.
    */
-  servidor.post("/conta/senha", { preHandler }, async (requisicao, resposta) => {
-    const entrada = definirSenhaEntradaSchema.safeParse(requisicao.body);
-    if (!entrada.success) {
-      return responder(resposta, 400, { codigo: "SENHA_FRACA", mensagem: entrada.error.issues[0]?.message ?? "Senha inválida." });
-    }
+  servidor.post(
+    "/conta/senha",
+    { preHandler },
+    async (requisicao, resposta) => {
+      const entrada = definirSenhaEntradaSchema.safeParse(requisicao.body);
+      if (!entrada.success) {
+        return responder(resposta, 400, {
+          codigo: "SENHA_FRACA",
+          mensagem: entrada.error.issues[0]?.message ?? "Senha inválida.",
+        });
+      }
 
-    if (entrada.data.senhaAtual) {
-      return encaminharParaBetterAuth({ autenticacao, urlBase }, requisicao, resposta, "/change-password", {
-        currentPassword: entrada.data.senhaAtual,
-        newPassword: entrada.data.senha,
-      });
-    }
+      if (entrada.data.senhaAtual) {
+        return encaminharParaBetterAuth(
+          { autenticacao, urlBase },
+          requisicao,
+          resposta,
+          "/change-password",
+          {
+            currentPassword: entrada.data.senhaAtual,
+            newPassword: entrada.data.senha,
+          },
+        );
+      }
 
-    // `setPassword` é SERVER-ONLY no Better Auth (não existe por HTTP, de propósito): ele só define a
-    // primeira senha e recusa sobrescrever uma existente. É exatamente a garantia que queremos.
-    try {
-      await autenticacao.api.setPassword({ body: { newPassword: entrada.data.senha }, headers: fromNodeHeaders(requisicao.headers) });
-      return { definida: true } satisfies SituacaoSenha;
-    } catch {
-      return responder(resposta, 409, { codigo: "SENHA_FRACA", mensagem: "Você já tem uma senha. Informe a senha atual para alterá-la." });
-    }
-  });
+      // `setPassword` é SERVER-ONLY no Better Auth (não existe por HTTP, de propósito): ele só define a
+      // primeira senha e recusa sobrescrever uma existente. É exatamente a garantia que queremos.
+      try {
+        await autenticacao.api.setPassword({
+          body: { newPassword: entrada.data.senha },
+          headers: fromNodeHeaders(requisicao.headers),
+        });
+        return { definida: true } satisfies SituacaoSenha;
+      } catch {
+        return responder(resposta, 409, {
+          codigo: "SENHA_JA_DEFINIDA",
+          mensagem:
+            "Você já tem uma senha. Informe a senha atual para alterá-la.",
+        });
+      }
+    },
+  );
 }

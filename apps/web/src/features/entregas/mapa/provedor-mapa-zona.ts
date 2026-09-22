@@ -10,6 +10,7 @@ import type { Coordenadas, PoligonoZona } from "@jaa/contratos";
 export interface MapaZona {
   // Substitui o contorno exibido (ex.: ao abrir uma zona existente para editar).
   desenhar(vertices: PoligonoZona): void;
+  desfazer(): void;
   limpar(): void;
   destruir(): void;
 }
@@ -19,8 +20,11 @@ export interface OpcoesMapaZona {
   centro: Coordenadas;
   // Contorno inicial (zona existente) ou vazio (zona nova).
   verticesIniciais?: PoligonoZona | undefined;
+  nomeZona?: string | undefined;
   // Chamado a cada ponto marcado/removido enquanto a pessoa desenha.
   aoMudarVertices: (vertices: PoligonoZona) => void;
+  aoMudarPodeDesfazer?: ((podeDesfazer: boolean) => void) | undefined;
+  aoBloquearExclusao?: (() => void) | undefined;
   // Contornos das outras zonas, só para referência visual (ajudam a não invadir a vizinha).
   outrasZonas?: Array<{ nome: string; vertices: PoligonoZona }> | undefined;
   urlTiles?: string | undefined;

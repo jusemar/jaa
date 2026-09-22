@@ -2,15 +2,18 @@
 
 import {
   EVENTO_ENTREGADOR_DISPONIBILIDADE,
+  EVENTO_FILA_ATUALIZADA,
+  ROTULO_ESTADO_OPERACIONAL,
   ROTULO_STATUS_ENTREGADOR,
   entregadorPodeOperar,
   eventoEntregadorDisponibilidadeSchema,
-  rotuloDisponibilidade,
+  eventoFilaAtualizadaSchema,
   type EntregadorDaEmpresa,
+  type PainelOperacional,
 } from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
-import { alterarStatusEntregador, convidarEntregador, listarEntregadores } from "../lib/api-entregas";
+import { alterarStatusEntregador, convidarEntregador, listarEntregadores, obterPainelOperacional } from "../lib/api-entregas";
 
 // Interface TÉCNICA do quadro de entregadores da empresa. Não é o design final.
 // Entregador NÃO é administrador: este quadro só cria o vínculo e liga/desliga quem pode entregar.
@@ -18,17 +21,21 @@ import { alterarStatusEntregador, convidarEntregador, listarEntregadores } from 
 export function ListaEntregadores({
   entregadores,
   ocupado,
+  painel = null,
   aoAlterarStatus,
 }: {
   entregadores: EntregadorDaEmpresa[];
   ocupado: boolean;
+  painel?: PainelOperacional | null;
   aoAlterarStatus: (entregador: EntregadorDaEmpresa, status: "ativo" | "inativo") => void;
 }) {
   if (entregadores.length === 0) return <p className="text-sm text-conteudo-suave">Nenhum entregador ainda.</p>;
 
   return (
     <ol aria-label="Entregadores" className="flex flex-col divide-y divide-borda rounded-jaa border border-borda text-sm">
-      {entregadores.map((entregador) => (
+      {entregadores.map((entregador) => {
+        const operacional = painel ? [...painel.fila, ...painel.foraDaBase, ...painel.indisponiveis].find((item) => item.id === entregador.id) : null;
+        return (
         <li key={entregador.id} data-entregador={entregador.id} className="flex items-center justify-between gap-2 px-3 py-2">
           <span className="flex min-w-0 flex-col">
             <span className="truncate font-medium">{entregador.pessoa.nomeExibicao}</span>
@@ -37,9 +44,9 @@ export function ListaEntregadores({
             <span data-status-entregador={entregador.status} className="text-xs text-conteudo-suave">
               Vínculo: {ROTULO_STATUS_ENTREGADOR[entregador.status]}
             </span>
-            {entregadorPodeOperar(entregador.status) && (
-              <span data-disponibilidade={entregador.disponivel ? "disponivel" : "indisponivel"} className={`text-xs ${entregador.disponivel ? "text-marca" : "text-conteudo-suave"}`}>
-                Disponibilidade: {rotuloDisponibilidade(entregador.disponivel)}
+            {entregadorPodeOperar(entregador.status) && operacional && (
+              <span data-estado-operacional={operacional.estado} className={`text-xs ${operacional.estado === "disponivel_na_base" ? "text-marca" : "text-conteudo-suave"}`}>
+                Estado: {ROTULO_ESTADO_OPERACIONAL[operacional.estado]}
               </span>
             )}
           </span>
@@ -56,7 +63,8 @@ export function ListaEntregadores({
             </button>
           )}
         </li>
-      ))}
+        );
+      })}
     </ol>
   );
 }
@@ -67,13 +75,15 @@ export function QuadroEntregadores({ empresaId, nomeEmpresa }: { empresaId: stri
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [painel, setPainel] = useState<PainelOperacional | null>(null);
 
   useEffect(() => {
     let ativo = true;
-    void listarEntregadores(empresaId).then((resultado) => {
+    void Promise.all([listarEntregadores(empresaId), obterPainelOperacional(empresaId)]).then(([resultado, operacional]) => {
       if (!ativo) return;
       if (resultado.ok) setEntregadores(resultado.dados.entregadores);
       else setErro(resultado.mensagem);
+      if (operacional.ok) setPainel(operacional.dados);
     });
     return () => {
       ativo = false;
@@ -93,16 +103,23 @@ export function QuadroEntregadores({ empresaId, nomeEmpresa }: { empresaId: stri
       setEntregadores((atuais) => atuais.map((item) => (item.id === atualizado.id ? atualizado : item)));
       if (atualizado.disponivel) setAviso(`${atualizado.pessoa.nomeExibicao} está disponível para entregas.`);
     };
+    const aoAtualizarFila = (evento: unknown) => {
+      const resultado = eventoFilaAtualizadaSchema.safeParse(evento);
+      if (resultado.success) setPainel(resultado.data.painel);
+    };
     socket.on(EVENTO_ENTREGADOR_DISPONIBILIDADE, aoAtualizar);
+    socket.on(EVENTO_FILA_ATUALIZADA, aoAtualizarFila);
     return () => {
       socket.off(EVENTO_ENTREGADOR_DISPONIBILIDADE, aoAtualizar);
+      socket.off(EVENTO_FILA_ATUALIZADA, aoAtualizarFila);
     };
   }, []);
 
   async function recarregar() {
-    const resultado = await listarEntregadores(empresaId);
+    const [resultado, operacional] = await Promise.all([listarEntregadores(empresaId), obterPainelOperacional(empresaId)]);
     if (resultado.ok) setEntregadores(resultado.dados.entregadores);
     else setErro(resultado.mensagem);
+    if (operacional.ok) setPainel(operacional.dados);
   }
 
   // Convite pelo @usuario PÚBLICO: a empresa não procura ninguém por telefone.
@@ -165,7 +182,7 @@ export function QuadroEntregadores({ empresaId, nomeEmpresa }: { empresaId: stri
         </button>
       </form>
 
-      <ListaEntregadores entregadores={entregadores} ocupado={ocupado} aoAlterarStatus={(entregador, status) => void alterar(entregador, status)} />
+      <ListaEntregadores entregadores={entregadores} painel={painel} ocupado={ocupado} aoAlterarStatus={(entregador, status) => void alterar(entregador, status)} />
 
       {aviso && (
         <p role="status" className="text-xs text-marca">

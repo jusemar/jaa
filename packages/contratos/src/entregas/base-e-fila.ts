@@ -1,5 +1,10 @@
 import * as z from "zod";
-import { coordenadasSchema, latitudeSchema, longitudeSchema, ufSchema } from "../enderecos/endereco.ts";
+import {
+  coordenadasSchema,
+  latitudeSchema,
+  longitudeSchema,
+  ufSchema,
+} from "../enderecos/endereco.ts";
 import { participanteConversaSchema } from "../conversas/conversa.ts";
 import { statusEntregadorSchema } from "./entregador.ts";
 
@@ -18,7 +23,8 @@ export const RAIO_BASE_MINIMO_METROS = 30;
 export const RAIO_BASE_MAXIMO_METROS = 2000;
 
 // Endereço textual da base: mesmas regras do endereço do cliente (o mapa nunca corrige o texto).
-const textoObrigatorio = (maximo: number, mensagem: string) => z.string().trim().min(1, mensagem).max(maximo);
+const textoObrigatorio = (maximo: number, mensagem: string) =>
+  z.string().trim().min(1, mensagem).max(maximo);
 const textoOpcional = (maximo: number) =>
   z
     .string()
@@ -44,7 +50,12 @@ const camposBase = {
   uf: ufSchema,
   pontoReferencia: textoOpcional(160),
   // Área da base (não é região de entrega): usada só para detectar presença.
-  raioMetros: z.number().int().min(RAIO_BASE_MINIMO_METROS).max(RAIO_BASE_MAXIMO_METROS).default(RAIO_BASE_PADRAO_METROS),
+  raioMetros: z
+    .number()
+    .int()
+    .min(RAIO_BASE_MINIMO_METROS)
+    .max(RAIO_BASE_MAXIMO_METROS)
+    .default(RAIO_BASE_PADRAO_METROS),
 };
 
 export const salvarBaseEntradaSchema = z.object(camposBase);
@@ -73,10 +84,22 @@ export const sugestaoLocalizacaoBaseSchema = z.object({
   coordenadas: coordenadasSchema.nullable(),
 });
 
-export type SugestaoLocalizacaoBase = z.infer<typeof sugestaoLocalizacaoBaseSchema>;
+export type SugestaoLocalizacaoBase = z.infer<
+  typeof sugestaoLocalizacaoBaseSchema
+>;
 
-export function baseTemPontoConfirmado(base: Pick<BaseEmpresa, "latitude" | "longitude" | "localizacaoConfirmadaEm"> | null): boolean {
-  return base !== null && base.localizacaoConfirmadaEm !== null && base.latitude !== null && base.longitude !== null;
+export function baseTemPontoConfirmado(
+  base: Pick<
+    BaseEmpresa,
+    "latitude" | "longitude" | "localizacaoConfirmadaEm"
+  > | null,
+): boolean {
+  return (
+    base !== null &&
+    base.localizacaoConfirmadaEm !== null &&
+    base.latitude !== null &&
+    base.longitude !== null
+  );
 }
 
 /**
@@ -95,20 +118,30 @@ export const enviarLocalizacaoEntradaSchema = z.object({
   medidaEm: z.iso.datetime(),
 });
 
-export type EnviarLocalizacaoEntrada = z.input<typeof enviarLocalizacaoEntradaSchema>;
+export type EnviarLocalizacaoEntrada = z.input<
+  typeof enviarLocalizacaoEntradaSchema
+>;
 
 /*
  * ESTADO OPERACIONAL derivado (o que a empresa e o entregador veem):
+ * - `em_entrega`: possui saída em andamento; prevalece sobre disponibilidade e presença na base;
  * - `indisponivel`: vínculo ativo, mas não está aceitando entregas desta empresa;
  * - `disponivel_fora_base`: aceita trabalho, mas não está na base — não participa da fila;
  * - `disponivel_na_base`: aceita, está na base e apto — participa da fila;
  * - `inapto`: aceita e está na base, mas há pendência operacional a resolver.
  */
-export const estadoOperacionalSchema = z.enum(["indisponivel", "disponivel_fora_base", "disponivel_na_base", "inapto"]);
+export const estadoOperacionalSchema = z.enum([
+  "em_entrega",
+  "indisponivel",
+  "disponivel_fora_base",
+  "disponivel_na_base",
+  "inapto",
+]);
 
 export type EstadoOperacional = z.infer<typeof estadoOperacionalSchema>;
 
 export const ROTULO_ESTADO_OPERACIONAL: Record<EstadoOperacional, string> = {
+  em_entrega: "Em entrega",
   indisponivel: "Não aceitando entregas",
   disponivel_fora_base: "Disponível fora da base",
   disponivel_na_base: "Disponível na base",
@@ -120,14 +153,23 @@ export function estadoOperacional(entregador: {
   disponivel: boolean;
   naBase: boolean;
   aptoParaSaida: boolean;
+  emEntrega?: boolean;
 }): EstadoOperacional {
-  if (entregador.status !== "ativo" || !entregador.disponivel) return "indisponivel";
+  if (entregador.emEntrega) return "em_entrega";
+  if (entregador.status !== "ativo" || !entregador.disponivel)
+    return "indisponivel";
   if (!entregador.naBase) return "disponivel_fora_base";
   return entregador.aptoParaSaida ? "disponivel_na_base" : "inapto";
 }
 
 // Entra na fila da base quem está ativo, aceitando, presente e apto — só isso.
-export function participaDaFila(entregador: { status: z.infer<typeof statusEntregadorSchema>; disponivel: boolean; naBase: boolean; aptoParaSaida: boolean }): boolean {
+export function participaDaFila(entregador: {
+  status: z.infer<typeof statusEntregadorSchema>;
+  disponivel: boolean;
+  naBase: boolean;
+  aptoParaSaida: boolean;
+  emEntrega?: boolean;
+}): boolean {
   return estadoOperacional(entregador) === "disponivel_na_base";
 }
 
@@ -177,12 +219,20 @@ export const situacaoOperacionalSchema = z.object({
 
 export type SituacaoOperacional = z.infer<typeof situacaoOperacionalSchema>;
 
-export const listaSituacoesOperacionaisSchema = z.object({ situacoes: z.array(situacaoOperacionalSchema) });
+export const listaSituacoesOperacionaisSchema = z.object({
+  situacoes: z.array(situacaoOperacionalSchema),
+});
 
-export type ListaSituacoesOperacionais = z.infer<typeof listaSituacoesOperacionaisSchema>;
+export type ListaSituacoesOperacionais = z.infer<
+  typeof listaSituacoesOperacionaisSchema
+>;
 
-export function rotuloSituacaoEntregador(situacao: SituacaoOperacional): string {
-  if (situacao.posicaoFila !== null) return `Você é o ${situacao.posicaoFila}º da fila da base`;
-  if (situacao.estado === "disponivel_fora_base") return "Disponível para chamados, mas fora da fila da base";
+export function rotuloSituacaoEntregador(
+  situacao: SituacaoOperacional,
+): string {
+  if (situacao.posicaoFila !== null)
+    return `Você é o ${situacao.posicaoFila}º da fila da base`;
+  if (situacao.estado === "disponivel_fora_base")
+    return "Disponível para chamados, mas fora da fila da base";
   return ROTULO_ESTADO_OPERACIONAL[situacao.estado];
 }

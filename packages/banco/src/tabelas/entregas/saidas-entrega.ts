@@ -8,13 +8,14 @@ import { zonasEntrega } from "./zonas-entrega.js";
 /*
  * em_formacao → a automação ainda está juntando pedidos daquela zona (único estado que aceita pedido);
  * aguardando_entregador → fechada por quantidade ou tempo, mas ninguém elegível na fila da base;
- * preparada  → tem entregador reservado e os pedidos ainda estão na loja;
+ * preparada  → tem entregador reservado e rota pronta, aguardando liberação;
+ * liberada_retirada → retirada autorizada; o entregador ainda não saiu;
  * em_andamento → o entregador saiu com os pedidos;
  * concluida  → todas as paradas terminaram (entregues ou canceladas).
  * É o estado da OPERAÇÃO, não do pedido: cada pedido continua com a sua própria máquina de estados.
  * A saída montada à mão pela empresa nasce direto em "preparada".
  */
-export const statusSaidaEntrega = pgEnum("status_saida_entrega", ["em_formacao", "aguardando_entregador", "preparada", "em_andamento", "concluida"]);
+export const statusSaidaEntrega = pgEnum("status_saida_entrega", ["em_formacao", "aguardando_entregador", "preparada", "liberada_retirada", "em_andamento", "concluida"]);
 
 /*
  * percurso_real → geometria/distância/duração vieram do provedor de rotas para a ordem atual;
@@ -77,6 +78,7 @@ export const saidasEntrega = pgTable(
     // Fechada = congelada: por quantidade, por tempo ou pelo gestor. Depois disso não entra pedido.
     fechadaEm: timestamp({ withTimezone: true }),
     atribuidaEm: timestamp({ withTimezone: true }),
+    liberadaEm: timestamp({ withTimezone: true }),
     iniciadaEm: timestamp({ withTimezone: true }),
     concluidaEm: timestamp({ withTimezone: true }),
     atualizadoEm: timestamp({ withTimezone: true })
@@ -118,6 +120,8 @@ export const saidasEntrega = pgTable(
       sql`${tabela.entregadorId} is not null or ${tabela.status} in ('em_formacao', 'aguardando_entregador', 'concluida')`,
     ),
     check("saidas_entrega_atribuida_com_entregador", sql`${tabela.atribuidaEm} is null or ${tabela.entregadorId} is not null`),
+    check("saidas_entrega_liberada_por_status", sql`${tabela.liberadaEm} is null or ${tabela.status} in ('aguardando_entregador', 'liberada_retirada', 'em_andamento', 'concluida')`),
+    check("saidas_entrega_status_exige_liberacao", sql`${tabela.status} not in ('liberada_retirada', 'em_andamento') or ${tabela.liberadaEm} is not null`),
     /*
      * Fechada = congelada para novos pedidos. Só a saída EM FORMAÇÃO não tem data de fechamento — a
      * montada à mão já nasce fechada, porque nasce com os pedidos que o gestor escolheu.

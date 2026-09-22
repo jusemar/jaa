@@ -81,7 +81,7 @@ async function pedidoProntoEm(cliente: Pessoa, ponto: { latitude: number; longit
   });
   assert.equal(resposta.statusCode, 201, resposta.body);
   let pedido: Pedido = resposta.json();
-  for (const status of ["recebido", "confirmado", "em_preparacao"] as const) pedido = (await avancar(pedido.id, status)).json();
+  for (const status of ["recebido", "em_preparacao"] as const) pedido = (await avancar(pedido.id, status)).json();
   return pedido;
 }
 
@@ -90,7 +90,8 @@ async function saidaEmAndamento(pedidos: Pedido[]): Promise<SaidaEntrega> {
   const criada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas`, { entregadorId: paulo, pedidoIds: pedidos.map((pedido) => pedido.id) });
   assert.equal(criada.statusCode, 201, criada.body);
   const saida: SaidaEntrega = criada.json();
-  const iniciada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`);
+  assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/liberar`)).statusCode, 200);
+  const iniciada = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`);
   assert.equal(iniciada.statusCode, 200, iniciada.body);
   return iniciada.json();
 }
@@ -170,11 +171,12 @@ describe("enviar posição", () => {
     assert.equal(antes.statusCode, 409);
     assert.equal(antes.json().codigo, "SAIDA_NAO_ESTA_EM_ANDAMENTO");
 
-    await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${preparada.id}/iniciar`);
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${preparada.id}/liberar`)).statusCode, 200);
+    await ctx.api(P, "POST", `/entregas/saidas/${preparada.id}/iniciar`);
     assert.equal((await enviarPosicao(P, preparada.id)).statusCode, 200);
 
     // Entrega concluída → saída concluída → rastreamento acaba e a posição é esquecida.
-    for (const status of ["saiu_para_entrega", "em_rota"] as const) await avancar(pedido.id, status);
+    await avancar(pedido.id, "saiu_para_entrega");
     const depois = await enviarPosicao(P, preparada.id);
     assert.equal(depois.statusCode, 409);
     assert.equal(depois.json().codigo, "SAIDA_NAO_ESTA_EM_ANDAMENTO", "posição atrasada depois do fim é recusada");

@@ -2,15 +2,12 @@
 
 import {
   EVENTO_DESPACHO_ATUALIZADO,
-  EVENTO_SAIDA_ATUALIZADA,
   MINIMO_VERTICES_ZONA,
   eventoDespachoAtualizadoSchema,
-  eventoSaidaAtualizadaSchema,
   type ConfiguracaoDespacho,
   type PainelDespacho,
   type Coordenadas,
   type PoligonoZona,
-  type SaidaEntrega,
   type ZonaEntrega,
 } from "@jaa/contratos";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -19,8 +16,8 @@ import { CENTRO_PADRAO } from "@/features/enderecos/mapa/provedor-mapa";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { criarMapaZonaLeaflet } from "../mapa/mapa-zona-leaflet";
 import type { MapaZona } from "../mapa/provedor-mapa-zona";
-import { atualizarZona, criarZona, definirCompatibilidades, listarSaidasDaEmpresa, obterBase, obterPainelDespacho, salvarConfiguracaoDespacho } from "../lib/api-entregas";
-import { ConfiguracaoAutomacao, PendenciasForaDeZona, QuadroDeSaidas } from "./painel-despacho";
+import { atualizarZona, criarZona, definirCompatibilidades, obterBase, obterPainelDespacho, salvarConfiguracaoDespacho } from "../lib/api-entregas";
+import { ConfiguracaoAutomacao, PendenciasForaDeZona } from "./painel-despacho";
 
 /**
  * ZONAS DE ENTREGA e AUTOMAÇÃO (visão da empresa): desenhar as áreas no mapa, dizer quais podem ser
@@ -30,8 +27,9 @@ import { ConfiguracaoAutomacao, PendenciasForaDeZona, QuadroDeSaidas } from "./p
  */
 export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string; nomeEmpresa: string }) {
   const [painel, setPainel] = useState<PainelDespacho | null>(null);
-  const [saidas, setSaidas] = useState<SaidaEntrega[]>([]);
   const [editando, setEditando] = useState<ZonaEntrega | "nova" | null>(null);
+  const [zonaSelecionadaMapa, setZonaSelecionadaMapa] = useState("");
+  const [abrirMapaInicial, setAbrirMapaInicial] = useState(false);
   /*
    * Onde o mapa abre ao desenhar uma zona NOVA: a base confirmada da empresa.
    * Antes ele abria sempre num centro fixo de Belo Horizonte — quem tem a base em outro bairro (ou
@@ -42,19 +40,17 @@ export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string
   const [ocupado, setOcupado] = useState(false);
 
   const carregar = useCallback(async () => {
-    const [despacho, lista] = await Promise.all([obterPainelDespacho(empresaId), listarSaidasDaEmpresa(empresaId)]);
+    const despacho = await obterPainelDespacho(empresaId);
     if (despacho.ok) setPainel(despacho.dados);
     else setErro(despacho.mensagem);
-    if (lista.ok) setSaidas(lista.dados.saidas);
   }, [empresaId]);
 
   useEffect(() => {
     let ativo = true;
-    void Promise.all([obterPainelDespacho(empresaId), listarSaidasDaEmpresa(empresaId), obterBase(empresaId)]).then(([despacho, lista, base]) => {
+    void Promise.all([obterPainelDespacho(empresaId), obterBase(empresaId)]).then(([despacho, base]) => {
       if (!ativo) return;
       if (despacho.ok) setPainel(despacho.dados);
       else setErro(despacho.mensagem);
-      if (lista.ok) setSaidas(lista.dados.saidas);
       // Só a base com ponto CONFIRMADO serve de centro; sem ela o mapa continua no padrão.
       if (base.ok && base.dados.latitude !== null && base.dados.longitude !== null) {
         setCentroDaEmpresa({ latitude: base.dados.latitude, longitude: base.dados.longitude });
@@ -75,20 +71,9 @@ export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string
       const resultado = eventoDespachoAtualizadoSchema.safeParse(evento);
       if (resultado.success) setPainel(resultado.data.painel);
     };
-    const aoSaida = (evento: unknown) => {
-      const resultado = eventoSaidaAtualizadaSchema.safeParse(evento);
-      if (!resultado.success) return;
-      const atualizada = resultado.data.saida;
-      setSaidas((atuais) => {
-        const semEla = atuais.filter((item) => item.id !== atualizada.id);
-        return atualizada.status === "concluida" ? semEla : [atualizada, ...semEla];
-      });
-    };
     socket.on(EVENTO_DESPACHO_ATUALIZADO, aoDespacho);
-    socket.on(EVENTO_SAIDA_ATUALIZADA, aoSaida);
     return () => {
       socket.off(EVENTO_DESPACHO_ATUALIZADO, aoDespacho);
-      socket.off(EVENTO_SAIDA_ATUALIZADA, aoSaida);
     };
   }, []);
 
@@ -116,6 +101,7 @@ export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string
       }
       setErro(null);
       setEditando(null);
+      setAbrirMapaInicial(false);
       await carregar();
     } finally {
       setOcupado(false);
@@ -157,8 +143,16 @@ export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string
                 {zona.nome} <span data-zona-ativa={zona.ativa} className={zona.ativa ? "text-marca" : "text-conteudo-suave"}>{zona.ativa ? "ativa" : "desativada"}</span>
               </span>
               <span className="flex gap-2">
-                <button type="button" data-editar-zona onClick={() => setEditando(zona)} className="rounded-jaa border px-2 py-1 text-xs">
-                  Editar
+                <button
+                  type="button"
+                  data-editar-dados-zona
+                  onClick={() => {
+                    setEditando(zona);
+                    setAbrirMapaInicial(false);
+                  }}
+                  className="rounded-jaa border px-2 py-1 text-xs"
+                >
+                  Editar dados
                 </button>
                 <button
                   type="button"
@@ -195,24 +189,64 @@ export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string
         ))}
       </ol>
 
-      <button type="button" data-nova-zona onClick={() => setEditando("nova")} className="self-start rounded bg-marca px-3 py-1.5 text-xs text-white">
+      {zonas.length > 0 && (
+        <div className="flex flex-wrap items-end gap-2 rounded-jaa border border-borda p-2">
+          <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs">
+            Zona para editar no mapa
+            <select value={zonaSelecionadaMapa} onChange={(evento) => setZonaSelecionadaMapa(evento.target.value)} className="rounded-jaa border border-borda px-2 py-1.5">
+              <option value="">Escolha uma zona…</option>
+              {zonas.map((zona) => (
+                <option key={zona.id} value={zona.id}>{zona.nome}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            data-gerenciar-zonas-mapa
+            disabled={!zonaSelecionadaMapa}
+            onClick={() => {
+              const zona = zonas.find((item) => item.id === zonaSelecionadaMapa);
+              if (!zona) return;
+              setEditando(zona);
+              setAbrirMapaInicial(true);
+            }}
+            className="rounded-jaa border px-3 py-2 text-xs font-medium disabled:opacity-50"
+          >
+            Gerenciar zonas no mapa
+          </button>
+        </div>
+      )}
+
+      <button
+        type="button"
+        data-nova-zona
+        onClick={() => {
+          setEditando("nova");
+          setAbrirMapaInicial(false);
+        }}
+        className="self-start rounded bg-marca px-3 py-1.5 text-xs text-white"
+      >
         Criar zona
       </button>
 
       {editando && (
         <EditorDeZona
+          key={editando === "nova" ? "nova" : editando.id}
           zona={editando === "nova" ? null : editando}
+          abrirMapaInicial={abrirMapaInicial}
           centroDaEmpresa={centroDaEmpresa}
           outras={zonas.filter((zona) => editando === "nova" || zona.id !== editando.id)}
           ocupado={ocupado}
           aoSalvar={(nome, vertices) => void salvarZona(nome, vertices, editando === "nova" ? true : editando.ativa)}
-          aoCancelar={() => setEditando(null)}
+          aoCancelar={() => {
+            setEditando(null);
+            setAbrirMapaInicial(false);
+          }}
         />
       )}
 
       {painel && <ConfiguracaoAutomacao configuracao={painel.configuracao} ocupado={ocupado} aoSalvar={(entrada) => void salvarConfiguracao(entrada)} />}
       {painel && <PendenciasForaDeZona painel={painel} />}
-      <QuadroDeSaidas saidas={saidas} />
 
       {erro && (
         <p role="alert" className="text-sm text-perigo">
@@ -239,8 +273,9 @@ export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string
  * Desenho da zona: o gestor toca no mapa para marcar cada canto e o contorno se fecha sozinho.
  * A geometria final é validada no SERVIDOR (polígono simples, sem sobrepor outra zona ativa).
  */
-function EditorDeZona({
+export function EditorDeZona({
   zona,
+  abrirMapaInicial,
   centroDaEmpresa,
   outras,
   ocupado,
@@ -248,6 +283,7 @@ function EditorDeZona({
   aoCancelar,
 }: {
   zona: ZonaEntrega | null;
+  abrirMapaInicial: boolean;
   // Base confirmada da empresa: é ali que faz sentido começar a desenhar a área de entrega.
   centroDaEmpresa: Coordenadas | null;
   outras: ZonaEntrega[];
@@ -259,6 +295,10 @@ function EditorDeZona({
   const mapaRef = useRef<MapaZona | null>(null);
   const [vertices, setVertices] = useState<PoligonoZona>(zona?.vertices ?? []);
   const [nome, setNome] = useState(zona?.nome ?? "");
+  const [mapaAberto, setMapaAberto] = useState(abrirMapaInicial);
+  const [verticesAntesDoMapa, setVerticesAntesDoMapa] = useState<PoligonoZona>(zona?.vertices ?? []);
+  const [podeDesfazer, setPodeDesfazer] = useState(false);
+  const [avisoMapa, setAvisoMapa] = useState<string | null>(null);
 
   const pendencias = [
     nome.trim() === "" ? "dê um nome à zona" : null,
@@ -267,6 +307,7 @@ function EditorDeZona({
   const faltaParaSalvar = pendencias.join(" e ");
 
   useEffect(() => {
+    if (!mapaAberto) return;
     const elemento = containerRef.current;
     if (!elemento) return;
     let ativo = true;
@@ -275,8 +316,14 @@ function EditorDeZona({
       elemento,
       // Editando: o primeiro vértice. Nova: a base da empresa. Sem base confirmada: o padrão.
       centro: zona?.vertices[0] ?? centroDaEmpresa ?? CENTRO_PADRAO,
-      verticesIniciais: zona?.vertices,
-      aoMudarVertices: setVertices,
+      verticesIniciais: vertices,
+      nomeZona: nome.trim() || zona?.nome || "Nova zona",
+      aoMudarVertices: (novos) => {
+        setVertices(novos);
+        setAvisoMapa(null);
+      },
+      aoMudarPodeDesfazer: setPodeDesfazer,
+      aoBloquearExclusao: () => setAvisoMapa("A área precisa manter pelo menos 3 pontos."),
       outrasZonas: outras.map((item) => ({ nome: item.nome, vertices: item.vertices })),
       urlTiles: URL_TILES_MAPA,
       atribuicao: ATRIBUICAO_TILES,
@@ -293,28 +340,52 @@ function EditorDeZona({
       mapaRef.current?.destruir();
       mapaRef.current = null;
     };
-    // Monta uma vez por zona editada (e quando a base chega, para abrir no lugar certo): marcar
-    // pontos não pode recriar o mapa.
+    // Monta uma vez por abertura do fullscreen: marcar ou arrastar pontos não recria o mapa.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zona?.id, centroDaEmpresa?.latitude, centroDaEmpresa?.longitude]);
+  }, [mapaAberto]);
+
+  function abrirMapa() {
+    setVerticesAntesDoMapa(vertices.map((vertice) => ({ ...vertice })));
+    setPodeDesfazer(false);
+    setAvisoMapa(null);
+    setMapaAberto(true);
+  }
+
+  function cancelarMapa() {
+    setVertices(verticesAntesDoMapa.map((vertice) => ({ ...vertice })));
+    setMapaAberto(false);
+    setAvisoMapa(null);
+  }
+
+  function concluirMapa() {
+    if (vertices.length < MINIMO_VERTICES_ZONA) {
+      setAvisoMapa(`Marque ao menos ${MINIMO_VERTICES_ZONA} pontos antes de concluir.`);
+      return;
+    }
+    setMapaAberto(false);
+    setAvisoMapa(null);
+  }
+
+  function limparMapa() {
+    if (!window.confirm("Limpar todos os pontos desta área? A zona salva só mudará quando você usar Salvar zona.")) return;
+    mapaRef.current?.limpar();
+  }
 
   return (
-    <div aria-label="Desenhar zona" className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3 text-sm">
+    <div aria-label="Editar zona" className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3 text-sm">
       <h4 className="font-semibold">{zona ? `Editar ${zona.nome}` : "Nova zona"}</h4>
       <label className="flex flex-col gap-1 text-xs">
         Nome da zona
         <input name="nomeZona" value={nome} maxLength={60} onChange={(evento) => setNome(evento.target.value)} className="rounded-jaa border border-borda px-2 py-1" />
       </label>
-      <p className="text-xs text-conteudo-suave">Toque no mapa para marcar os cantos da área. O contorno se fecha sozinho.</p>
-
-      <div className="h-72 w-full overflow-hidden rounded-jaa border border-borda">
-        <div ref={containerRef} data-mapa-zona className="h-full w-full" />
-      </div>
-
       <p data-vertices-zona={vertices.length} className="text-xs text-conteudo-suave">
         {vertices.length} {vertices.length === 1 ? "ponto marcado" : "pontos marcados"}
         {vertices.length < MINIMO_VERTICES_ZONA ? ` · marque ao menos ${MINIMO_VERTICES_ZONA}` : ""}
       </p>
+
+      <button type="button" data-abrir-mapa-zona onClick={abrirMapa} className="self-start rounded-jaa border px-3 py-2 text-xs font-medium">
+        Editar área no mapa
+      </button>
 
       {/* Botão desabilitado sem explicação é beco sem saída: aqui a tela diz o que falta. */}
       {faltaParaSalvar && (
@@ -333,13 +404,42 @@ function EditorDeZona({
         >
           Salvar zona
         </button>
-        <button type="button" data-limpar-zona onClick={() => mapaRef.current?.limpar()} className="rounded-jaa border px-3 py-2 text-xs">
-          Limpar desenho
-        </button>
         <button type="button" onClick={aoCancelar} className="rounded-jaa border px-3 py-2 text-xs">
-          Voltar
+          Cancelar alterações
         </button>
       </div>
+
+      {mapaAberto && (
+        <div data-editor-mapa-zona role="dialog" aria-modal="true" aria-label="Editar área da zona no mapa" className="fixed inset-0 z-[1000] flex h-dvh w-screen flex-col bg-superficie">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-borda bg-superficie p-2 sm:p-3">
+            <div>
+              <p className="text-sm font-semibold">{zona ? `Área de ${zona.nome}` : "Área da nova zona"}</p>
+              <p className="text-xs text-conteudo-suave">Toque no mapa para criar pontos, arraste para ajustar e dê duplo clique para excluir.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" data-cancelar-mapa-zona onClick={cancelarMapa} className="rounded-jaa border px-3 py-2 text-xs">
+                Cancelar
+              </button>
+              <button type="button" data-desfazer-zona disabled={!podeDesfazer} onClick={() => mapaRef.current?.desfazer()} className="rounded-jaa border px-3 py-2 text-xs disabled:opacity-50">
+                Desfazer
+              </button>
+              <button type="button" data-limpar-zona onClick={limparMapa} className="rounded-jaa border px-3 py-2 text-xs">
+                Limpar área
+              </button>
+              <button type="button" data-concluir-mapa-zona onClick={concluirMapa} className="rounded bg-marca px-3 py-2 text-xs text-white">
+                Concluir
+              </button>
+            </div>
+          </div>
+          <div className="relative min-h-0 flex-1">
+            <div ref={containerRef} data-mapa-zona className="absolute inset-0" />
+          </div>
+          <div className="flex min-h-10 items-center justify-between gap-3 border-t border-borda bg-superficie px-3 py-2 text-xs">
+            <span>{vertices.length} {vertices.length === 1 ? "ponto" : "pontos"}</span>
+            {avisoMapa && <span role="status" className="text-aviso">{avisoMapa}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

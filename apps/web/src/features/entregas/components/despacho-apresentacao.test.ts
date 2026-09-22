@@ -24,6 +24,7 @@ const saida = (dados: Partial<SaidaEntrega> = {}): SaidaEntrega => ({
   prazoFormacaoEm: "2026-09-16T12:15:00.000Z",
   fechadaEm: null,
   atribuidaEm: null,
+  liberadaEm: null,
   iniciadaEm: null,
   concluidaEm: null,
   ...dados,
@@ -56,7 +57,7 @@ const parada = (n: number) => ({
 });
 
 const painel = (dados: Partial<PainelDespacho> = {}): PainelDespacho => ({
-  configuracao: { maxPedidosPorSaida: 5, tempoFormacaoMinutos: 15, combinarZonas: true },
+  configuracao: { maxPedidosPorSaida: 5, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true },
   zonas: [],
   pedidosForaDeZona: [],
   automacaoAtiva: true,
@@ -75,6 +76,7 @@ describe("configuração da automação", () => {
     assert.ok(html.includes('value="15"'));
     assert.ok(html.includes('max="15"') && html.includes('min="1"'));
     assert.ok(texto(html).includes("quantidade OU o tempo"), "a regra fica explícita para o gestor");
+    assert.ok(html.includes('name="liberacaoAutomatica"'));
   });
 
   it("não promete rota otimizada em lugar nenhum", () => {
@@ -128,10 +130,11 @@ describe("quadro das saídas", () => {
   const agora = new Date("2026-09-16T12:10:00.000Z");
   const render = (saidas: SaidaEntrega[]) => renderToStaticMarkup(createElement(QuadroDeSaidas, { saidas, agora }));
 
-  it("agrupa por estado: em formação, aguardando entregador, atribuídas e em andamento", () => {
+  it("agrupa por estado: em formação, aguardando entregador, preparadas, liberadas e em andamento", () => {
     const html = render([
       saida({ paradas: [parada(1), parada(2)] }),
       saida({ id: uuid(2), status: "aguardando_entregador", fechadaEm: "2026-09-16T12:09:00.000Z", prazoFormacaoEm: null, paradas: [parada(3)] }),
+      saida({ id: uuid(7), status: "aguardando_entregador", fechadaEm: "2026-09-16T12:08:00.000Z", liberadaEm: "2026-09-16T12:09:00.000Z", prazoFormacaoEm: null, paradas: [parada(6)] }),
       saida({
         id: uuid(3),
         status: "preparada",
@@ -141,11 +144,23 @@ describe("quadro das saídas", () => {
         prazoFormacaoEm: null,
         paradas: [parada(4)],
       }),
+      saida({
+        id: uuid(5),
+        status: "liberada_retirada",
+        entregador: { identidadeId: uuid(6), tipo: "pessoal", nomeExibicao: "Joana Entregadora", nomeUsuario: "joana" },
+        fechadaEm: "2026-09-16T12:04:00.000Z",
+        atribuidaEm: "2026-09-16T12:05:00.000Z",
+        liberadaEm: "2026-09-16T12:07:00.000Z",
+        prazoFormacaoEm: null,
+        paradas: [parada(5)],
+      }),
     ]);
     const conteudo = texto(html);
     assert.ok(conteudo.includes("Em formação"));
     assert.ok(conteudo.includes("Aguardando entregador"));
-    assert.ok(conteudo.includes("Atribuídas"));
+    assert.ok(conteudo.includes("retirada já liberada"));
+    assert.ok(conteudo.includes("Preparadas"));
+    assert.ok(conteudo.includes("Liberadas p/ retirada"));
     assert.ok(conteudo.includes("Em andamento"));
     assert.ok(conteudo.includes("Centro · 2 pedidos"), conteudo);
     assert.ok(conteudo.includes("Paulo Entregador"));

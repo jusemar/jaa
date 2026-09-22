@@ -60,19 +60,20 @@ const saida = (paradas: ParadaSaida[]) => ({
   prazoFormacaoEm: null,
   fechadaEm: null,
   atribuidaEm: null,
+  liberadaEm: "2026-09-16T12:09:00.000Z",
   iniciadaEm: "2026-09-16T12:10:00.000Z",
   concluidaEm: null,
 });
 
 describe("saída de entrega", () => {
   it("tem a própria máquina de estados, separada da do pedido", () => {
-    assert.deepEqual(statusSaidaSchema.options, ["em_formacao", "aguardando_entregador", "preparada", "em_andamento", "concluida"]);
+    assert.deepEqual(statusSaidaSchema.options, ["em_formacao", "aguardando_entregador", "preparada", "liberada_retirada", "em_andamento", "concluida"]);
     assert.equal(statusSaidaSchema.safeParse("entregue").success, false, "status de pedido não é status de saída");
   });
 
   it("só a saída EM FORMAÇÃO recebe pedido novo (fechada ou iniciada, nunca)", () => {
     assert.equal(saidaAceitaNovosPedidos("em_formacao"), true);
-    for (const status of ["aguardando_entregador", "preparada", "em_andamento", "concluida"] as const) {
+    for (const status of ["aguardando_entregador", "preparada", "liberada_retirada", "em_andamento", "concluida"] as const) {
       assert.equal(saidaAceitaNovosPedidos(status), false, status);
     }
   });

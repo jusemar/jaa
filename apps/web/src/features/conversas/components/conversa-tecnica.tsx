@@ -18,7 +18,14 @@ import {
   type Pedido,
   type TipoIdentidade,
 } from "@jaa/contratos";
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { useAtividadeConversa } from "../hooks/use-atividade-conversa";
 import { useDocumentoVisivel } from "../hooks/use-documento-visivel";
@@ -42,12 +49,22 @@ import {
   ultimaMensagemRecebida,
 } from "../lib/estados-mensagens";
 import { mesmoDia, rotuloDoDia } from "../lib/horarios";
-import { resumirConteudoParaPrevia, rotuloAutorResposta } from "../lib/respostas";
+import {
+  resumirConteudoParaPrevia,
+  rotuloAutorResposta,
+} from "../lib/respostas";
 import { CatalogoDaEmpresa } from "@/features/catalogo/components/catalogo-da-empresa";
-import { PainelCarrinho, type ConfirmacaoPedido } from "@/features/carrinho/components/painel-carrinho";
+import {
+  PainelCarrinho,
+  type ConfirmacaoPedido,
+} from "@/features/carrinho/components/painel-carrinho";
 import { EtapaEnderecoEntrega } from "@/features/enderecos/components/etapa-endereco-entrega";
 import { useCarrinho } from "@/features/carrinho/hooks/use-carrinho";
-import { itensParaPedido, quantidadeTotal, type Carrinho } from "@/features/carrinho/lib/carrinho";
+import {
+  itensParaPedido,
+  quantidadeTotal,
+  type Carrinho,
+} from "@/features/carrinho/lib/carrinho";
 import { AcompanhamentoDoPedido } from "@/features/entregas/components/acompanhamento-cliente";
 import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
 import { useStatusPedido } from "@/features/pedidos/hooks/use-status-pedido";
@@ -56,7 +73,10 @@ import { AcoesMidiaDesabilitadas } from "./acoes-midia-desabilitadas";
 import { BalaoMensagem } from "./balao-mensagem";
 import { BarraContextoCompositor } from "./barra-contexto-compositor";
 import { CabecalhoConversa } from "./cabecalho-conversa";
-import { PreviaRespostaCompositor, type RespostaEmComposicao } from "./previa-resposta-compositor";
+import {
+  PreviaRespostaCompositor,
+  type RespostaEmComposicao,
+} from "./previa-resposta-compositor";
 
 /*
  * A CONVERSA ABERTA: cabeçalho fixo, mensagens rolando no meio e compositor embaixo — o formato da
@@ -68,13 +88,20 @@ import { PreviaRespostaCompositor, type RespostaEmComposicao } from "./previa-re
  */
 
 // A referência de resposta faz parte da tentativa: reenviar reutiliza idCliente, conteúdo e referência.
-type TentativaEnvio = { idCliente: string; conteudo: string; mensagemRespondidaId?: string };
+type TentativaEnvio = {
+  idCliente: string;
+  conteudo: string;
+  mensagemRespondidaId?: string;
+};
 
 // Pedido a criar; reenviar a mesma confirmação reutiliza idCliente (idempotência imposta pela API).
 type TentativaPedido = { idCliente: string; assinatura: string };
 
 // Aberta pela lista ou pelo @usuario; a autorização de leitura/envio continua sendo da API.
-export type ConversaAberta = { id: string; outraIdentidade: ParticipanteConversa };
+export type ConversaAberta = {
+  id: string;
+  outraIdentidade: ParticipanteConversa;
+};
 
 export function ConversaTecnica({
   identidadeId,
@@ -106,34 +133,61 @@ export function ConversaTecnica({
   const [proximoCursor, setProximoCursor] = useState<string | null>(null);
   const [texto, setTexto] = useState("");
   const [pendente, setPendente] = useState<TentativaEnvio | null>(null);
-  const [respostaSelecionada, setRespondendo] = useState<RespostaEmComposicao | null>(null);
+  const [respostaSelecionada, setRespondendo] =
+    useState<RespostaEmComposicao | null>(null);
   // Mensagem própria em edição: o compositor passa a salvar o novo conteúdo em vez de enviar.
   const [edicaoSelecionada, setEditando] = useState<Mensagem | null>(null);
   // Resposta/edição só valem enquanto a mensagem continua visível e não excluída (ex.: excluída em outra aba).
-  const disponivel = (id: string) => mensagens.some((mensagem) => mensagem.id === id && !mensagem.excluidaEm);
-  const respondendo = respostaSelecionada && disponivel(respostaSelecionada.mensagemId) ? respostaSelecionada : null;
-  const editando = edicaoSelecionada && disponivel(edicaoSelecionada.id) ? edicaoSelecionada : null;
+  const disponivel = (id: string) =>
+    mensagens.some((mensagem) => mensagem.id === id && !mensagem.excluidaEm);
+  const respondendo =
+    respostaSelecionada && disponivel(respostaSelecionada.mensagemId)
+      ? respostaSelecionada
+      : null;
+  const editando =
+    edicaoSelecionada && disponivel(edicaoSelecionada.id)
+      ? edicaoSelecionada
+      : null;
   const campoMensagemRef = useRef<HTMLInputElement>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   // Catálogo (consulta de cliente) aberto dentro da conversa com uma empresa.
   const [catalogoAberto, setCatalogoAberto] = useState(false);
   // Carrinho + pedido: só existem quando uma pessoa conversa com uma empresa.
-  const podeComprar = tipoIdentidade === "pessoal" && conversa.outraIdentidade.tipo === "empresarial";
-  const { carrinho, adicionar: adicionarAoCarrinho, substituirPorEmpresa, alterarQuantidade, remover, limpar } = useCarrinho(identidadeId);
+  const podeComprar =
+    tipoIdentidade === "pessoal" &&
+    conversa.outraIdentidade.tipo === "empresarial";
+  const {
+    carrinho,
+    adicionar: adicionarAoCarrinho,
+    substituirPorEmpresa,
+    alterarQuantidade,
+    remover,
+    limpar,
+  } = useCarrinho(identidadeId);
   const [carrinhoAberto, setCarrinhoAberto] = useState(false);
   // Destino escolhido para este pedido (com ponto já confirmado no mapa).
-  const [enderecoEntrega, setEnderecoEntrega] = useState<EnderecoCliente | null>(null);
+  const [enderecoEntrega, setEnderecoEntrega] =
+    useState<EnderecoCliente | null>(null);
   const [escolhendoEndereco, setEscolhendoEndereco] = useState(false);
   // Carrinho aberto de OUTRA empresa: pergunta antes de substituir; nunca troca em silêncio.
-  const [trocaDeEmpresa, setTrocaDeEmpresa] = useState<{ empresa: Carrinho["empresa"]; produto: Parameters<typeof adicionarAoCarrinho>[1]; quantidade: number; nomeAtual: string } | null>(null);
-  const [tentativaPedido, setTentativaPedido] = useState<TentativaPedido | null>(null);
+  const [trocaDeEmpresa, setTrocaDeEmpresa] = useState<{
+    empresa: Carrinho["empresa"];
+    produto: Parameters<typeof adicionarAoCarrinho>[1];
+    quantidade: number;
+    nomeAtual: string;
+  } | null>(null);
+  const [tentativaPedido, setTentativaPedido] =
+    useState<TentativaPedido | null>(null);
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [erroPedido, setErroPedido] = useState<string | null>(null);
   const [avisoPedido, setAvisoPedido] = useState<string | null>(null);
   const [pedidoAberto, setPedidoAberto] = useState<Pedido | null>(null);
   // Posição do PRÓPRIO pedido na saída (situação + quantas entregas antes). Nunca a rota.
-  const atividade = useAtividadeConversa({ conversaId: conversa.id, outraIdentidadeId: conversa.outraIdentidade.identidadeId });
+  const atividade = useAtividadeConversa({
+    conversaId: conversa.id,
+    outraIdentidadeId: conversa.outraIdentidade.identidadeId,
+  });
   const listaMensagensRef = useRef<HTMLOListElement>(null);
   const ultimaMensagemId = mensagens.at(-1)?.id;
 
@@ -169,20 +223,30 @@ export function ConversaTecnica({
 
     const aoReceber = (evento: unknown) => {
       const resultado = eventoMensagemNovaSchema.safeParse(evento);
-      if (resultado.success && resultado.data.mensagem.conversaId === conversa.id) {
+      if (
+        resultado.success &&
+        resultado.data.mensagem.conversaId === conversa.id
+      ) {
         adicionar([resultado.data.mensagem]);
       }
     };
     const aoAtualizar = (evento: unknown) => {
       const resultado = eventoMensagemAtualizadaSchema.safeParse(evento);
-      if (resultado.success && resultado.data.mensagem.conversaId === conversa.id) {
-        setReconciliada((atual) => receberAtualizacao(atual, resultado.data.mensagem));
+      if (
+        resultado.success &&
+        resultado.data.mensagem.conversaId === conversa.id
+      ) {
+        setReconciliada((atual) =>
+          receberAtualizacao(atual, resultado.data.mensagem),
+        );
       }
     };
     const aoExcluirParaMim = (evento: unknown) => {
       const resultado = eventoMensagemExcluidaParaMimSchema.safeParse(evento);
       if (resultado.success && resultado.data.conversaId === conversa.id) {
-        setReconciliada((atual) => ocultarMensagem(atual, resultado.data.mensagemId));
+        setReconciliada((atual) =>
+          ocultarMensagem(atual, resultado.data.mensagemId),
+        );
       }
     };
     const aoEntregar = (evento: unknown) => {
@@ -232,8 +296,11 @@ export function ConversaTecnica({
   useStatusPedido(
     useCallback(
       (evento) => {
-        if (evento.conversaId !== null && evento.conversaId !== conversa.id) return;
-        setReconciliada((atual) => atualizarPedidoNasMensagens(atual, evento.pedido));
+        if (evento.conversaId !== null && evento.conversaId !== conversa.id)
+          return;
+        setReconciliada((atual) =>
+          atualizarPedidoNasMensagens(atual, evento.pedido),
+        );
         // Timeline e motivo vêm do servidor (fonte da verdade); o evento só avisa que mudou.
         if (pedidoAbertoId === evento.pedido.id) {
           void obterPedido(evento.pedido.id).then((resultado) => {
@@ -262,9 +329,16 @@ export function ConversaTecnica({
     leituraConfirmadaRef.current = alvo.id;
     void confirmarLeituraConversa(conversa.id, alvo.id).then((resultado) => {
       // Falhou: libera para nova tentativa na próxima mudança (ex.: recarga ao reconectar).
-      if (!resultado.ok && leituraConfirmadaRef.current === alvo.id) leituraConfirmadaRef.current = confirmada;
+      if (!resultado.ok && leituraConfirmadaRef.current === alvo.id)
+        leituraConfirmadaRef.current = confirmada;
     });
-  }, [conversa.id, identidadeId, mensagens, historicoCarregado, documentoVisivel]);
+  }, [
+    conversa.id,
+    identidadeId,
+    mensagens,
+    historicoCarregado,
+    documentoVisivel,
+  ]);
 
   async function carregarAnteriores() {
     if (!proximoCursor) return;
@@ -299,7 +373,8 @@ export function ConversaTecnica({
       setPendente(null);
       setErro(resultado.mensagem);
       // A mensagem citada não vale nesta conversa: descarta a referência e mantém o texto para envio normal.
-      if (resultado.codigo === "MENSAGEM_RESPONDIDA_NAO_ENCONTRADA") setRespondendo(null);
+      if (resultado.codigo === "MENSAGEM_RESPONDIDA_NAO_ENCONTRADA")
+        setRespondendo(null);
     } finally {
       setOcupado(false);
     }
@@ -309,7 +384,11 @@ export function ConversaTecnica({
     setErro(null);
     setOcupado(true);
     try {
-      const resultado = await editarMensagem(conversa.id, mensagem.id, conteudo);
+      const resultado = await editarMensagem(
+        conversa.id,
+        mensagem.id,
+        conteudo,
+      );
       if (!resultado.ok) {
         setErro(resultado.mensagem);
         return;
@@ -324,7 +403,12 @@ export function ConversaTecnica({
   }
 
   async function excluirParaMim(mensagem: Mensagem) {
-    if (!window.confirm("Excluir esta mensagem só para você? As outras pessoas continuarão vendo.")) return;
+    if (
+      !window.confirm(
+        "Excluir esta mensagem só para você? As outras pessoas continuarão vendo.",
+      )
+    )
+      return;
     setErro(null);
     const resultado = await excluirMensagemParaMim(conversa.id, mensagem.id);
     if (!resultado.ok) {
@@ -336,7 +420,12 @@ export function ConversaTecnica({
   }
 
   async function excluirParaTodos(mensagem: Mensagem) {
-    if (!window.confirm("Excluir esta mensagem para todos? O conteúdo será removido para todos os participantes.")) return;
+    if (
+      !window.confirm(
+        "Excluir esta mensagem para todos? O conteúdo será removido para todos os participantes.",
+      )
+    )
+      return;
     setErro(null);
     const resultado = await excluirMensagemParaTodos(conversa.id, mensagem.id);
     if (!resultado.ok) {
@@ -358,11 +447,17 @@ export function ConversaTecnica({
     // Enviar encerra o "digitando" imediatamente (o servidor também o encerra ao persistir).
     atividade.pararDigitacao();
     const mensagemRespondidaId = respondendo?.mensagemId;
-    const mesmaTentativa = pendente?.conteudo === conteudo && pendente.mensagemRespondidaId === mensagemRespondidaId;
+    const mesmaTentativa =
+      pendente?.conteudo === conteudo &&
+      pendente.mensagemRespondidaId === mensagemRespondidaId;
     void enviar(
       mesmaTentativa
         ? pendente
-        : { idCliente: crypto.randomUUID(), conteudo, ...(mensagemRespondidaId ? { mensagemRespondidaId } : {}) },
+        : {
+            idCliente: crypto.randomUUID(),
+            conteudo,
+            ...(mensagemRespondidaId ? { mensagemRespondidaId } : {}),
+          },
     );
   }
 
@@ -370,7 +465,11 @@ export function ConversaTecnica({
   function responder(mensagem: Mensagem) {
     setRespondendo({
       mensagemId: mensagem.id,
-      nomeAutor: rotuloAutorResposta(mensagem.remetenteIdentidadeId, conversa.outraIdentidade.nomeExibicao, identidadeId),
+      nomeAutor: rotuloAutorResposta(
+        mensagem.remetenteIdentidadeId,
+        conversa.outraIdentidade.nomeExibicao,
+        identidadeId,
+      ),
       ...resumirConteudoParaPrevia(mensagem.conteudo),
     });
     campoMensagemRef.current?.focus();
@@ -397,12 +496,21 @@ export function ConversaTecnica({
     campoMensagemRef.current?.focus();
   }
 
-  function adicionarProduto(empresa: Carrinho["empresa"], produto: Parameters<typeof adicionarAoCarrinho>[1], quantidade: number) {
+  function adicionarProduto(
+    empresa: Carrinho["empresa"],
+    produto: Parameters<typeof adicionarAoCarrinho>[1],
+    quantidade: number,
+  ) {
     setErroPedido(null);
     setAvisoPedido(null);
     const resultado = adicionarAoCarrinho(empresa, produto, quantidade);
     if (resultado.tipo === "outra-empresa") {
-      setTrocaDeEmpresa({ empresa, produto, quantidade, nomeAtual: resultado.empresaAtual.nome });
+      setTrocaDeEmpresa({
+        empresa,
+        produto,
+        quantidade,
+        nomeAtual: resultado.empresaAtual.nome,
+      });
       return;
     }
     if (resultado.tipo === "limite-de-itens") {
@@ -415,7 +523,11 @@ export function ConversaTecnica({
 
   function confirmarTrocaDeEmpresa() {
     if (!trocaDeEmpresa) return;
-    substituirPorEmpresa(trocaDeEmpresa.empresa, trocaDeEmpresa.produto, trocaDeEmpresa.quantidade);
+    substituirPorEmpresa(
+      trocaDeEmpresa.empresa,
+      trocaDeEmpresa.produto,
+      trocaDeEmpresa.quantidade,
+    );
     setTrocaDeEmpresa(null);
     setCarrinhoAberto(true);
   }
@@ -428,9 +540,16 @@ export function ConversaTecnica({
       return;
     }
     const itens = itensParaPedido(carrinho);
-    const assinatura = JSON.stringify({ itens, confirmacao, enderecoId: enderecoEntrega.id });
+    const assinatura = JSON.stringify({
+      itens,
+      confirmacao,
+      enderecoId: enderecoEntrega.id,
+    });
     // Mesmo conteúdo = mesma tentativa: um reenvio após falha de rede não cria um segundo pedido.
-    const tentativa = tentativaPedido && tentativaPedido.assinatura === assinatura ? tentativaPedido : { idCliente: crypto.randomUUID(), assinatura };
+    const tentativa =
+      tentativaPedido && tentativaPedido.assinatura === assinatura
+        ? tentativaPedido
+        : { idCliente: crypto.randomUUID(), assinatura };
     setTentativaPedido(tentativa);
     setErroPedido(null);
     setAvisoPedido(null);
@@ -444,12 +563,21 @@ export function ConversaTecnica({
         itens,
         pagamento:
           confirmacao.forma === "dinheiro"
-            ? { forma: "dinheiro", ...(confirmacao.trocoParaCentavos === null ? {} : { trocoParaCentavos: confirmacao.trocoParaCentavos }) }
+            ? {
+                forma: "dinheiro",
+                ...(confirmacao.trocoParaCentavos === null
+                  ? {}
+                  : { trocoParaCentavos: confirmacao.trocoParaCentavos }),
+              }
             : { forma: "cartao" },
       });
       if (!resultado.ok) {
         // Falha de rede/servidor: mantém a tentativa para reenviar com o mesmo idCliente.
-        setErroPedido(resultado.status === 0 || resultado.status >= 500 ? "Falha ao enviar o pedido. Confirme de novo para tentar sem duplicar." : resultado.mensagem);
+        setErroPedido(
+          resultado.status === 0 || resultado.status >= 500
+            ? "Falha ao enviar o pedido. Confirme de novo para tentar sem duplicar."
+            : resultado.mensagem,
+        );
         return;
       }
       limpar();
@@ -476,10 +604,17 @@ export function ConversaTecnica({
   const outro = conversa.outraIdentidade;
   const itensNoCarrinho = quantidadeTotal(carrinho);
 
-  const rotuloEnvio = editando ? "Salvar" : pendente && !ocupado ? "Reenviar" : "Enviar";
+  const rotuloEnvio = editando
+    ? "Salvar"
+    : pendente && !ocupado
+      ? "Reenviar"
+      : "Enviar";
 
   return (
-    <section aria-label="Conversa" className="flex min-h-0 flex-1 flex-col bg-conversa-fundo">
+    <section
+      aria-label="Conversa"
+      className="flex min-h-0 flex-1 flex-col bg-conversa-fundo"
+    >
       <CabecalhoConversa
         outraIdentidade={outro}
         presenca={atividade.presenca}
@@ -502,7 +637,9 @@ export function ConversaTecnica({
                   onClick={() => setCarrinhoAberto((aberto) => !aberto)}
                   className="min-h-9 rounded-full bg-[color-mix(in_oklab,var(--cor-ouro)_25%,var(--cor-superficie))] px-3 text-xs font-medium text-conteudo"
                 >
-                  {carrinhoAberto ? "Ocultar carrinho" : `Carrinho (${itensNoCarrinho})`}
+                  {carrinhoAberto
+                    ? "Ocultar carrinho"
+                    : `Carrinho (${itensNoCarrinho})`}
                 </button>
               )}
             </>
@@ -519,27 +656,45 @@ export function ConversaTecnica({
           <CatalogoDaEmpresa
             identidadeEmpresaId={outro.identidadeId}
             aoFechar={() => setCatalogoAberto(false)}
-            {...(podeComprar ? { aoAdicionarAoCarrinho: adicionarProduto } : {})}
+            {...(podeComprar
+              ? { aoAdicionarAoCarrinho: adicionarProduto }
+              : {})}
           />
         )}
         {trocaDeEmpresa && (
-          <div role="alertdialog" aria-label="Trocar de empresa" className="flex flex-col gap-2 rounded-jaa border border-ouro/60 bg-[color-mix(in_oklab,var(--cor-ouro)_10%,var(--cor-superficie))] p-3 text-sm">
+          <div
+            role="alertdialog"
+            aria-label="Trocar de empresa"
+            className="flex flex-col gap-2 rounded-jaa border border-ouro/60 bg-[color-mix(in_oklab,var(--cor-ouro)_10%,var(--cor-superficie))] p-3 text-sm"
+          >
             <p>
-              Seu carrinho tem produtos de {trocaDeEmpresa.nomeAtual}. Um pedido é de uma empresa só. Substituir pelo carrinho de {trocaDeEmpresa.empresa.nome}?
+              Seu carrinho tem produtos de {trocaDeEmpresa.nomeAtual}. Um pedido
+              é de uma empresa só. Substituir pelo carrinho de{" "}
+              {trocaDeEmpresa.empresa.nome}?
             </p>
             <span className="flex flex-wrap gap-2">
-              <button type="button" onClick={confirmarTrocaDeEmpresa} className="min-h-10 rounded-full bg-marca px-4 text-xs font-medium text-marca-conteudo">
+              <button
+                type="button"
+                onClick={confirmarTrocaDeEmpresa}
+                className="min-h-10 rounded-full bg-marca px-4 text-xs font-medium text-marca-conteudo"
+              >
                 Substituir carrinho
               </button>
-              <button type="button" onClick={() => setTrocaDeEmpresa(null)} className="min-h-10 rounded-full border border-borda px-4 text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setTrocaDeEmpresa(null)}
+                className="min-h-10 rounded-full border border-borda px-4 text-xs font-medium"
+              >
                 Manter carrinho atual
               </button>
             </span>
           </div>
         )}
-        {/* A etapa de endereço aparece ACIMA do carrinho: escolher destino não perde a forma de pagamento. */}
+        {/* A escolha substitui visualmente o carrinho. O carrinho continua montado, apenas oculto,
+            para preservar inclusive forma de pagamento e troco enquanto a pessoa escolhe. */}
         {carrinhoAberto && escolhendoEndereco && (
           <EtapaEnderecoEntrega
+            key="escolha-endereco"
             aoSelecionar={(endereco) => {
               setEnderecoEntrega(endereco);
               setEscolhendoEndereco(false);
@@ -548,26 +703,39 @@ export function ConversaTecnica({
           />
         )}
         {carrinhoAberto && carrinho && carrinho.itens.length > 0 && (
-          <PainelCarrinho
-            carrinho={carrinho}
-            endereco={enderecoEntrega}
-            enviando={enviandoPedido}
-            erro={erroPedido}
-            aoAlterarQuantidade={alterarQuantidade}
-            aoRemover={remover}
-            aoTrocarEndereco={() => setEscolhendoEndereco(true)}
-            aoConfirmar={(confirmacao) => void confirmarPedido(confirmacao)}
-            aoFechar={() => setCarrinhoAberto(false)}
-          />
+          <div
+            key="painel-carrinho"
+            className={escolhendoEndereco ? "hidden" : "contents"}
+          >
+            <PainelCarrinho
+              carrinho={carrinho}
+              endereco={enderecoEntrega}
+              enviando={enviandoPedido}
+              erro={erroPedido}
+              aoAlterarQuantidade={alterarQuantidade}
+              aoRemover={remover}
+              aoTrocarEndereco={() => setEscolhendoEndereco(true)}
+              aoConfirmar={(confirmacao) => void confirmarPedido(confirmacao)}
+              aoFechar={() => setCarrinhoAberto(false)}
+            />
+          </div>
         )}
         {pedidoAberto && (
           <DetalhePedido
             pedido={pedidoAberto}
             aoFechar={() => setPedidoAberto(null)}
+            visaoCliente={tipoIdentidade === "pessoal"}
             acoes={
               <AcompanhamentoDoPedido
                 pedidoId={pedidoAberto.id}
-                {...(pedidoAberto.destino ? { destino: { latitude: pedidoAberto.destino.latitude, longitude: pedidoAberto.destino.longitude } } : {})}
+                {...(pedidoAberto.destino
+                  ? {
+                      destino: {
+                        latitude: pedidoAberto.destino.latitude,
+                        longitude: pedidoAberto.destino.longitude,
+                      },
+                    }
+                  : {})}
               />
             }
           />
@@ -591,7 +759,11 @@ export function ConversaTecnica({
       >
         {proximoCursor && (
           <li className="flex justify-center pb-2">
-            <button type="button" onClick={() => void carregarAnteriores()} className="min-h-9 rounded-full border border-borda bg-superficie px-4 text-xs font-medium hover:bg-superficie-suave">
+            <button
+              type="button"
+              onClick={() => void carregarAnteriores()}
+              className="min-h-9 rounded-full border border-borda bg-superficie px-4 text-xs font-medium hover:bg-superficie-suave"
+            >
               Carregar anteriores
             </button>
           </li>
@@ -599,20 +771,28 @@ export function ConversaTecnica({
 
         {mensagens.length === 0 && (
           <li className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
-            <p className="fonte-display text-sm font-semibold">Nenhuma mensagem ainda</p>
-            <p className="max-w-xs text-sm text-conteudo-suave">Escreva a primeira mensagem aqui embaixo.</p>
+            <p className="fonte-display text-sm font-semibold">
+              Nenhuma mensagem ainda
+            </p>
+            <p className="max-w-xs text-sm text-conteudo-suave">
+              Escreva a primeira mensagem aqui embaixo.
+            </p>
           </li>
         )}
 
         {mensagens.map((mensagem, indice) => {
           const anterior = mensagens[indice - 1];
           // Separador de dia: sem marcos, uma conversa longa vira um bloco só.
-          const abreDia = !anterior || !mesmoDia(new Date(anterior.criadoEm), new Date(mensagem.criadoEm));
+          const abreDia =
+            !anterior ||
+            !mesmoDia(new Date(anterior.criadoEm), new Date(mensagem.criadoEm));
           return (
             <Fragment key={mensagem.id}>
               {abreDia && (
                 <li data-separador-dia className="flex justify-center py-1">
-                  <span className="rounded-full bg-conteudo/[0.06] px-3 py-1 text-[0.66rem] text-conteudo-suave">{rotuloDoDia(mensagem.criadoEm)}</span>
+                  <span className="rounded-full bg-conteudo/[0.06] px-3 py-1 text-[0.66rem] text-conteudo-suave">
+                    {rotuloDoDia(mensagem.criadoEm)}
+                  </span>
                 </li>
               )}
               <BalaoMensagem
@@ -624,20 +804,37 @@ export function ConversaTecnica({
                 aoExcluirParaMim={(alvo) => void excluirParaMim(alvo)}
                 aoExcluirParaTodos={(alvo) => void excluirParaTodos(alvo)}
                 aoAbrirPedido={(pedidoId) => void abrirPedido(pedidoId)}
+                visaoCliente={tipoIdentidade === "pessoal"}
               />
             </Fragment>
           );
         })}
       </ol>
 
-      <div className="shrink-0 px-2 pt-1 md:px-6" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
+      <div
+        className="shrink-0 px-2 pt-1 md:px-6"
+        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+      >
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-1.5">
-          {respondendo && <PreviaRespostaCompositor resposta={respondendo} aoCancelar={cancelarResposta} />}
+          {respondendo && (
+            <PreviaRespostaCompositor
+              resposta={respondendo}
+              aoCancelar={cancelarResposta}
+            />
+          )}
           {editando && (
-            <BarraContextoCompositor titulo="Editando mensagem" texto={editando.conteudo} aoCancelar={cancelarEdicao} rotuloCancelar="Cancelar edição" />
+            <BarraContextoCompositor
+              titulo="Editando mensagem"
+              texto={editando.conteudo}
+              aoCancelar={cancelarEdicao}
+              rotuloCancelar="Cancelar edição"
+            />
           )}
 
-          <form onSubmit={aoEnviar} className="flex items-center gap-1 rounded-[1.4rem] border border-borda bg-superficie p-1.5 shadow-suave">
+          <form
+            onSubmit={aoEnviar}
+            className="flex items-center gap-1 rounded-[1.4rem] border border-borda bg-superficie p-1.5 shadow-suave"
+          >
             <AcoesMidiaDesabilitadas />
             <label htmlFor="campo-mensagem" className="sr-only">
               Mensagem
@@ -663,7 +860,11 @@ export function ConversaTecnica({
               className={`grid h-10 shrink-0 place-items-center rounded-full bg-marca text-marca-conteudo disabled:opacity-50 ${rotuloEnvio === "Enviar" ? "w-10" : "px-4 text-xs font-medium"}`}
             >
               {rotuloEnvio === "Enviar" ? (
-                <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                <svg
+                  aria-hidden
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4 fill-current"
+                >
                   <path d="M3.4 20.4 21 12 3.4 3.6 3.39 10.1 15.5 12 3.39 13.9z" />
                 </svg>
               ) : (

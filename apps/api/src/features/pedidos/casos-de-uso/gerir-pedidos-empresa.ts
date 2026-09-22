@@ -99,6 +99,11 @@ export async function alterarStatusPedidoAutorizado(
 ): Promise<ResultadoAlterar> {
   const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-pedidos");
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
+  // Pedido PRONTO só sai fisicamente quando o entregador inicia uma rota já liberada.
+  // A transição interna continua disponível abaixo para o caso de uso da saída.
+  if (intencao.tipo === "avancar" && intencao.statusAtual === "pronto") {
+    return { tipo: "transicao-invalida", statusAtual: "pronto" };
+  }
   return executarAlteracaoStatusPedido({ banco, eventosPedidos, eventosEntregas }, usuarioId, empresaId, pedidoId, intencao);
 }
 

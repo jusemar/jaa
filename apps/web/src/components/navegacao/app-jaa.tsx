@@ -6,10 +6,7 @@ import { AreaContatos } from "@/features/contatos/components/area-contatos";
 import { MensageiroTecnico } from "@/features/conversas/components/mensageiro-tecnico";
 import { AreaEmpresas } from "@/features/empresas/components/area-empresas";
 import { AreaMinhasEntregas } from "@/features/entregas/components/area-minhas-entregas";
-import { AreaSaidasEmpresa } from "@/features/entregas/components/area-saidas-empresa";
-import { AreaZonasEmpresa } from "@/features/entregas/components/area-zonas-empresa";
-import { PainelOperacionalEmpresa } from "@/features/entregas/components/painel-operacional";
-import { QuadroEntregadores } from "@/features/entregas/components/quadro-entregadores";
+import { AreaLogisticaEmpresa } from "@/features/entregas/components/area-logistica-empresa";
 import { SeletorIdentidade } from "@/features/identidades/components/seletor-identidade";
 import { useIdentidadeAtiva } from "@/features/identidades/hooks/use-identidade-ativa";
 import { AreaPedidosEmpresa } from "@/features/pedidos/components/area-pedidos-empresa";
@@ -153,12 +150,7 @@ export function AppJaa({ conta, aoSair, saindo }: { conta: ContaAtual; aoSair: (
               )}
 
               {ativa.tipo === "empresarial" && areaAtiva === "logistica" && (
-                <div className="flex flex-col gap-8">
-                  <AreaSaidasEmpresa key={`saidas-${ativa.empresa.id}`} empresaId={ativa.empresa.id} nomeEmpresa={ativa.nomeExibicao} />
-                  <QuadroEntregadores key={`entregadores-${ativa.empresa.id}`} empresaId={ativa.empresa.id} nomeEmpresa={ativa.nomeExibicao} />
-                  <PainelOperacionalEmpresa key={`operacao-${ativa.empresa.id}`} empresaId={ativa.empresa.id} nomeEmpresa={ativa.nomeExibicao} />
-                  <AreaZonasEmpresa key={`zonas-${ativa.empresa.id}`} empresaId={ativa.empresa.id} nomeEmpresa={ativa.nomeExibicao} />
-                </div>
+                <AreaLogisticaEmpresa key={ativa.empresa.id} empresaId={ativa.empresa.id} nomeEmpresa={ativa.nomeExibicao} />
               )}
             </div>
           </div>

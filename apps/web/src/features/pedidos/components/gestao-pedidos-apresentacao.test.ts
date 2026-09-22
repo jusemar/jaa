@@ -54,11 +54,11 @@ const emPreparacao = pedido("em_preparacao", [evento("recebido", "00"), evento("
 describe("timeline do acompanhamento", () => {
   it("distingue concluídas, atual e futuras — e só as reais têm horário", () => {
     const html = renderToStaticMarkup(createElement(TimelinePedido, { pedido: emPreparacao }));
-    assert.ok(html.includes('data-etapa="confirmado" data-situacao="concluida"'));
+    assert.ok(html.includes('data-etapa="recebido" data-situacao="concluida"'));
     assert.ok(html.includes('data-etapa="em_preparacao" data-situacao="atual"'));
     assert.ok(html.includes('data-etapa="entregue" data-situacao="futura"'));
     const conteudo = texto(html);
-    for (const esperado of ["Pedido recebido", "Confirmado", "Em preparação", "Pronto", "Saiu para entrega", "Em rota", "Entregue"]) {
+    for (const esperado of ["Pedido recebido", "Em preparação", "Pronto", "Saiu para entrega", "Entregue"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
     // Etapas futuras aparecem sem horário inventado.
@@ -81,11 +81,10 @@ describe("ações operacionais da empresa", () => {
 
   it("mostra só a próxima ação válida, nunca sete botões de status", () => {
     const proximas: Array<[StatusPedido, string]> = [
-      ["recebido", "Confirmar pedido"],
+      ["recebido", "Iniciar preparação"],
       ["confirmado", "Iniciar preparação"],
       ["em_preparacao", "Marcar como pronto"],
-      ["pronto", "Saiu para entrega"],
-      ["saiu_para_entrega", "Marcar em rota"],
+      ["saiu_para_entrega", "Marcar como entregue"],
       ["em_rota", "Marcar como entregue"],
     ];
     for (const [status, rotulo] of proximas) {
@@ -96,6 +95,9 @@ describe("ações operacionais da empresa", () => {
       for (const outro of proximas.filter(([, texto]) => texto !== rotulo)) assert.equal(conteudo.includes(outro[1]), false, `${status} não mostra ${outro[1]}`);
       assert.ok(conteudo.includes("Cancelar pedido"), status);
     }
+    const pronto = acoes(pedido("pronto", [evento("recebido", "00")]));
+    assert.equal(pronto.includes("data-avancar-pedido"), false, "pedido pronto só sai pela rota liberada");
+    assert.ok(texto(pronto).includes("Cancelar pedido"));
   });
 
   it("estados terminais não oferecem avanço nem cancelamento", () => {

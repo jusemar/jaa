@@ -11,7 +11,7 @@ import { rotaDaSaidaSchema } from "./rota.ts";
  * "quantas entregas antes da minha".
  *
  * Duas máquinas de estado convivem sem se misturar: o PEDIDO segue a sua (recebido → … → entregue)
- * e a SAÍDA tem a dela (em formação → aguardando entregador → preparada → em andamento → concluída).
+ * e a SAÍDA tem a dela (em formação → aguardando entregador → preparada → liberada → em andamento → concluída).
  * A saída montada à mão pela empresa já nasce PREPARADA: os dois primeiros estados são da automação.
  */
 
@@ -20,8 +20,10 @@ export const statusSaidaSchema = z.enum([
   "em_formacao",
   // Fechada por quantidade ou tempo, mas sem ninguém elegível na fila da base ainda.
   "aguardando_entregador",
-  // Tem entregador reservado; os pedidos continuam na loja até alguém iniciar a saída.
+  // Tem entregador reservado e rota pronta; os pedidos aguardam a liberação para retirada.
   "preparada",
+  // Rota pronta e autorizada pelo gestor ou pela regra automática; o entregador já pode retirar.
+  "liberada_retirada",
   "em_andamento",
   "concluida",
 ]);
@@ -32,6 +34,7 @@ export const ROTULO_STATUS_SAIDA: Record<StatusSaida, string> = {
   em_formacao: "Em formação",
   aguardando_entregador: "Aguardando entregador",
   preparada: "Preparada",
+  liberada_retirada: "Liberado p/ retirada",
   em_andamento: "Em andamento",
   concluida: "Concluída",
 };
@@ -99,6 +102,7 @@ export const saidaEntregaSchema = z.object({
   prazoFormacaoEm: z.iso.datetime().nullable(),
   fechadaEm: z.iso.datetime().nullable(),
   atribuidaEm: z.iso.datetime().nullable(),
+  liberadaEm: z.iso.datetime().nullable(),
   iniciadaEm: z.iso.datetime().nullable(),
   concluidaEm: z.iso.datetime().nullable(),
 });

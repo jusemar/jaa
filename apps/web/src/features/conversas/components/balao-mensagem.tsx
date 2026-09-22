@@ -25,6 +25,7 @@ export function BalaoMensagem({
   aoExcluirParaMim,
   aoExcluirParaTodos,
   aoAbrirPedido,
+  visaoCliente = false,
 }: {
   mensagem: Mensagem;
   identidadeAtualId: string;
@@ -34,6 +35,7 @@ export function BalaoMensagem({
   aoExcluirParaMim?: (mensagem: Mensagem) => void;
   aoExcluirParaTodos?: (mensagem: Mensagem) => void;
   aoAbrirPedido?: (pedidoId: string) => void;
+  visaoCliente?: boolean;
 }) {
   const propria = mensagem.remetenteIdentidadeId === identidadeAtualId;
   const excluida = mensagem.excluidaEm !== null;
@@ -98,7 +100,7 @@ export function BalaoMensagem({
             Mensagem excluída
           </span>
         ) : ehPedido && mensagem.pedido ? (
-          <CardPedido pedido={mensagem.pedido} aoAbrir={(pedidoId) => aoAbrirPedido?.(pedidoId)} />
+          <CardPedido pedido={mensagem.pedido} aoAbrir={(pedidoId) => aoAbrirPedido?.(pedidoId)} visaoCliente={visaoCliente} />
         ) : (
           <span data-conteudo className="whitespace-pre-wrap [overflow-wrap:anywhere]">
             {mensagem.conteudo}

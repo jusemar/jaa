@@ -1,10 +1,24 @@
 "use client";
 
-import { enderecoTemLocalizacaoConfirmada, type Coordenadas, type EnderecoCliente } from "@jaa/contratos";
+import {
+  enderecoTemLocalizacaoConfirmada,
+  type Coordenadas,
+  type EnderecoCliente,
+} from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
-import { arquivarEndereco, atualizarEndereco, confirmarLocalizacao, criarEndereco, listarEnderecos, obterSugestaoLocalizacao } from "../lib/api-enderecos";
+import {
+  arquivarEndereco,
+  atualizarEndereco,
+  confirmarLocalizacao,
+  criarEndereco,
+  listarEnderecos,
+  obterSugestaoLocalizacao,
+} from "../lib/api-enderecos";
 import { ConfirmarPontoEntrega } from "./confirmar-ponto-entrega";
-import { FormularioEndereco, type DadosFormularioEndereco } from "./formulario-endereco";
+import {
+  FormularioEndereco,
+  type DadosFormularioEndereco,
+} from "./formulario-endereco";
 import { ListaEnderecos } from "./lista-enderecos";
 
 /**
@@ -14,9 +28,19 @@ import { ListaEnderecos } from "./lista-enderecos";
  * (uma vez só por endereço) → seguir para o pagamento. Endereço já confirmado é reutilizado direto.
  */
 
-type Etapa = { modo: "lista" } | { modo: "novo" } | { modo: "editar"; endereco: EnderecoCliente } | { modo: "mapa"; endereco: EnderecoCliente; sugestao: Coordenadas | null };
+type Etapa =
+  | { modo: "lista" }
+  | { modo: "novo" }
+  | { modo: "editar"; endereco: EnderecoCliente }
+  | { modo: "mapa"; endereco: EnderecoCliente; sugestao: Coordenadas | null };
 
-export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar: (endereco: EnderecoCliente) => void; aoVoltar: () => void }) {
+export function EtapaEnderecoEntrega({
+  aoSelecionar,
+  aoVoltar,
+}: {
+  aoSelecionar: (endereco: EnderecoCliente) => void;
+  aoVoltar: () => void;
+}) {
   const [enderecos, setEnderecos] = useState<EnderecoCliente[]>([]);
   const [etapa, setEtapa] = useState<Etapa>({ modo: "lista" });
   const [erro, setErro] = useState<string | null>(null);
@@ -44,8 +68,14 @@ export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar:
   async function abrirMapa(endereco: EnderecoCliente) {
     setErro(null);
     const jaConfirmado = enderecoTemLocalizacaoConfirmada(endereco);
-    const sugestao = jaConfirmado ? null : await obterSugestaoLocalizacao(endereco.id);
-    setEtapa({ modo: "mapa", endereco, sugestao: sugestao?.ok ? sugestao.dados.coordenadas : null });
+    const sugestao = jaConfirmado
+      ? null
+      : await obterSugestaoLocalizacao(endereco.id);
+    setEtapa({
+      modo: "mapa",
+      endereco,
+      sugestao: sugestao?.ok ? sugestao.dados.coordenadas : null,
+    });
   }
 
   // Selecionar: só segue direto quando o ponto já foi confirmado antes (primeira vez passa pelo mapa).
@@ -61,14 +91,18 @@ export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar:
     setErro(null);
     setEnviando(true);
     try {
-      const resultado = etapa.modo === "editar" ? await atualizarEndereco(etapa.endereco.id, dados) : await criarEndereco(dados);
+      const resultado =
+        etapa.modo === "editar"
+          ? await atualizarEndereco(etapa.endereco.id, dados)
+          : await criarEndereco(dados);
       if (!resultado.ok) {
         setErro(resultado.mensagem);
         return;
       }
       await recarregar();
       // Endereço novo (ou alterado a ponto de perder a confirmação) vai direto para o mapa.
-      if (enderecoTemLocalizacaoConfirmada(resultado.dados)) setEtapa({ modo: "lista" });
+      if (enderecoTemLocalizacaoConfirmada(resultado.dados))
+        setEtapa({ modo: "lista" });
       else await abrirMapa(resultado.dados);
     } finally {
       setEnviando(false);
@@ -80,20 +114,30 @@ export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar:
     setErro(null);
     setEnviando(true);
     try {
-      const resultado = await confirmarLocalizacao(etapa.endereco.id, coordenadas);
+      const resultado = await confirmarLocalizacao(
+        etapa.endereco.id,
+        coordenadas,
+      );
       if (!resultado.ok) {
         setErro(resultado.mensagem);
         return;
       }
       await recarregar();
-      setEtapa({ modo: "lista" });
+      // Confirmar o ponto conclui a escolha iniciada no carrinho, tanto para endereço existente
+      // quanto para um endereço acabado de cadastrar.
+      aoSelecionar(resultado.dados);
     } finally {
       setEnviando(false);
     }
   }
 
   async function remover(endereco: EnderecoCliente) {
-    if (!window.confirm(`Remover o endereço "${endereco.apelido}"? Pedidos antigos continuam com o endereço usado na época.`)) return;
+    if (
+      !window.confirm(
+        `Remover o endereço "${endereco.apelido}"? Pedidos antigos continuam com o endereço usado na época.`,
+      )
+    )
+      return;
     const resultado = await arquivarEndereco(endereco.id);
     if (!resultado.ok) {
       setErro(resultado.mensagem);
@@ -105,7 +149,10 @@ export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar:
   if (etapa.modo === "mapa") {
     return (
       <ConfirmarPontoEntrega
-        endereco={enderecos.find((salvo) => salvo.id === etapa.endereco.id) ?? etapa.endereco}
+        endereco={
+          enderecos.find((salvo) => salvo.id === etapa.endereco.id) ??
+          etapa.endereco
+        }
         sugestao={etapa.sugestao}
         enviando={enviando}
         erro={erro}
@@ -116,9 +163,12 @@ export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar:
   }
 
   return (
-    <section aria-label="Endereço de entrega" className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3 text-sm">
+    <section
+      aria-label="Endereço de entrega"
+      className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3 text-sm"
+    >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-semibold">Entregar em</h3>
+        <h3 className="font-semibold">Escolha um endereço</h3>
         <button type="button" onClick={aoVoltar} className="text-xs underline">
           Voltar ao carrinho
         </button>
@@ -134,8 +184,15 @@ export function EtapaEnderecoEntrega({ aoSelecionar, aoVoltar }: { aoSelecionar:
             aoAjustarPonto={(endereco) => void abrirMapa(endereco)}
             aoRemover={(endereco) => void remover(endereco)}
           />
-          <button type="button" data-novo-endereco onClick={() => setEtapa({ modo: "novo" })} className="self-start rounded-jaa border px-3 py-1.5 text-xs">
-            + Novo endereço
+          <button
+            type="button"
+            data-novo-endereco
+            onClick={() => setEtapa({ modo: "novo" })}
+            className="self-start rounded-jaa border px-3 py-1.5 text-xs"
+          >
+            {enderecos.length === 0
+              ? "+ Cadastrar endereço"
+              : "+ Novo endereço"}
           </button>
         </>
       )}

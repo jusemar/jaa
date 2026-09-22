@@ -48,6 +48,8 @@ const enderecos = new Map<string, string>();
 
 const criarSaida = (pessoa: Pessoa, empresa: Empresa, corpo: Record<string, unknown>) =>
   ctx.api(pessoa, "POST", `/empresas/${empresa.id}/saidas`, corpo);
+const liberarSaida = (saidaId: string, empresa: Empresa = pizzaria) =>
+  ctx.api(A, "POST", `/empresas/${empresa.id}/saidas/${saidaId}/liberar`);
 const avancar = (pedidoId: string, statusAtual: string, empresa: Empresa = pizzaria) =>
   ctx.api(A, "POST", `/empresas/${empresa.id}/pedidos/${pedidoId}/avancar`, { statusAtual });
 
@@ -62,7 +64,7 @@ async function pedidoPronto(cliente: Pessoa, empresa = pizzaria, produto = pizza
   });
   assert.equal(resposta.statusCode, 201, resposta.body);
   let pedido: Pedido = resposta.json();
-  for (const status of ["recebido", "confirmado", "em_preparacao"] as const) {
+  for (const status of ["recebido", "em_preparacao"] as const) {
     const avanco = await avancar(pedido.id, status, empresa);
     assert.equal(avanco.statusCode, 200, avanco.body);
     pedido = avanco.json();
@@ -205,7 +207,13 @@ describe("iniciar a saída", () => {
     const pedidos = [await pedidoPronto(B1), await pedidoPronto(B2)];
     const saida: SaidaEntrega = (await criarSaida(A, pizzaria, { entregadorId: paulo, pedidoIds: pedidos.map((pedido) => pedido.id) })).json();
 
-    const iniciada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`);
+    const antesDaLiberacao = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`);
+    assert.equal(antesDaLiberacao.statusCode, 409, "o entregador não sai antes da liberação");
+    const liberada = await liberarSaida(saida.id);
+    assert.equal(liberada.statusCode, 200, liberada.body);
+    assert.equal((liberada.json() as SaidaEntrega).status, "liberada_retirada");
+    assert.ok((liberada.json() as SaidaEntrega).liberadaEm);
+    const iniciada = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`);
     assert.equal(iniciada.statusCode, 200, iniciada.body);
     const emAndamento: SaidaEntrega = iniciada.json();
     assert.equal(emAndamento.status, "em_andamento");
@@ -215,10 +223,10 @@ describe("iniciar a saída", () => {
       const atual: Pedido = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${pedido.id}`)).json();
       assert.equal(atual.status, "saiu_para_entrega");
       // Histórico do PEDIDO preservado: nada de atalho que pule a máquina de estados.
-      assert.deepEqual(atual.historico.map((evento) => evento.status), ["recebido", "confirmado", "em_preparacao", "pronto", "saiu_para_entrega"]);
+      assert.deepEqual(atual.historico.map((evento) => evento.status), ["recebido", "em_preparacao", "pronto", "saiu_para_entrega"]);
     }
-    // Iniciar duas vezes não faz sentido.
-    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`)).statusCode, 409);
+    // A empresa libera, mas não inicia a entrega no lugar do entregador.
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`)).statusCode, 404);
   });
 
   it("o ENTREGADOR atual inicia a própria saída pela mesma regra — e não inicia de novo", async () => {
@@ -231,6 +239,7 @@ describe("iniciar a saída", () => {
     // Cliente, então, muito menos.
     assert.equal((await ctx.api(B1, "POST", `/entregas/saidas/${saida.id}/iniciar`)).statusCode, 404);
 
+    assert.equal((await liberarSaida(saida.id)).statusCode, 200);
     const iniciada = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`);
     assert.equal(iniciada.statusCode, 200, iniciada.body);
     const emAndamento: SaidaEntrega = iniciada.json();
@@ -241,14 +250,14 @@ describe("iniciar a saída", () => {
     for (const pedido of pedidos) {
       const atual: Pedido = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${pedido.id}`)).json();
       assert.equal(atual.status, "saiu_para_entrega");
-      assert.deepEqual(atual.historico.map((evento) => evento.status), ["recebido", "confirmado", "em_preparacao", "pronto", "saiu_para_entrega"]);
+      assert.deepEqual(atual.historico.map((evento) => evento.status), ["recebido", "em_preparacao", "pronto", "saiu_para_entrega"]);
     }
 
-    // Já em andamento: nem ele nem a empresa iniciam de novo.
+    // Já em andamento: ele não inicia de novo; a empresa sequer possui essa operação.
     const deNovo = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`);
     assert.equal(deNovo.statusCode, 409);
-    assert.equal(deNovo.json().codigo, "SAIDA_EM_ANDAMENTO");
-    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`)).statusCode, 409);
+    assert.equal(deNovo.json().codigo, "SAIDA_NAO_LIBERADA");
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`)).statusCode, 404);
 
     // E o rastreamento, que depende de a saída estar em andamento, passa a aceitar a posição dele.
     const posicao = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/posicao`, {
@@ -265,7 +274,8 @@ describe("sequência e reordenação", () => {
   async function saidaComTres(): Promise<SaidaEntrega> {
     const pedidos = [await pedidoPronto(B1), await pedidoPronto(B2), await pedidoPronto(B3)];
     const saida: SaidaEntrega = (await criarSaida(A, pizzaria, { entregadorId: paulo, pedidoIds: pedidos.map((pedido) => pedido.id) })).json();
-    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`)).statusCode, 200);
+    assert.equal((await liberarSaida(saida.id)).statusCode, 200);
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`)).statusCode, 200);
     return (await ctx.api(P, "GET", `/entregas/saidas/${saida.id}`)).json();
   }
 
@@ -312,12 +322,9 @@ describe("sequência e reordenação", () => {
     const saida = await saidaComTres();
     const [primeiro, segundo, terceiro] = saida.paradas.map((parada) => parada.pedidoId);
 
-    // saiu_para_entrega → em_rota → entregue (a máquina de estados do pedido, um passo por vez).
+    // saiu_para_entrega → entregue, sem a etapa redundante EM_ROTA.
     assert.equal((await avancar(primeiro as string, "saiu_para_entrega")).statusCode, 200);
-    assert.equal((await ctx.api(A, "GET", `/empresas/${pizzaria.id}/saidas/${saida.id}`)).json().paradas.length, 3);
-
     // Entregue: sai da sequência ativa, mas a parada continua registrada.
-    assert.equal((await avancar(primeiro as string, "em_rota")).statusCode, 200);
     // Cancelado: idem.
     assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${segundo}/cancelar`, { statusAtual: "saiu_para_entrega", motivo: "Cliente desistiu" })).statusCode, 200);
 
@@ -329,7 +336,7 @@ describe("sequência e reordenação", () => {
     assert.equal(atual.status, "em_andamento");
 
     // Última parada concluída: a saída se encerra sozinha.
-    for (const status of ["saiu_para_entrega", "em_rota"] as const) assert.equal((await avancar(terceiro as string, status)).statusCode, 200);
+    assert.equal((await avancar(terceiro as string, "saiu_para_entrega")).statusCode, 200);
     const concluida: SaidaEntrega = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/saidas/${saida.id}`)).json();
     assert.equal(concluida.status, "concluida");
     assert.ok(concluida.concluidaEm);
@@ -370,7 +377,8 @@ describe("fila do cliente", () => {
     const antes: FilaDoPedido = (await ctx.api(B1, "GET", `/pedidos/${pedidos[0]?.id}/fila`)).json();
     assert.equal(antes.situacao, "aguardando_saida");
 
-    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`)).statusCode, 200);
+    assert.equal((await liberarSaida(saida.id)).statusCode, 200);
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`)).statusCode, 200);
     const emOrdem: SaidaEntrega = (await ctx.api(P, "GET", `/entregas/saidas/${saida.id}`)).json();
     const ordem = emOrdem.paradas.map((parada) => parada.pedidoId);
 

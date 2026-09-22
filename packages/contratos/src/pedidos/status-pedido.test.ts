@@ -40,10 +40,10 @@ describe("máquina de estados do Pedido", () => {
     }
   });
 
-  it("todo estado não terminal pode ser cancelado e tem exatamente uma ação de avanço", () => {
+  it("todo estado não terminal pode ser cancelado; pronto avança apenas pela saída", () => {
     for (const status of FLUXO_STATUS_PEDIDO.filter((etapa) => etapa !== "entregue")) {
       assert.equal(podeCancelarPedido(status), true, status);
-      assert.equal(typeof ROTULO_ACAO_AVANCAR[status], "string", status);
+      assert.equal(status === "pronto" ? ROTULO_ACAO_AVANCAR[status] : typeof ROTULO_ACAO_AVANCAR[status], status === "pronto" ? null : "string", status);
       assert.equal(proximoStatusPedido(status) !== null, true, status);
     }
   });
@@ -69,15 +69,13 @@ describe("timeline do pedido", () => {
       timeline.map((etapa) => [etapa.status, etapa.situacao]),
       [
         ["recebido", "concluida"],
-        ["confirmado", "concluida"],
         ["em_preparacao", "atual"],
         ["pronto", "futura"],
         ["saiu_para_entrega", "futura"],
-        ["em_rota", "futura"],
         ["entregue", "futura"],
       ],
     );
-    assert.equal(timeline[1]?.ocorridoEm, "2026-09-15T12:05:00.000Z");
+    assert.equal(timeline[0]?.ocorridoEm, "2026-09-15T12:05:00.000Z");
     assert.equal(timeline.every((etapa) => etapa.situacao !== "futura" || etapa.ocorridoEm === null), true);
   });
 
@@ -95,7 +93,6 @@ describe("timeline do pedido", () => {
       timeline.map((etapa) => [etapa.status, etapa.situacao]),
       [
         ["recebido", "concluida"],
-        ["confirmado", "concluida"],
         ["cancelado", "atual"],
       ],
     );

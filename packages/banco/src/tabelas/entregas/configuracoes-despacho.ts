@@ -19,6 +19,8 @@ export const configuracoesDespacho = pgTable(
     tempoFormacaoMinutos: integer().notNull().default(15),
     // Permite considerar zonas explicitamente compatíveis quando o volume é baixo.
     combinarZonas: boolean().notNull().default(true),
+    // Quando desligada, quantidade/tempo fecham e organizam a rota, mas o gestor ainda a libera.
+    liberacaoAutomatica: boolean().notNull().default(true),
     criadoEm: timestamp({ withTimezone: true }).notNull().defaultNow(),
     atualizadoEm: timestamp({ withTimezone: true })
       .notNull()

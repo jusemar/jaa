@@ -1,17 +1,34 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { EntregadorOperacional, PainelOperacional, SituacaoOperacional } from "@jaa/contratos";
+import type {
+  EntregadorOperacional,
+  PainelOperacional,
+  SituacaoOperacional,
+} from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QuadroDaFila } from "./fila-apresentacao.tsx";
 import { AvisoLocalizacao, MinhaSituacaoNaBase } from "./presenca-na-base.tsx";
 
-const texto = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/ /g, " ").replace(/\s+/g, " ");
-const uuid = (n: number) => `${String(n).repeat(8)}-0000-4000-8000-000000000000`;
+const texto = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/ /g, " ")
+    .replace(/\s+/g, " ");
+const uuid = (n: number) =>
+  `${String(n).repeat(8)}-0000-4000-8000-000000000000`;
 
-const operacional = (n: number, dados: Partial<EntregadorOperacional> = {}): EntregadorOperacional => ({
+const operacional = (
+  n: number,
+  dados: Partial<EntregadorOperacional> = {},
+): EntregadorOperacional => ({
   id: uuid(n),
-  pessoa: { identidadeId: uuid(n + 1), tipo: "pessoal", nomeExibicao: `Entregador ${n}`, nomeUsuario: `entregador${n}` },
+  pessoa: {
+    identidadeId: uuid(n + 1),
+    tipo: "pessoal",
+    nomeExibicao: `Entregador ${n}`,
+    nomeUsuario: `entregador${n}`,
+  },
   status: "ativo",
   disponivel: true,
   naBase: true,
@@ -22,7 +39,9 @@ const operacional = (n: number, dados: Partial<EntregadorOperacional> = {}): Ent
   ...dados,
 });
 
-const situacao = (dados: Partial<SituacaoOperacional> = {}): SituacaoOperacional => ({
+const situacao = (
+  dados: Partial<SituacaoOperacional> = {},
+): SituacaoOperacional => ({
   entregadorId: uuid(1),
   empresa: { identidadeId: uuid(2), nome: "Pizzaria BH" },
   status: "ativo",
@@ -37,12 +56,29 @@ const situacao = (dados: Partial<SituacaoOperacional> = {}): SituacaoOperacional
 });
 
 describe("quadro da fila (visão da empresa)", () => {
-  const render = (painel: PainelOperacional) => renderToStaticMarkup(createElement(QuadroDaFila, { painel }));
+  const render = (painel: PainelOperacional) =>
+    renderToStaticMarkup(createElement(QuadroDaFila, { painel }));
 
   const painelCompleto: PainelOperacional = {
-    fila: [operacional(1, { posicaoFila: 1 }), operacional(2, { posicaoFila: 2 })],
-    foraDaBase: [operacional(3, { naBase: false, estado: "disponivel_fora_base", filaEntrouEm: null })],
-    indisponiveis: [operacional(4, { disponivel: false, naBase: false, estado: "indisponivel", filaEntrouEm: null })],
+    fila: [
+      operacional(1, { posicaoFila: 1 }),
+      operacional(2, { posicaoFila: 2 }),
+    ],
+    foraDaBase: [
+      operacional(3, {
+        naBase: false,
+        estado: "disponivel_fora_base",
+        filaEntrouEm: null,
+      }),
+    ],
+    indisponiveis: [
+      operacional(4, {
+        disponivel: false,
+        naBase: false,
+        estado: "indisponivel",
+        filaEntrouEm: null,
+      }),
+    ],
     baseConfigurada: true,
   };
 
@@ -61,28 +97,54 @@ describe("quadro da fila (visão da empresa)", () => {
 
   it("a ordem é do servidor: nada de arrastar, mover ou confirmar chegada", () => {
     const html = render(painelCompleto);
-    for (const proibido of ["draggable", "data-subir", "data-descer", "Confirmar chegada", "Mover"]) {
+    for (const proibido of [
+      "draggable",
+      "data-subir",
+      "data-descer",
+      "Confirmar chegada",
+      "Mover",
+    ]) {
       assert.equal(html.includes(proibido), false, proibido);
     }
   });
 
   it("a empresa vê estado, nunca localização", () => {
     const html = render(painelCompleto);
-    for (const proibido of ["latitude", "longitude", "metros", "mapa", "precis"]) {
+    for (const proibido of [
+      "latitude",
+      "longitude",
+      "metros",
+      "mapa",
+      "precis",
+    ]) {
       assert.equal(html.toLowerCase().includes(proibido), false, proibido);
     }
   });
 
   it("sem ponto da base confirmado, avisa que a presença não é detectada", () => {
-    const html = render({ fila: [], foraDaBase: [], indisponiveis: [], baseConfigurada: false });
+    const html = render({
+      fila: [],
+      foraDaBase: [],
+      indisponiveis: [],
+      baseConfigurada: false,
+    });
     assert.ok(texto(html).includes("Confirme o ponto da base"));
     assert.ok(texto(html).includes("Ninguém na base agora."));
   });
 });
 
 describe("situação do entregador", () => {
-  const render = (situacoes: SituacaoOperacional[], permissao: "ausente" | "ativa" | "negada" | "indisponivel" = "ativa") =>
-    renderToStaticMarkup(createElement(MinhaSituacaoNaBase, { situacoes, permissao, aoPermitir: () => {} }));
+  const render = (
+    situacoes: SituacaoOperacional[],
+    permissao: "ausente" | "ativa" | "negada" | "indisponivel" = "ativa",
+  ) =>
+    renderToStaticMarkup(
+      createElement(MinhaSituacaoNaBase, {
+        situacoes,
+        permissao,
+        aoPermitir: () => {},
+      }),
+    );
 
   it("mostra aceitando, presença, estado e posição na fila", () => {
     const conteudo = texto(render([situacao()]));
@@ -93,15 +155,40 @@ describe("situação do entregador", () => {
     assert.ok(conteudo.includes("3 na fila"));
   });
 
+  it("saída em andamento prevalece sobre disponibilidade e presença na base", () => {
+    const html = render([
+      situacao({ estado: "em_entrega", posicaoFila: null }),
+    ]);
+    const conteudo = texto(html);
+    assert.ok(conteudo.includes("Em entrega"));
+    assert.equal(conteudo.includes("Disponível na base"), false);
+    assert.equal(html.includes('data-presenca="na-base"'), false);
+  });
+
   it("disponível fora da base não tem posição na fila", () => {
-    const html = render([situacao({ naBase: false, estado: "disponivel_fora_base", posicaoFila: null, totalNaFila: 2 })]);
+    const html = render([
+      situacao({
+        naBase: false,
+        estado: "disponivel_fora_base",
+        posicaoFila: null,
+        totalNaFila: 2,
+      }),
+    ]);
     assert.ok(texto(html).includes("Fora da base"));
-    assert.ok(texto(html).includes("Disponível para chamados, mas fora da fila da base"));
+    assert.ok(
+      texto(html).includes(
+        "Disponível para chamados, mas fora da fila da base",
+      ),
+    );
     assert.equal(html.includes("data-posicao-fila"), false);
   });
 
   it("empresa sem ponto da base confirmado é avisada ao entregador", () => {
-    assert.ok(texto(render([situacao({ baseConfigurada: false })])).includes("ainda não confirmou o ponto da base"));
+    assert.ok(
+      texto(render([situacao({ baseConfigurada: false })])).includes(
+        "ainda não confirmou o ponto da base",
+      ),
+    );
   });
 
   it("sem vínculo operacional a área não aparece", () => {
@@ -110,15 +197,24 @@ describe("situação do entregador", () => {
 });
 
 describe("aviso de localização", () => {
-  const render = (permissao: "ausente" | "ativa" | "negada" | "indisponivel") => renderToStaticMarkup(createElement(AvisoLocalizacao, { permissao }));
+  const render = (permissao: "ausente" | "ativa" | "negada" | "indisponivel") =>
+    renderToStaticMarkup(createElement(AvisoLocalizacao, { permissao }));
 
   it("explica para que a localização serve antes de pedi-la", () => {
-    assert.ok(texto(render("ausente")).includes("Localização necessária para entrar automaticamente na fila da base."));
+    assert.ok(
+      texto(render("ausente")).includes(
+        "Localização necessária para entrar automaticamente na fila da base.",
+      ),
+    );
   });
 
   it("permissão negada explica o efeito, sem bloquear o resto", () => {
-    assert.ok(texto(render("negada")).includes("Permissão de localização negada"));
-    assert.ok(texto(render("indisponivel")).includes("não informa localização"));
+    assert.ok(
+      texto(render("negada")).includes("Permissão de localização negada"),
+    );
+    assert.ok(
+      texto(render("indisponivel")).includes("não informa localização"),
+    );
   });
 
   it("com a localização ativa, não fica avisando nada", () => {

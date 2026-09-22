@@ -1,3 +1,4 @@
+import type { PoligonoZona } from "@jaa/contratos";
 import { arredondarCoordenadas } from "@/features/enderecos/mapa/provedor-mapa";
 import { destruirMapa, liberarContainer, recalcularTamanho, registrarMapa } from "@/lib/mapa/leaflet";
 import type { CriarMapaZona } from "./provedor-mapa-zona";
@@ -10,14 +11,25 @@ import type { CriarMapaZona } from "./provedor-mapa-zona";
  * fechamento é implícito). "Desfazer" remove o último ponto. Nenhuma biblioteca de desenho extra:
  * marcadores + um polígono bastam, e o resultado é a lista de vértices que o servidor valida.
  */
-export const criarMapaZonaLeaflet: CriarMapaZona = async ({ elemento, centro, verticesIniciais, aoMudarVertices, outrasZonas, urlTiles, atribuicao }) => {
+export const criarMapaZonaLeaflet: CriarMapaZona = async ({
+  elemento,
+  centro,
+  verticesIniciais,
+  nomeZona,
+  aoMudarVertices,
+  aoMudarPodeDesfazer,
+  aoBloquearExclusao,
+  outrasZonas,
+  urlTiles,
+  atribuicao,
+}) => {
   // Import dinâmico: Leaflet precisa de `window` e só roda no navegador.
   const L = (await import("leaflet")).default;
 
   // Remontagem do efeito: destrói a instância anterior antes de criar outra no mesmo elemento.
   liberarContainer(elemento);
 
-  const mapa = L.map(elemento, { zoomControl: true, attributionControl: true }).setView([centro.latitude, centro.longitude], 14);
+  const mapa = L.map(elemento, { zoomControl: true, attributionControl: true, doubleClickZoom: false }).setView([centro.latitude, centro.longitude], 14);
   registrarMapa(elemento, mapa);
   recalcularTamanho(mapa);
   if (urlTiles) L.tileLayer(urlTiles, { maxZoom: 19, ...(atribuicao ? { attribution: atribuicao } : {}) }).addTo(mapa);
@@ -26,15 +38,39 @@ export const criarMapaZonaLeaflet: CriarMapaZona = async ({ elemento, centro, ve
   for (const outra of outrasZonas ?? []) {
     L.polygon(
       outra.vertices.map((vertice) => [vertice.latitude, vertice.longitude] as [number, number]),
-      { color: "#a1a1aa", weight: 1, fillOpacity: 0.05, interactive: false },
+      { color: "#0f766e", weight: 2, fillColor: "#0f766e", fillOpacity: 0.12, interactive: false },
     )
       .addTo(mapa)
-      .bindTooltip(outra.nome, { permanent: false });
+      .bindTooltip(outra.nome, { permanent: true, direction: "center", className: "font-semibold" });
   }
 
   let vertices = [...(verticesIniciais ?? [])];
-  const marcadores: ReturnType<typeof L.circleMarker>[] = [];
+  let historico: PoligonoZona[] = [];
+  const marcadores: ReturnType<typeof L.marker>[] = [];
   let contorno: ReturnType<typeof L.polygon> | null = null;
+
+  const copiar = (lista: PoligonoZona): PoligonoZona => lista.map((vertice) => ({ ...vertice }));
+  const mesmasCoordenadas = (a: PoligonoZona, b: PoligonoZona) =>
+    a.length === b.length && a.every((vertice, indice) => vertice.latitude === b[indice]?.latitude && vertice.longitude === b[indice]?.longitude);
+
+  const publicarEstado = () => {
+    aoMudarVertices(copiar(vertices));
+    aoMudarPodeDesfazer?.(historico.length > 0);
+  };
+
+  const atualizarContorno = () => {
+    const pontos = vertices.map((vertice) => [vertice.latitude, vertice.longitude] as [number, number]);
+    if (vertices.length >= 3) {
+      if (contorno) contorno.setLatLngs(pontos);
+      else {
+        contorno = L.polygon(pontos, { color: "#0f766e", weight: 2, fillOpacity: 0.15, interactive: false }).addTo(mapa);
+        if (nomeZona) contorno.bindTooltip(nomeZona, { permanent: true, direction: "center", className: "font-semibold" });
+      }
+    } else {
+      contorno?.remove();
+      contorno = null;
+    }
+  };
 
   const redesenhar = () => {
     for (const marcador of marcadores.splice(0)) marcador.remove();
@@ -42,36 +78,83 @@ export const criarMapaZonaLeaflet: CriarMapaZona = async ({ elemento, centro, ve
     contorno = null;
 
     for (const [indice, vertice] of vertices.entries()) {
-      marcadores.push(
-        L.circleMarker([vertice.latitude, vertice.longitude], { radius: 5, color: "#111", fillColor: "#fff", fillOpacity: 1 })
-          .addTo(mapa)
-          .bindTooltip(String(indice + 1)),
-      );
+      const marcador = L.marker([vertice.latitude, vertice.longitude], {
+        draggable: true,
+        bubblingMouseEvents: false,
+        keyboard: true,
+        title: `Vértice ${indice + 1}`,
+        icon: L.divIcon({
+          className: "",
+          html: `<span aria-hidden="true" style="display:block;width:18px;height:18px;border:2px solid #111;border-radius:9999px;background:#fff;box-shadow:0 1px 4px rgb(0 0 0 / .35)"></span>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
+        }),
+      })
+        .addTo(mapa)
+        .bindTooltip(String(indice + 1));
+
+      let antesDoArraste: PoligonoZona | null = null;
+      marcador.on("dragstart", () => {
+        antesDoArraste = copiar(vertices);
+      });
+      marcador.on("drag", () => {
+        const ponto = marcador.getLatLng();
+        vertices[indice] = { latitude: ponto.lat, longitude: ponto.lng };
+        atualizarContorno();
+      });
+      marcador.on("dragend", () => {
+        if (!antesDoArraste) return;
+        const ponto = marcador.getLatLng();
+        const finais = copiar(vertices);
+        finais[indice] = arredondarCoordenadas({ latitude: ponto.lat, longitude: ponto.lng });
+        if (!mesmasCoordenadas(antesDoArraste, finais)) historico.push(antesDoArraste);
+        vertices = finais;
+        antesDoArraste = null;
+        redesenhar();
+      });
+      marcador.on("dblclick", (evento) => {
+        L.DomEvent.stopPropagation(evento.originalEvent);
+        if (vertices.length <= 3) {
+          aoBloquearExclusao?.();
+          return;
+        }
+        historico.push(copiar(vertices));
+        vertices = vertices.filter((_, atual) => atual !== indice);
+        redesenhar();
+      });
+      marcadores.push(marcador);
     }
-    if (vertices.length >= 3) {
-      contorno = L.polygon(
-        vertices.map((vertice) => [vertice.latitude, vertice.longitude] as [number, number]),
-        { color: "#0f766e", weight: 2, fillOpacity: 0.15 },
-      ).addTo(mapa);
-    }
-    aoMudarVertices([...vertices]);
+    atualizarContorno();
+    publicarEstado();
+  };
+
+  const alterar = (novos: PoligonoZona) => {
+    if (mesmasCoordenadas(vertices, novos)) return;
+    historico.push(copiar(vertices));
+    vertices = copiar(novos);
+    redesenhar();
   };
 
   mapa.on("click", (evento) => {
-    vertices.push(arredondarCoordenadas({ latitude: evento.latlng.lat, longitude: evento.latlng.lng }));
-    redesenhar();
+    alterar([...vertices, arredondarCoordenadas({ latitude: evento.latlng.lat, longitude: evento.latlng.lng })]);
   });
 
-  if (vertices.length > 0) redesenhar();
+  redesenhar();
 
   return {
     desenhar(novos) {
-      vertices = [...novos];
+      vertices = copiar(novos);
+      historico = [];
+      redesenhar();
+    },
+    desfazer() {
+      const anteriores = historico.pop();
+      if (!anteriores) return;
+      vertices = anteriores;
       redesenhar();
     },
     limpar() {
-      vertices = [];
-      redesenhar();
+      alterar([]);
     },
     destruir() {
       // Mesma proteção do mapa de ponto: nunca deixar um mapa visível e sem ouvintes na tela.

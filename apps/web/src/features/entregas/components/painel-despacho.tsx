@@ -41,6 +41,7 @@ export function ConfiguracaoAutomacao({
           maxPedidosPorSaida: Number(dados.get("maxPedidosPorSaida")),
           tempoFormacaoMinutos: Number(dados.get("tempoFormacaoMinutos")),
           combinarZonas: dados.get("combinarZonas") === "sim",
+          liberacaoAutomatica: dados.get("liberacaoAutomatica") === "sim",
         });
       }}
       className="flex flex-col gap-2 rounded-jaa border border-borda p-2 text-sm"
@@ -72,7 +73,13 @@ export function ConfiguracaoAutomacao({
         <input type="checkbox" name="combinarZonas" value="sim" defaultChecked={configuracao.combinarZonas} />
         Combinar zonas compatíveis quando houver pouco volume
       </label>
-      <p className="text-xs text-conteudo-suave">A saída fecha quando atingir a quantidade OU o tempo — o que vier primeiro.</p>
+      <label className="flex items-center gap-2 text-xs">
+        <input type="checkbox" name="liberacaoAutomatica" value="sim" defaultChecked={configuracao.liberacaoAutomatica} />
+        Liberação automática
+      </label>
+      <p className="text-xs text-conteudo-suave">
+        A quantidade OU o tempo conclui a montagem. Com liberação automática ativa, a retirada também é liberada nesse momento.
+      </p>
       <button type="submit" data-salvar-automacao disabled={ocupado} className="self-start rounded bg-marca px-3 py-1.5 text-xs text-white disabled:opacity-50">
         Salvar automação
       </button>
@@ -104,7 +111,8 @@ export function PendenciasForaDeZona({ painel }: { painel: PainelDespacho }) {
 const GRUPOS = [
   { status: "em_formacao" as const, titulo: "Em formação", vazio: "Nenhuma saída juntando pedidos." },
   { status: "aguardando_entregador" as const, titulo: "Aguardando entregador", vazio: "Nenhuma saída esperando entregador." },
-  { status: "preparada" as const, titulo: "Atribuídas", vazio: "Nenhuma saída atribuída." },
+  { status: "preparada" as const, titulo: "Preparadas", vazio: "Nenhuma saída preparada aguardando liberação." },
+  { status: "liberada_retirada" as const, titulo: "Liberadas p/ retirada", vazio: "Nenhuma saída liberada para retirada." },
   { status: "em_andamento" as const, titulo: "Em andamento", vazio: "Nenhuma saída na rua." },
 ];
 
@@ -131,6 +139,7 @@ export function QuadroDeSaidas({ saidas, agora = new Date() }: { saidas: SaidaEn
                       </span>
                       <span className="text-conteudo-suave">
                         {saida.entregador?.nomeExibicao ?? (saida.status === "em_formacao" ? formatarEspera(saida, agora) : "sem entregador")}
+                        {saida.status === "aguardando_entregador" && saida.liberadaEm ? " · retirada já liberada" : ""}
                       </span>
                     </li>
                   );

@@ -51,6 +51,7 @@ const saida = (paradas: ParadaSaida[]): SaidaEntrega => ({
   prazoFormacaoEm: null,
   fechadaEm: "2026-09-16T12:05:00.000Z",
   atribuidaEm: "2026-09-16T12:05:00.000Z",
+  liberadaEm: "2026-09-16T12:09:00.000Z",
   iniciadaEm: "2026-09-16T12:10:00.000Z",
   concluidaEm: null,
 });
@@ -123,15 +124,15 @@ describe("iniciar a saída (tela do entregador)", () => {
   const render = (status: SaidaEntrega["status"], ocupado = false) =>
     renderToStaticMarkup(createElement(AcaoIniciarSaida, { saida: { ...saida([parada(1, 1)]), status }, ocupado, aoIniciar: () => {} }));
 
-  it("atribuída e ainda não iniciada: mostra 'Iniciar saída'", () => {
-    const html = render("preparada");
+  it("liberada e ainda não iniciada: mostra 'SAIR PARA ENTREGA'", () => {
+    const html = render("liberada_retirada");
     assert.ok(html.includes("data-iniciar-saida"));
-    assert.ok(texto(html).includes("Iniciar saída"));
+    assert.ok(texto(html).includes("SAIR PARA ENTREGA"));
     assert.equal(html.includes('disabled=""'), false);
   });
 
   it("enquanto a ação está em curso, o botão fica desabilitado (sem toque duplo)", () => {
-    assert.ok(render("preparada", true).includes('disabled=""'));
+    assert.ok(render("liberada_retirada", true).includes('disabled=""'));
   });
 
   it("já em andamento: não oferece iniciar de novo, só informa", () => {
@@ -140,8 +141,8 @@ describe("iniciar a saída (tela do entregador)", () => {
     assert.ok(texto(html).includes("Saída em andamento"));
   });
 
-  it("em formação, aguardando entregador ou concluída: nenhuma ação de início", () => {
-    for (const status of ["em_formacao", "aguardando_entregador", "concluida"] as const) {
+  it("antes da liberação ou depois da conclusão: nenhuma ação de início", () => {
+    for (const status of ["em_formacao", "aguardando_entregador", "preparada", "concluida"] as const) {
       assert.equal(render(status).includes("data-iniciar-saida"), false, status);
     }
   });

@@ -39,6 +39,7 @@ export function serializarSaida(registro: SaidaComParadasRegistro, empresa: Empr
     prazoFormacaoEm: saida.prazoFormacaoEm?.toISOString() ?? null,
     fechadaEm: saida.fechadaEm?.toISOString() ?? null,
     atribuidaEm: saida.atribuidaEm?.toISOString() ?? null,
+    liberadaEm: saida.liberadaEm?.toISOString() ?? null,
     iniciadaEm: saida.iniciadaEm?.toISOString() ?? null,
     concluidaEm: saida.concluidaEm?.toISOString() ?? null,
   };

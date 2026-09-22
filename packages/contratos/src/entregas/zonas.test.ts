@@ -132,16 +132,16 @@ describe("classificação e configuração", () => {
   });
 
   it("quantidade e tempo são configuráveis, com limites seguros", () => {
-    assert.deepEqual(CONFIGURACAO_DESPACHO_PADRAO, { maxPedidosPorSaida: 5, tempoFormacaoMinutos: 15, combinarZonas: true });
-    assert.equal(configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: 0, tempoFormacaoMinutos: 15, combinarZonas: true }).success, false);
+    assert.deepEqual(CONFIGURACAO_DESPACHO_PADRAO, { maxPedidosPorSaida: 5, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true });
+    assert.equal(configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: 0, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true }).success, false);
     assert.equal(
-      configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: MAXIMO_PEDIDOS_POR_SAIDA_MAXIMO + 1, tempoFormacaoMinutos: 15, combinarZonas: true }).success,
+      configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: MAXIMO_PEDIDOS_POR_SAIDA_MAXIMO + 1, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true }).success,
       false,
     );
     assert.equal(
-      configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: 5, tempoFormacaoMinutos: TEMPO_FORMACAO_MAXIMO_MINUTOS + 1, combinarZonas: true }).success,
+      configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: 5, tempoFormacaoMinutos: TEMPO_FORMACAO_MAXIMO_MINUTOS + 1, combinarZonas: true, liberacaoAutomatica: true }).success,
       false,
     );
-    assert.equal(configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: 5, tempoFormacaoMinutos: 1.5, combinarZonas: true }).success, false);
+    assert.equal(configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: 5, tempoFormacaoMinutos: 1.5, combinarZonas: true, liberacaoAutomatica: true }).success, false);
   });
 });

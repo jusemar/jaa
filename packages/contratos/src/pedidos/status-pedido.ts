@@ -22,25 +22,25 @@ export type StatusPedido = z.infer<typeof statusPedidoSchema>;
 
 export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   recebido: "Pedido recebido",
-  confirmado: "Confirmado",
+  confirmado: "Confirmado (legado)",
   em_preparacao: "Em preparação",
   pronto: "Pronto",
   saiu_para_entrega: "Saiu para entrega",
-  em_rota: "Em rota",
+  em_rota: "Saiu para entrega",
   entregue: "Entregue",
   cancelado: "Pedido cancelado",
 };
 
 // Caminho normal, em ordem. Cancelado não entra: é desvio terminal, não etapa do fluxo.
-export const FLUXO_STATUS_PEDIDO = ["recebido", "confirmado", "em_preparacao", "pronto", "saiu_para_entrega", "em_rota", "entregue"] as const satisfies readonly StatusPedido[];
+export const FLUXO_STATUS_PEDIDO = ["recebido", "em_preparacao", "pronto", "saiu_para_entrega", "entregue"] as const satisfies readonly StatusPedido[];
 
 // Um passo por vez: nada de saltar (recebido → entregue) nem regredir (em_rota → em_preparacao).
 const PROXIMO_STATUS: Record<StatusPedido, StatusPedido | null> = {
-  recebido: "confirmado",
+  recebido: "em_preparacao",
   confirmado: "em_preparacao",
   em_preparacao: "pronto",
   pronto: "saiu_para_entrega",
-  saiu_para_entrega: "em_rota",
+  saiu_para_entrega: "entregue",
   em_rota: "entregue",
   entregue: null,
   cancelado: null,
@@ -48,11 +48,12 @@ const PROXIMO_STATUS: Record<StatusPedido, StatusPedido | null> = {
 
 // Rótulo da ÚNICA ação de avanço disponível em cada estado (a interface nunca mostra sete botões).
 export const ROTULO_ACAO_AVANCAR: Record<StatusPedido, string | null> = {
-  recebido: "Confirmar pedido",
+  recebido: "Iniciar preparação",
   confirmado: "Iniciar preparação",
   em_preparacao: "Marcar como pronto",
-  pronto: "Saiu para entrega",
-  saiu_para_entrega: "Marcar em rota",
+  // A saída para entrega é ação do entregador na rota já liberada, não um clique no pedido.
+  pronto: null,
+  saiu_para_entrega: "Marcar como entregue",
   em_rota: "Marcar como entregue",
   entregue: null,
   cancelado: null,
@@ -61,6 +62,13 @@ export const ROTULO_ACAO_AVANCAR: Record<StatusPedido, string | null> = {
 export function proximoStatusPedido(status: StatusPedido): StatusPedido | null {
   return PROXIMO_STATUS[status];
 }
+
+// Na visão do cliente, PRONTO significa que o pedido já espera a retirada física pelo entregador.
+export const ROTULO_STATUS_PEDIDO_CLIENTE: Record<StatusPedido, string> = {
+  ...ROTULO_STATUS_PEDIDO,
+  confirmado: "Pedido recebido",
+  pronto: "Aguardando coleta",
+};
 
 // Terminais: não avançam, não regridem, não cancelam.
 export function statusPedidoTerminal(status: StatusPedido): boolean {
@@ -102,16 +110,22 @@ export type EtapaTimelinePedido = { status: StatusPedido; situacao: "concluida" 
  * Pedido cancelado não segue desenhando o fluxo: mostra o que aconteceu e encerra em "Pedido cancelado".
  */
 export function montarTimelinePedido(status: StatusPedido, historico: EventoStatusPedido[]): EtapaTimelinePedido[] {
-  const ocorridoPorStatus = new Map(historico.map((evento) => [evento.status, evento.ocorridoEm]));
+  const statusVisual = status === "confirmado" ? "recebido" : status === "em_rota" ? "saiu_para_entrega" : status;
+  const ocorridoPorStatus = new Map<StatusPedido, string>();
+  for (const evento of historico) {
+    // Eventos das etapas removidas continuam legíveis, mas são incorporados à etapa equivalente.
+    const etapa = evento.status === "confirmado" ? "recebido" : evento.status === "em_rota" ? "saiu_para_entrega" : evento.status;
+    ocorridoPorStatus.set(etapa, evento.ocorridoEm);
+  }
   const concluidas = FLUXO_STATUS_PEDIDO.filter((etapa) => ocorridoPorStatus.has(etapa)).map(
-    (etapa): EtapaTimelinePedido => ({ status: etapa, situacao: etapa === status ? "atual" : "concluida", ocorridoEm: ocorridoPorStatus.get(etapa) ?? null }),
+    (etapa): EtapaTimelinePedido => ({ status: etapa, situacao: etapa === statusVisual ? "atual" : "concluida", ocorridoEm: ocorridoPorStatus.get(etapa) ?? null }),
   );
 
   if (status === "cancelado") {
     return [...concluidas, { status: "cancelado", situacao: "atual", ocorridoEm: ocorridoPorStatus.get("cancelado") ?? null }];
   }
 
-  const posicaoAtual = FLUXO_STATUS_PEDIDO.indexOf(status as (typeof FLUXO_STATUS_PEDIDO)[number]);
+  const posicaoAtual = FLUXO_STATUS_PEDIDO.indexOf(statusVisual as (typeof FLUXO_STATUS_PEDIDO)[number]);
   const futuras = FLUXO_STATUS_PEDIDO.slice(posicaoAtual + 1).map((etapa): EtapaTimelinePedido => ({ status: etapa, situacao: "futura", ocorridoEm: null }));
   return [...concluidas, ...futuras];
 }

@@ -308,7 +308,23 @@ export async function marcarSaidaIniciada(banco: Banco, saidaId: string): Promis
   const [saida] = await banco
     .update(saidasEntrega)
     .set({ status: "em_andamento", iniciadaEm: new Date() })
-    .where(and(eq(saidasEntrega.id, saidaId), eq(saidasEntrega.status, "preparada")))
+    .where(and(eq(saidasEntrega.id, saidaId), eq(saidasEntrega.status, "liberada_retirada")))
+    .returning();
+  return saida ?? null;
+}
+
+/**
+ * Libera uma rota já congelada e planejada. Sem entregador ela continua aguardando, mas guarda a
+ * decisão; quando o primeiro da fila for atribuído, nasce diretamente liberada para retirada.
+ */
+export async function marcarSaidaLiberada(banco: Banco, saidaId: string, agora: Date): Promise<SaidaRegistro | null> {
+  const [saida] = await banco
+    .update(saidasEntrega)
+    .set({
+      liberadaEm: agora,
+      status: sql`case when ${saidasEntrega.status} = 'preparada' then 'liberada_retirada'::status_saida_entrega else ${saidasEntrega.status} end`,
+    })
+    .where(and(eq(saidasEntrega.id, saidaId), inArray(saidasEntrega.status, ["aguardando_entregador", "preparada"]), isNull(saidasEntrega.liberadaEm)))
     .returning();
   return saida ?? null;
 }

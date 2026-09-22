@@ -4,6 +4,7 @@ import type { DestinoPedido, EnderecoCliente } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EnderecoDoPedido } from "@/features/pedidos/components/apresentacao-pedido.tsx";
+import { EtapaEnderecoEntrega } from "./etapa-endereco-entrega.tsx";
 import { FormularioEndereco } from "./formulario-endereco.tsx";
 import { ConfirmarPontoEntrega } from "./confirmar-ponto-entrega.tsx";
 import { ListaEnderecos } from "./lista-enderecos.tsx";
@@ -38,12 +39,57 @@ const confirmado: EnderecoCliente = {
 };
 
 const lista = (enderecos: EnderecoCliente[]) =>
-  renderToStaticMarkup(createElement(ListaEnderecos, { enderecos, selecionadoId: null, aoUsar: () => {}, aoEditar: () => {}, aoAjustarPonto: () => {} }));
+  renderToStaticMarkup(
+    createElement(ListaEnderecos, {
+      enderecos,
+      selecionadoId: null,
+      aoUsar: () => {},
+      aoEditar: () => {},
+      aoAjustarPonto: () => {},
+    }),
+  );
 
 describe("lista de endereços do cliente", () => {
   it("mostra o endereço como o cliente cadastrou, com CEP formatado", () => {
     const conteudo = texto(lista([semPonto]));
-    for (const esperado of ["Casa", "Rua das Flores, 150 — Apto 302", "Centro, Belo Horizonte/MG", "CEP 30123-000", "Usar este endereço"]) {
+    for (const esperado of [
+      "Rua das Flores, 150 — Apto 302",
+      "Centro, Belo Horizonte/MG",
+      "CEP 30123-000",
+      "Usar este endereço",
+    ]) {
+      assert.ok(conteudo.includes(esperado), esperado);
+    }
+    assert.equal(
+      conteudo.includes("Casa"),
+      false,
+      "a escolha não exibe o apelido do endereço",
+    );
+  });
+
+  it("mostra o estado vazio próprio da escolha de entrega", () => {
+    assert.ok(
+      texto(lista([])).includes(
+        "Você ainda não possui endereço de entrega cadastrado.",
+      ),
+    );
+  });
+
+  it("a etapa vazia orienta cadastrar e permite voltar ao carrinho", () => {
+    const conteudo = texto(
+      renderToStaticMarkup(
+        createElement(EtapaEnderecoEntrega, {
+          aoSelecionar: () => {},
+          aoVoltar: () => {},
+        }),
+      ),
+    );
+    for (const esperado of [
+      "Escolha um endereço",
+      "Você ainda não possui endereço de entrega cadastrado.",
+      "+ Cadastrar endereço",
+      "Voltar ao carrinho",
+    ]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
   });
@@ -69,11 +115,28 @@ describe("lista de endereços do cliente", () => {
 
 describe("formulário de endereço", () => {
   const formulario = (endereco?: EnderecoCliente) =>
-    renderToStaticMarkup(createElement(FormularioEndereco, { ...(endereco ? { endereco } : {}), enviando: false, aoSalvar: () => {}, aoCancelar: () => {} }));
+    renderToStaticMarkup(
+      createElement(FormularioEndereco, {
+        ...(endereco ? { endereco } : {}),
+        enviando: false,
+        aoSalvar: () => {},
+        aoCancelar: () => {},
+      }),
+    );
 
   it("pede os campos do endereço textual, com apelido e referência", () => {
     const html = formulario();
-    for (const campo of ["apelido", "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf", "pontoReferencia"]) {
+    for (const campo of [
+      "apelido",
+      "cep",
+      "logradouro",
+      "numero",
+      "complemento",
+      "bairro",
+      "cidade",
+      "uf",
+      "pontoReferencia",
+    ]) {
       assert.ok(html.includes(`name="${campo}"`), campo);
     }
     // Nada de latitude/longitude digitadas: o ponto vem do mapa.
@@ -96,7 +159,13 @@ describe("sugestão no mapa de entrega", () => {
     const sugestao = { latitude: -20.004977, longitude: -44.01567 };
     const html = renderToStaticMarkup(
       createElement(ConfirmarPontoEntrega, {
-        endereco: { ...semPonto, cep: "30626497", logradouro: "Rua Sílvio Giuseppe Rosso", numero: "24", bairro: "Novo Santa Cecília (Barreiro)" },
+        endereco: {
+          ...semPonto,
+          cep: "30626497",
+          logradouro: "Rua Sílvio Giuseppe Rosso",
+          numero: "24",
+          bairro: "Novo Santa Cecília (Barreiro)",
+        },
         sugestao,
         enviando: false,
         erro: null,
@@ -108,7 +177,7 @@ describe("sugestão no mapa de entrega", () => {
     assert.ok(html.includes('data-ponto-selecionado="-20.004977,-44.01567"'));
     assert.equal(html.includes("data-ponto-pendente"), false);
     assert.equal(html.includes("data-confirmar-ponto"), true);
-    assert.equal(html.includes("disabled=\"\""), false);
+    assert.equal(html.includes('disabled=""'), false);
   });
 });
 
@@ -129,22 +198,50 @@ describe("entrega no pedido", () => {
   };
 
   it("exibe o snapshot do endereço e o selo de ponto confirmado", () => {
-    const html = renderToStaticMarkup(createElement(EnderecoDoPedido, { destino }));
+    const html = renderToStaticMarkup(
+      createElement(EnderecoDoPedido, { destino }),
+    );
     const conteudo = texto(html);
-    for (const esperado of ["Entregar em", "Rua das Flores, 150 — Apto 302", "Centro, Belo Horizonte/MG", "CEP 30123-000", "Referência: Portão azul", "📍 Ponto de entrega confirmado"]) {
+    for (const esperado of [
+      "Entregar em",
+      "Rua das Flores, 150 — Apto 302",
+      "Centro, Belo Horizonte/MG",
+      "CEP 30123-000",
+      "Referência: Portão azul",
+      "📍 Ponto de entrega confirmado",
+    ]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
-    assert.equal(conteudo.includes("-19.919125"), false, "coordenada crua não é para humano");
+    assert.equal(
+      conteudo.includes("-19.919125"),
+      false,
+      "coordenada crua não é para humano",
+    );
   });
 
   it("oferece 'Ver ponto no mapa' apenas quando quem exibe passa a ação", () => {
-    assert.equal(renderToStaticMarkup(createElement(EnderecoDoPedido, { destino })).includes("data-ver-ponto-mapa"), false);
-    assert.ok(renderToStaticMarkup(createElement(EnderecoDoPedido, { destino, aoVerNoMapa: () => {} })).includes("data-ver-ponto-mapa"));
+    assert.equal(
+      renderToStaticMarkup(
+        createElement(EnderecoDoPedido, { destino }),
+      ).includes("data-ver-ponto-mapa"),
+      false,
+    );
+    assert.ok(
+      renderToStaticMarkup(
+        createElement(EnderecoDoPedido, { destino, aoVerNoMapa: () => {} }),
+      ).includes("data-ver-ponto-mapa"),
+    );
   });
 
   it("pedido legado (sem destino) explica a ausência, sem inventar endereço", () => {
-    const html = renderToStaticMarkup(createElement(EnderecoDoPedido, { destino: null }));
+    const html = renderToStaticMarkup(
+      createElement(EnderecoDoPedido, { destino: null }),
+    );
     assert.ok(html.includes("data-sem-destino"));
-    assert.ok(texto(html).includes("Este pedido é anterior ao ponto de entrega confirmado."));
+    assert.ok(
+      texto(html).includes(
+        "Este pedido é anterior ao ponto de entrega confirmado.",
+      ),
+    );
   });
 });

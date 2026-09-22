@@ -77,13 +77,23 @@ async function criarPedido(empresa = pizzaria, produto = pizza, conversaId = con
 // Pedido levado até "pronto" (ponto em que a empresa escolhe quem vai entregar).
 async function pedidoPronto(empresa = pizzaria, produto = pizza, conversaId = conversaBP): Promise<Pedido> {
   let pedido = await criarPedido(empresa, produto, conversaId);
-  for (const status of ["recebido", "confirmado", "em_preparacao"] as const) {
+  for (const status of ["recebido", "em_preparacao"] as const) {
     const resposta = await avancar(pedido.id, status, empresa);
     assert.equal(resposta.statusCode, 200, resposta.body);
     pedido = resposta.json();
   }
   assert.equal(pedido.status, "pronto");
   return pedido;
+}
+
+async function sairParaEntrega(pedido: Pedido, entregadorId: string, pessoaEntregadora: Pessoa): Promise<Pedido> {
+  const criada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas`, { entregadorId, pedidoIds: [pedido.id] });
+  assert.equal(criada.statusCode, 201, criada.body);
+  const saidaId = criada.json().id as string;
+  assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saidaId}/liberar`)).statusCode, 200);
+  const iniciada = await ctx.api(pessoaEntregadora, "POST", `/entregas/saidas/${saidaId}/iniciar`);
+  assert.equal(iniciada.statusCode, 200, iniciada.body);
+  return (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${pedido.id}`)).json();
 }
 
 before(async () => {
@@ -184,9 +194,7 @@ describe("atribuição", () => {
     const pedido = await criarPedido();
     assert.equal((await atribuir(A, pizzaria, pedido.id, { entregadorId: paulo })).statusCode, 409, "recebido não atribui");
 
-    const confirmado = (await avancar(pedido.id, "recebido")).json();
-    assert.equal((await atribuir(A, pizzaria, confirmado.id, { entregadorId: paulo })).statusCode, 409, "confirmado não atribui");
-    const emPreparacao = (await avancar(pedido.id, "confirmado")).json();
+    const emPreparacao = (await avancar(pedido.id, "recebido")).json();
     assert.equal((await atribuir(A, pizzaria, emPreparacao.id, { entregadorId: paulo })).statusCode, 409, "em preparação não atribui");
 
     assert.equal((await avancar(pedido.id, "em_preparacao")).statusCode, 200);
@@ -197,15 +205,15 @@ describe("atribuição", () => {
     assert.equal(entrega.historico.length, 1);
   });
 
-  it("sem entregador o pedido não sai para entrega (regra do servidor)", async () => {
+  it("pedido não sai diretamente: mesmo atribuído, exige uma rota liberada", async () => {
     const pedido = await pedidoPronto();
     const semEntregador = await avancar(pedido.id, "pronto");
     assert.equal(semEntregador.statusCode, 409);
-    assert.equal(semEntregador.json().codigo, "ENTREGADOR_NAO_ATRIBUIDO");
+    assert.equal(semEntregador.json().codigo, "TRANSICAO_PEDIDO_INVALIDA");
     assert.equal((await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${pedido.id}`)).json().status, "pronto");
 
     assert.equal((await atribuir(A, pizzaria, pedido.id, { entregadorId: paulo })).statusCode, 200);
-    assert.equal((await avancar(pedido.id, "pronto")).statusCode, 200, "com entregador, sai para entrega");
+    assert.equal((await avancar(pedido.id, "pronto")).statusCode, 409, "atribuição isolada não substitui a rota liberada");
   });
 
   it("entregador inativo e de outra empresa são recusados", async () => {
@@ -257,16 +265,14 @@ describe("reatribuição e revogação", () => {
     assert.equal((await ctx.api(C, "GET", `/entregas/${pedido.id}`)).statusCode, 200);
   });
 
-  it("reatribuir funciona também com o pedido já em rota", async () => {
+  it("pedido dentro de uma saída em andamento não é reatribuído fora da rota", async () => {
     const pedido = await pedidoPronto();
-    assert.equal((await atribuir(A, pizzaria, pedido.id, { entregadorId: paulo })).statusCode, 200);
-    assert.equal((await avancar(pedido.id, "pronto")).statusCode, 200);
-    assert.equal((await avancar(pedido.id, "saiu_para_entrega")).statusCode, 200);
+    await sairParaEntrega(pedido, paulo, P);
 
     const troca = await atribuir(A, pizzaria, pedido.id, { entregadorId: carlos, entregadorAtualId: paulo });
-    assert.equal(troca.statusCode, 200, "imprevisto na rua: a troca é possível e auditada");
-    assert.equal((await ctx.api(P, "GET", `/entregas/${pedido.id}`)).statusCode, 404);
-    assert.equal((await ctx.api(C, "GET", `/entregas/${pedido.id}`)).json().status, "em_rota");
+    assert.equal(troca.statusCode, 409, "a atribuição isolada não desmonta uma rota em execução");
+    assert.equal((await ctx.api(P, "GET", `/entregas/${pedido.id}`)).statusCode, 200);
+    assert.equal((await ctx.api(C, "GET", `/entregas/${pedido.id}`)).statusCode, 404);
   });
 
   it("desativar o vínculo revoga as entregas em aberto imediatamente", async () => {
@@ -329,8 +335,8 @@ describe("área do entregador", () => {
 
   it("entregue e cancelado saem da lista ativa, mas o histórico permanece", async () => {
     const entregue = await pedidoPronto();
-    assert.equal((await atribuir(A, pizzaria, entregue.id, { entregadorId: paulo })).statusCode, 200);
-    for (const status of ["pronto", "saiu_para_entrega", "em_rota"] as const) assert.equal((await avancar(entregue.id, status)).statusCode, 200);
+    await sairParaEntrega(entregue, paulo, P);
+    assert.equal((await avancar(entregue.id, "saiu_para_entrega")).statusCode, 200);
 
     const cancelado = await pedidoPronto();
     assert.equal((await atribuir(A, pizzaria, cancelado.id, { entregadorId: paulo })).statusCode, 200);
@@ -441,7 +447,7 @@ describe("disponibilidade operacional", () => {
     assert.equal((await ctx.api(P, "GET", `/entregas/${jaAtribuido.id}`)).statusCode, 200);
     const minhas: ListaEntregas = (await ctx.api(P, "GET", "/entregas")).json();
     assert.ok(minhas.entregas.some((entrega) => entrega.pedidoId === jaAtribuido.id));
-    assert.equal((await avancar(jaAtribuido.id, "pronto")).statusCode, 200, "a entrega dele segue normalmente");
+    assert.equal((await avancar(jaAtribuido.id, "pronto")).statusCode, 409, "sair ainda exige rota liberada, independentemente da disponibilidade");
 
     // Mas não recebe nada novo.
     const novo = await pedidoPronto();
@@ -510,19 +516,14 @@ describe("realtime das entregas", () => {
     assert.equal(dePaulo[0]?.entrega?.status, "pronto");
     assert.equal(doCliente.length, 0, "cliente não recebe eventos de entrega");
 
-    // Mudança de status atualiza a entrega dele.
-    assert.equal((await avancar(pedido.id, "pronto")).statusCode, 200);
-    await aguardarAte(() => dePaulo.length === 2);
-    assert.equal(dePaulo[1]?.entrega?.status, "saiu_para_entrega");
-
-    // Reatribuição: sai da lista de Paulo e entra na de Carlos.
+    // Reatribuição enquanto ainda está pronto: sai da lista de Paulo e entra na de Carlos.
     assert.equal((await atribuir(A, pizzaria, pedido.id, { entregadorId: carlos, entregadorAtualId: paulo })).statusCode, 200);
-    await aguardarAte(() => dePaulo.length === 3 && deCarlos.length === 1);
-    assert.equal(dePaulo[2]?.entrega, null, "quem perdeu o pedido é avisado para removê-lo da tela");
+    await aguardarAte(() => dePaulo.length === 2 && deCarlos.length === 1);
+    assert.equal(dePaulo[1]?.entrega, null, "quem perdeu o pedido é avisado para removê-lo da tela");
     assert.equal(deCarlos[0]?.entrega?.pedidoId, pedido.id);
 
     // Cancelar encerra a entrega para quem estava com ela.
-    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${pedido.id}/cancelar`, { statusAtual: "saiu_para_entrega", motivo: "Cliente desistiu" })).statusCode, 200);
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${pedido.id}/cancelar`, { statusAtual: "pronto", motivo: "Cliente desistiu" })).statusCode, 200);
     await aguardarAte(() => deCarlos.length === 2);
     assert.equal(deCarlos[1]?.entrega, null);
     assert.equal(doCliente.length, 0);

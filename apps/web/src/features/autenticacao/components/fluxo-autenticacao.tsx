@@ -1,11 +1,20 @@
 "use client";
 
-import type { ContaAtual } from "@jaa/contratos";
+import {
+  SENHA_TAMANHO_MAXIMO,
+  SENHA_TAMANHO_MINIMO,
+  type ContaAtual,
+} from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
 import { AppJaa } from "@/components/navegacao/app-jaa";
 import { Aviso, Botao, CampoTexto, Cartao } from "@/components/ui/primitivos";
 import { useConexaoRealtime } from "@/lib/realtime/use-realtime-conectado";
-import { buscarContaAtual, criarIdentidadePessoal, entrarComSenha } from "../lib/api-conta";
+import {
+  buscarContaAtual,
+  criarIdentidadePessoal,
+  definirSenhaInicial,
+  entrarComSenha,
+} from "../lib/api-conta";
 import { clienteAutenticacao } from "../lib/cliente-autenticacao";
 import { formatarCelularDigitado } from "../lib/formatar-celular";
 import { mensagemDeErroAutenticacao } from "../lib/mensagens-erro";
@@ -43,7 +52,11 @@ export function FluxoAutenticacao() {
       if (conta.status !== 401) setErro(conta.mensagem);
       return;
     }
-    setEtapa(conta.dados.cadastroCompleto ? { nome: "autenticado", conta: conta.dados } : { nome: "cadastro" });
+    setEtapa(
+      conta.dados.cadastroCompleto
+        ? { nome: "autenticado", conta: conta.dados }
+        : { nome: "cadastro" },
+    );
   }
 
   async function seguirConformeConta() {
@@ -74,7 +87,10 @@ export function FluxoAutenticacao() {
     evento.preventDefault();
     const dados = new FormData(evento.currentTarget);
     void executar(async () => {
-      const resultado = await entrarComSenha(String(dados.get("identificador") ?? ""), String(dados.get("senha") ?? ""));
+      const resultado = await entrarComSenha(
+        String(dados.get("identificador") ?? ""),
+        String(dados.get("senha") ?? ""),
+      );
       if (!resultado.ok) {
         setErro(resultado.mensagem);
         return;
@@ -85,9 +101,13 @@ export function FluxoAutenticacao() {
 
   function solicitarCodigo(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
-    const telefone = String(new FormData(evento.currentTarget).get("telefone") ?? "");
+    const telefone = String(
+      new FormData(evento.currentTarget).get("telefone") ?? "",
+    );
     void executar(async () => {
-      const { error } = await clienteAutenticacao.phoneNumber.sendOtp({ phoneNumber: telefone });
+      const { error } = await clienteAutenticacao.phoneNumber.sendOtp({
+        phoneNumber: telefone,
+      });
       if (error) {
         setErro(mensagemDeErroAutenticacao(error));
         return;
@@ -96,11 +116,19 @@ export function FluxoAutenticacao() {
     });
   }
 
-  function verificarCodigo(telefone: string, evento: FormEvent<HTMLFormElement>) {
+  function verificarCodigo(
+    telefone: string,
+    evento: FormEvent<HTMLFormElement>,
+  ) {
     evento.preventDefault();
-    const codigo = String(new FormData(evento.currentTarget).get("codigo") ?? "");
+    const codigo = String(
+      new FormData(evento.currentTarget).get("codigo") ?? "",
+    );
     void executar(async () => {
-      const { error } = await clienteAutenticacao.phoneNumber.verify({ phoneNumber: telefone, code: codigo });
+      const { error } = await clienteAutenticacao.phoneNumber.verify({
+        phoneNumber: telefone,
+        code: codigo,
+      });
       if (error) {
         setErro(mensagemDeErroAutenticacao(error));
         return;
@@ -113,12 +141,27 @@ export function FluxoAutenticacao() {
     evento.preventDefault();
     const dados = new FormData(evento.currentTarget);
     void executar(async () => {
+      const senha = String(dados.get("senha") ?? "");
+      if (senha !== String(dados.get("confirmarSenha") ?? "")) {
+        setErro("As senhas não coincidem.");
+        return;
+      }
+
       const resultado = await criarIdentidadePessoal({
         nomeExibicao: String(dados.get("nomeExibicao") ?? ""),
         nomeUsuario: String(dados.get("nomeUsuario") ?? ""),
       });
       if (!resultado.ok) {
         setErro(resultado.mensagem);
+        return;
+      }
+
+      // A identidade vem primeiro: um @usuario indisponível não pode deixar senha gravada em uma
+      // conta ainda incompleta. Se a resposta se perdeu depois de gravar a senha, repetir o envio é
+      // seguro: o servidor informa que ela já estava definida e o cadastro pode seguir.
+      const senhaDefinida = await definirSenhaInicial(senha);
+      if (!senhaDefinida.ok && senhaDefinida.codigo !== "SENHA_JA_DEFINIDA") {
+        setErro(senhaDefinida.mensagem);
         return;
       }
       await seguirConformeConta();
@@ -142,10 +185,15 @@ export function FluxoAutenticacao() {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-fundo px-4 py-10">
-      <section aria-label="Entrar no Jaa" className="flex w-full max-w-sm flex-col gap-4">
+      <section
+        aria-label="Entrar no Jaa"
+        className="flex w-full max-w-sm flex-col gap-4"
+      >
         <h1 className="text-center text-3xl font-bold text-marca">Jaa</h1>
 
-        {etapa.nome === "carregando" && <p className="text-center text-sm text-conteudo-suave">Carregando…</p>}
+        {etapa.nome === "carregando" && (
+          <p className="text-center text-sm text-conteudo-suave">Carregando…</p>
+        )}
 
         {etapa.nome === "entrar" && (
           <Cartao className="p-5">
@@ -158,15 +206,27 @@ export function FluxoAutenticacao() {
                 autoComplete="username"
                 placeholder="(31) 98765-4321 ou @junior"
               />
-              <CampoTexto id="entrar-senha" rotulo="Senha" name="senha" type="password" required autoComplete="current-password" />
+              <CampoTexto
+                id="entrar-senha"
+                rotulo="Senha"
+                name="senha"
+                type="password"
+                required
+                autoComplete="current-password"
+              />
               <Botao type="submit" disabled={enviando} larguraTotal>
                 {enviando ? "Entrando…" : "Entrar"}
               </Botao>
-              <Botao type="button" aparencia="discreto" onClick={() => setEtapa({ nome: "telefone" })}>
+              <Botao
+                type="button"
+                aparencia="discreto"
+                onClick={() => setEtapa({ nome: "telefone" })}
+              >
                 Entrar com código no celular
               </Botao>
               <p className="text-center text-xs text-conteudo-suave">
-                Primeira vez por aqui? Use o código no celular para criar sua conta — a senha você define depois, no seu perfil.
+                Primeira vez por aqui? Use o código no celular para criar sua
+                conta e definir sua senha.
               </p>
             </form>
           </Cartao>
@@ -180,7 +240,11 @@ export function FluxoAutenticacao() {
               <Botao type="submit" disabled={enviando} larguraTotal>
                 {enviando ? "Enviando…" : "Enviar código"}
               </Botao>
-              <Botao type="button" aparencia="discreto" onClick={() => setEtapa({ nome: "entrar" })}>
+              <Botao
+                type="button"
+                aparencia="discreto"
+                onClick={() => setEtapa({ nome: "entrar" })}
+              >
                 Voltar
               </Botao>
             </form>
@@ -189,14 +253,31 @@ export function FluxoAutenticacao() {
 
         {etapa.nome === "codigo" && (
           <Cartao className="p-5">
-            <form onSubmit={(evento) => verificarCodigo(etapa.telefone, evento)} className="flex flex-col gap-4">
+            <form
+              onSubmit={(evento) => verificarCodigo(etapa.telefone, evento)}
+              className="flex flex-col gap-4"
+            >
               <h2 className="text-lg font-semibold">Código de verificação</h2>
-              <p className="text-sm text-conteudo-suave">Enviado para {etapa.telefone}</p>
-              <CampoTexto id="codigo-otp" rotulo="Código" name="codigo" required placeholder="000000" autoComplete="one-time-code" inputMode="numeric" />
+              <p className="text-sm text-conteudo-suave">
+                Enviado para {etapa.telefone}
+              </p>
+              <CampoTexto
+                id="codigo-otp"
+                rotulo="Código"
+                name="codigo"
+                required
+                placeholder="000000"
+                autoComplete="one-time-code"
+                inputMode="numeric"
+              />
               <Botao type="submit" disabled={enviando} larguraTotal>
                 {enviando ? "Verificando…" : "Verificar"}
               </Botao>
-              <Botao type="button" aparencia="discreto" onClick={() => setEtapa({ nome: "telefone" })}>
+              <Botao
+                type="button"
+                aparencia="discreto"
+                onClick={() => setEtapa({ nome: "telefone" })}
+              >
                 Trocar número
               </Botao>
             </form>
@@ -207,8 +288,44 @@ export function FluxoAutenticacao() {
           <Cartao className="p-5">
             <form onSubmit={concluirCadastro} className="flex flex-col gap-4">
               <h2 className="text-lg font-semibold">Complete seu cadastro</h2>
-              <CampoTexto id="cadastro-nome" rotulo="Nome" name="nomeExibicao" required placeholder="Seu nome" autoComplete="name" />
-              <CampoTexto id="cadastro-usuario" rotulo="@usuario" name="nomeUsuario" required placeholder="junior" autoComplete="username" dica="É assim que as pessoas encontram você no Jaa." />
+              <CampoTexto
+                id="cadastro-nome"
+                rotulo="Nome"
+                name="nomeExibicao"
+                required
+                placeholder="Seu nome"
+                autoComplete="name"
+              />
+              <CampoTexto
+                id="cadastro-usuario"
+                rotulo="@usuario"
+                name="nomeUsuario"
+                required
+                placeholder="junior"
+                autoComplete="username"
+                dica="É assim que as pessoas encontram você no Jaa."
+              />
+              <CampoTexto
+                id="cadastro-senha"
+                rotulo="Senha"
+                name="senha"
+                type="password"
+                required
+                minLength={SENHA_TAMANHO_MINIMO}
+                maxLength={SENHA_TAMANHO_MAXIMO}
+                autoComplete="new-password"
+                dica={`Use pelo menos ${SENHA_TAMANHO_MINIMO} caracteres.`}
+              />
+              <CampoTexto
+                id="cadastro-confirmar-senha"
+                rotulo="Confirmar senha"
+                name="confirmarSenha"
+                type="password"
+                required
+                minLength={SENHA_TAMANHO_MINIMO}
+                maxLength={SENHA_TAMANHO_MAXIMO}
+                autoComplete="new-password"
+              />
               <Botao type="submit" disabled={enviando} larguraTotal>
                 Concluir cadastro
               </Botao>
@@ -242,7 +359,9 @@ function CampoCelular() {
       maxLength={15}
       required
       value={valor}
-      onChange={(evento) => setValor(formatarCelularDigitado(evento.target.value))}
+      onChange={(evento) =>
+        setValor(formatarCelularDigitado(evento.target.value))
+      }
     />
   );
 }

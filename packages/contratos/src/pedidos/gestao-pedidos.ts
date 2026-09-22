@@ -11,14 +11,14 @@ import { motivoCancelamentoSchema, statusPedidoSchema } from "./status-pedido.ts
  */
 
 // Agrupamento só de INTERFACE: "Em entrega" reúne dois estados reais, sem inventar status novo.
-export const filtroPedidosEmpresaSchema = z.enum(["todos", "recebidos", "confirmados", "em_preparacao", "prontos", "em_entrega", "entregues", "cancelados"]);
+export const filtroPedidosEmpresaSchema = z.enum(["todos", "recebidos", "em_preparacao", "prontos", "em_entrega", "entregues", "cancelados"]);
 
 export type FiltroPedidosEmpresa = z.infer<typeof filtroPedidosEmpresaSchema>;
 
 export const STATUS_POR_FILTRO_PEDIDOS: Record<FiltroPedidosEmpresa, readonly z.infer<typeof statusPedidoSchema>[]> = {
   todos: [],
-  recebidos: ["recebido"],
-  confirmados: ["confirmado"],
+  // CONFIRMADO é legado e aparece junto de Recebidos até o pedido histórico avançar.
+  recebidos: ["recebido", "confirmado"],
   em_preparacao: ["em_preparacao"],
   prontos: ["pronto"],
   em_entrega: ["saiu_para_entrega", "em_rota"],
@@ -29,7 +29,6 @@ export const STATUS_POR_FILTRO_PEDIDOS: Record<FiltroPedidosEmpresa, readonly z.
 export const ROTULO_FILTRO_PEDIDOS: Record<FiltroPedidosEmpresa, string> = {
   todos: "Todos",
   recebidos: "Recebidos",
-  confirmados: "Confirmados",
   em_preparacao: "Em preparação",
   prontos: "Prontos",
   em_entrega: "Em entrega",

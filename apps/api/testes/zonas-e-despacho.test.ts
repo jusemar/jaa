@@ -80,7 +80,7 @@ async function pedidoProntoEm(cliente: Pessoa, ponto: { latitude: number; longit
   });
   assert.equal(resposta.statusCode, 201, resposta.body);
   let pedido: Pedido = resposta.json();
-  for (const status of ["recebido", "confirmado", "em_preparacao"] as const) {
+  for (const status of ["recebido", "em_preparacao"] as const) {
     const avanco = await avancar(pedido.id, status);
     assert.equal(avanco.statusCode, 200, avanco.body);
     pedido = avanco.json();
@@ -270,6 +270,7 @@ describe("formação automática", () => {
     assert.equal(fechada?.paradas.length, 3);
     assert.notEqual(fechada?.status, "em_formacao");
     assert.ok(fechada?.fechadaEm, "fechada tem data de fechamento");
+    assert.ok(fechada?.liberadaEm, "quantidade libera automaticamente quando a opção está ativa");
 
     const quarto = await pedidoProntoEm(B2, PONTO_A);
     const nova = await saidaDoPedido(quarto.id);
@@ -305,6 +306,7 @@ describe("fechamento por tempo e combinação de zonas", () => {
 
     const depois = await saidaDoPedido(pedido.id);
     assert.notEqual(depois?.status, "em_formacao");
+    assert.ok(depois?.liberadaEm, "tempo libera automaticamente quando a opção está ativa");
     assert.deepEqual(depois?.zonasCombinadas, [], "não juntou ninguém: combinar estava desligado");
   });
 
@@ -391,10 +393,11 @@ describe("despacho pelo primeiro entregador apto da fila", () => {
     const eventos = coletar<EventoSaidaAtualizada>(await ctx.conectar(P), EVENTO_SAIDA_ATUALIZADA);
     await entrarNaBase(P, paulo);
 
-    await aguardarAte(async () => (await listarSaidas()).some((saida) => saida.status === "preparada" && saida.entregador?.nomeExibicao === "Paulo Entregador"));
-    const atribuida = (await listarSaidas()).find((saida) => saida.status === "preparada" && saida.entregador?.nomeExibicao === "Paulo Entregador");
+    await aguardarAte(async () => (await listarSaidas()).some((saida) => saida.status === "liberada_retirada" && saida.entregador?.nomeExibicao === "Paulo Entregador"));
+    const atribuida = (await listarSaidas()).find((saida) => saida.status === "liberada_retirada" && saida.entregador?.nomeExibicao === "Paulo Entregador");
     assert.ok(atribuida, "a saída que esperava foi para o primeiro da fila");
     assert.ok(atribuida.atribuidaEm, "a atribuição ficou registrada");
+    assert.ok(atribuida.liberadaEm, "a liberação automática ficou registrada");
     assert.equal(atribuida.iniciadaEm, null, "atribuir não é iniciar: os pedidos continuam na loja");
 
     // O entregador recebe a saída dele em tempo real (e só a dele).
@@ -420,7 +423,7 @@ describe("despacho pelo primeiro entregador apto da fila", () => {
     await entrarNaBase(C, carlos);
     await aguardarAte(async () => (await listarSaidas()).some((saida) => saida.entregador?.nomeExibicao === "Carlos Entregador"));
 
-    const comCarlos = (await listarSaidas()).filter((saida) => saida.entregador?.nomeExibicao === "Carlos Entregador" && saida.status === "preparada");
+    const comCarlos = (await listarSaidas()).filter((saida) => saida.entregador?.nomeExibicao === "Carlos Entregador" && saida.status === "liberada_retirada");
     assert.equal(comCarlos.length, 1, "Carlos recebeu UMA saída, não as duas");
     // A escolhida é a que espera há mais tempo (pedido mais antigo).
     const maisAntigaPendente = pendentes.sort((a, b) => (a.criadoEm < b.criadoEm ? -1 : 1))[0];
@@ -442,25 +445,51 @@ describe("despacho pelo primeiro entregador apto da fila", () => {
 });
 
 describe("controle do gestor e regra absoluta da saída iniciada", () => {
-  it("o gestor fecha antecipadamente uma saída em formação", async () => {
+  it("com liberação automática desativada, o limite prepara a rota mas exige o gestor", async () => {
+    await fecharTodasAsFormacoes();
+    const configurada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/despacho`, {
+      maxPedidosPorSaida: 1,
+      tempoFormacaoMinutos: 15,
+      combinarZonas: false,
+      liberacaoAutomatica: false,
+    });
+    assert.equal(configurada.statusCode, 200, configurada.body);
+    assert.equal((configurada.json() as PainelDespacho).configuracao.liberacaoAutomatica, false);
+
+    const pedido = await pedidoProntoEm(B3, PONTO_A);
+    const preparada = await saidaDoPedido(pedido.id);
+    assert.notEqual(preparada?.status, "em_formacao");
+    assert.equal(preparada?.liberadaEm, null, "atingir o limite não autoriza a retirada");
+    assert.ok(preparada?.rota, "a rota já está organizada antes da decisão do gestor");
+
+    const liberada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${preparada?.id}/liberar`);
+    assert.equal(liberada.statusCode, 200, liberada.body);
+    assert.ok((liberada.json() as SaidaEntrega).liberadaEm);
+    await ctx.api(A, "POST", `/empresas/${pizzaria.id}/despacho`, { liberacaoAutomatica: true, maxPedidosPorSaida: 3 });
+  });
+
+  it("o gestor libera antecipadamente uma saída em formação, já com a rota planejada", async () => {
     const pedido = await pedidoProntoEm(B3, PONTO_A);
     const formacao = await saidaDoPedido(pedido.id);
     assert.equal(formacao?.status, "em_formacao");
 
-    const fechada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${formacao?.id}/fechar`);
+    const fechada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${formacao?.id}/liberar`);
     assert.equal(fechada.statusCode, 200, fechada.body);
     assert.notEqual((fechada.json() as SaidaEntrega).status, "em_formacao");
+    assert.ok((fechada.json() as SaidaEntrega).liberadaEm);
+    assert.ok((fechada.json() as SaidaEntrega).rota, "a rota foi organizada antes da liberação");
 
-    // Fechar de novo não faz sentido e é recusado com clareza.
-    const repetido = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${formacao?.id}/fechar`);
+    // Liberar de novo não faz sentido e é recusado com clareza.
+    const repetido = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${formacao?.id}/liberar`);
     assert.equal(repetido.statusCode, 409);
-    assert.equal(repetido.json().codigo, "SAIDA_NAO_ESTA_EM_FORMACAO");
+    assert.equal(repetido.json().codigo, "SAIDA_NAO_PODE_SER_LIBERADA");
   });
 
   it("saída iniciada NUNCA recebe pedido novo, nem da mesma zona", async () => {
-    const emAndamento = (await listarSaidas()).find((saida) => saida.status === "preparada");
-    assert.ok(emAndamento, "há uma saída preparada para iniciar");
-    const iniciada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${emAndamento.id}/iniciar`);
+    const emAndamento = (await listarSaidas()).find((saida) => saida.status === "liberada_retirada");
+    assert.ok(emAndamento, "há uma saída liberada para o entregador iniciar");
+    const pessoaEntregadora = emAndamento.entregador?.nomeExibicao === "Carlos Entregador" ? C : P;
+    const iniciada = await ctx.api(pessoaEntregadora, "POST", `/entregas/saidas/${emAndamento.id}/iniciar`);
     assert.equal(iniciada.statusCode, 200, iniciada.body);
     assert.equal((iniciada.json() as SaidaEntrega).status, "em_andamento");
     const paradasAntes = (iniciada.json() as SaidaEntrega).paradas.length;

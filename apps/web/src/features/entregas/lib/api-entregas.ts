@@ -116,19 +116,16 @@ export function alterarMinhaDisponibilidade(entregadorId: string, disponivel: bo
  * O cliente não tem rota aqui — para ele existe só a fila derivada do próprio pedido.
  */
 
-export function listarSaidasDaEmpresa(empresaId: string): Promise<ResultadoApi<ListaSaidas>> {
-  return requisitarApi(daEmpresa(empresaId, "/saidas"), listaSaidasSchema, {});
+export function listarSaidasDaEmpresa(empresaId: string, apenasAtivas = true): Promise<ResultadoApi<ListaSaidas>> {
+  const consulta = apenasAtivas ? "" : "?ativas=false";
+  return requisitarApi(`${daEmpresa(empresaId, "/saidas")}${consulta}`, listaSaidasSchema, {});
 }
 
 export function criarSaida(empresaId: string, entregadorId: string, pedidoIds: string[]): Promise<ResultadoApi<SaidaEntrega>> {
   return requisitarApi(daEmpresa(empresaId, "/saidas"), saidaEntregaSchema, { method: "POST", body: JSON.stringify({ entregadorId, pedidoIds }) });
 }
 
-export function iniciarSaida(empresaId: string, saidaId: string): Promise<ResultadoApi<SaidaEntrega>> {
-  return requisitarApi(daEmpresa(empresaId, `/saidas/${encodeURIComponent(saidaId)}/iniciar`), saidaEntregaSchema, { method: "POST" });
-}
-
-// O ENTREGADOR inicia a própria saída (a mesma transição que a empresa faz, autorizada para ele).
+// O ENTREGADOR inicia a própria saída depois que ela foi liberada para retirada.
 export function iniciarMinhaSaida(saidaId: string): Promise<ResultadoApi<SaidaEntrega>> {
   return requisitarApi(`/entregas/saidas/${encodeURIComponent(saidaId)}/iniciar`, saidaEntregaSchema, { method: "POST" });
 }
@@ -216,9 +213,9 @@ export function salvarConfiguracaoDespacho(empresaId: string, entrada: SalvarCon
   return requisitarApi(daEmpresa(empresaId, "/despacho"), painelDespachoSchema, { method: "POST", body: JSON.stringify(entrada) });
 }
 
-// Intervenção do gestor: fechar antes da hora uma saída que ainda está juntando pedidos.
-export function fecharSaida(empresaId: string, saidaId: string): Promise<ResultadoApi<SaidaEntrega>> {
-  return requisitarApi(daEmpresa(empresaId, `/saidas/${encodeURIComponent(saidaId)}/fechar`), saidaEntregaSchema, { method: "POST" });
+// Intervenção do gestor: conclui o planejamento, se necessário, e libera a retirada.
+export function liberarSaida(empresaId: string, saidaId: string): Promise<ResultadoApi<SaidaEntrega>> {
+  return requisitarApi(daEmpresa(empresaId, `/saidas/${encodeURIComponent(saidaId)}/liberar`), saidaEntregaSchema, { method: "POST" });
 }
 
 /*

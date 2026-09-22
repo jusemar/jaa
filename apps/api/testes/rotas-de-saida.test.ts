@@ -77,7 +77,7 @@ async function pedidoProntoEm(cliente: Pessoa, ponto: { latitude: number; longit
   });
   assert.equal(resposta.statusCode, 201, resposta.body);
   let pedido: Pedido = resposta.json();
-  for (const status of ["recebido", "confirmado", "em_preparacao"] as const) pedido = (await avancar(pedido.id, status)).json();
+  for (const status of ["recebido", "em_preparacao"] as const) pedido = (await avancar(pedido.id, status)).json();
   return pedido;
 }
 
@@ -202,7 +202,8 @@ describe("rota da saída", () => {
     assert.equal(rotaTemPercursoReal(saida.rota), false);
     // Nenhum pedido se perde e a operação segue: dá para iniciar a saída normalmente.
     assert.equal(ordemAtiva(saida).length, 2);
-    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/iniciar`)).statusCode, 200);
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/liberar`)).statusCode, 200);
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`)).statusCode, 200);
     provedorFake.modo = "sucesso";
   });
 

@@ -123,12 +123,12 @@ export function AreaMinhasEntregas() {
   }
 
   /*
-   * INICIAR A SAÍDA: o entregador saiu com os pedidos. A saída passa a "em andamento" (só então o
+   * SAIR PARA ENTREGA: depois da liberação, o entregador saiu com os pedidos. A saída passa a "em andamento" (só então o
    * rastreamento vale) e cada pedido pronto vira "saiu para entrega" — tudo decidido pela API.
    * A tela já troca pelo retorno; o evento realtime confirma para a empresa e para as outras abas.
    */
   async function iniciar(saida: SaidaEntrega) {
-    if (!window.confirm(`Iniciar a saída de ${saida.empresa.nome}? Os pedidos passam a "saiu para entrega".`)) return;
+    if (!window.confirm(`Sair para entrega por ${saida.empresa.nome}? Os pedidos passam a "saiu para entrega".`)) return;
     setOcupado(true);
     try {
       const resultado = await iniciarMinhaSaida(saida.id);
@@ -269,11 +269,11 @@ export function AreaMinhasEntregas() {
 }
 
 /**
- * Ação de início da saída, só no estado em que ela é possível: PREPARADA (atribuída a ele e ainda não
- * iniciada). Em andamento, a tela diz isso em vez de oferecer iniciar de novo — e a API recusaria.
+ * Ação de início da saída, só depois da liberação para retirada. Uma rota apenas PREPARADA já está
+ * organizada, mas ainda não autoriza a saída física.
  */
 export function AcaoIniciarSaida({ saida, ocupado, aoIniciar }: { saida: SaidaEntrega; ocupado: boolean; aoIniciar: () => void }) {
-  if (saida.status === "preparada") {
+  if (saida.status === "liberada_retirada") {
     return (
       <button
         type="button"
@@ -282,9 +282,12 @@ export function AcaoIniciarSaida({ saida, ocupado, aoIniciar }: { saida: SaidaEn
         onClick={aoIniciar}
         className="min-h-11 self-start rounded-full bg-marca px-5 text-sm font-medium text-marca-conteudo disabled:opacity-50"
       >
-        Iniciar saída
+        SAIR PARA ENTREGA
       </button>
     );
+  }
+  if (saida.status === "preparada") {
+    return <p className="text-xs text-conteudo-suave">Aguardando liberação para retirada</p>;
   }
   if (saida.status === "em_andamento") {
     return (

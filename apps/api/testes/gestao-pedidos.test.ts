@@ -58,13 +58,19 @@ async function criarPedido(quantidade = 1): Promise<Pedido> {
   return resposta.json();
 }
 
-// Leva o pedido até o status desejado, um passo por vez (como a empresa faria na tela).
-// Ao chegar em "pronto", atribui o entregador: sem ele o servidor recusa a saída para entrega.
+// Leva o pedido até o status desejado. De PRONTO para a rua, usa uma saída planejada e liberada.
 async function levarAte(pedido: Pedido, alvo: StatusPedido): Promise<Pedido> {
   let atual = pedido;
   while (atual.status !== alvo) {
     if (atual.status === "pronto") {
-      assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${atual.id}/entrega`, { entregadorId })).statusCode, 200);
+      const criada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas`, { entregadorId, pedidoIds: [atual.id] });
+      assert.equal(criada.statusCode, 201, criada.body);
+      const saidaId = criada.json().id as string;
+      assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saidaId}/liberar`)).statusCode, 200);
+      const iniciada = await ctx.api(D, "POST", `/entregas/saidas/${saidaId}/iniciar`);
+      assert.equal(iniciada.statusCode, 200, iniciada.body);
+      atual = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${atual.id}`)).json();
+      continue;
     }
     const resposta = await avancar(A, pizzaria, atual.id, atual.status);
     assert.equal(resposta.statusCode, 200, resposta.body);
@@ -131,11 +137,11 @@ describe("lista de pedidos da empresa", () => {
 
   it("filtra por status e pagina com cursor determinístico", async () => {
     const pedido = await criarPedido();
-    await levarAte(pedido, "confirmado");
+    await levarAte(pedido, "em_preparacao");
 
-    const confirmados: ListaPedidosEmpresa = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos?filtro=confirmados`)).json();
-    assert.deepEqual(confirmados.pedidos.map((item) => item.status), confirmados.pedidos.map(() => "confirmado"));
-    assert.ok(confirmados.pedidos.some((item) => item.id === pedido.id));
+    const emPreparacao: ListaPedidosEmpresa = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos?filtro=em_preparacao`)).json();
+    assert.deepEqual(emPreparacao.pedidos.map((item) => item.status), emPreparacao.pedidos.map(() => "em_preparacao"));
+    assert.ok(emPreparacao.pedidos.some((item) => item.id === pedido.id));
 
     const recebidos: ListaPedidosEmpresa = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos?filtro=recebidos`)).json();
     assert.equal(recebidos.pedidos.some((item) => item.id === pedido.id), false);
@@ -190,7 +196,7 @@ describe("fluxo de status", () => {
     assert.equal(salto.statusCode, 409);
     assert.equal(salto.json().codigo, "TRANSICAO_PEDIDO_INVALIDA");
 
-    const confirmado = await levarAte(pedido, "confirmado");
+    const confirmado = await levarAte(pedido, "em_preparacao");
     // Regressão: pedir para avançar a partir de um status já superado.
     assert.equal((await avancar(A, pizzaria, confirmado.id, "recebido")).statusCode, 409);
     // Status que não existe no domínio.
@@ -199,8 +205,8 @@ describe("fluxo de status", () => {
     assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${pedido.id}/avancar`, {})).statusCode, 400);
 
     const atual = await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${pedido.id}`);
-    assert.equal(atual.json().status, "confirmado");
-    assert.deepEqual(atual.json().historico.map((evento: { status: string }) => evento.status), ["recebido", "confirmado"]);
+    assert.equal(atual.json().status, "em_preparacao");
+    assert.deepEqual(atual.json().historico.map((evento: { status: string }) => evento.status), ["recebido", "em_preparacao"]);
   });
 
   it("entregue é terminal: não avança e não pode ser cancelado", async () => {
@@ -235,7 +241,7 @@ describe("cancelamento", () => {
 
     assert.equal(cancelado.status, "cancelado");
     assert.equal(cancelado.motivoCancelamento, "Produto indisponível");
-    assert.deepEqual(cancelado.historico.map((evento) => evento.status), ["recebido", "confirmado", "em_preparacao", "cancelado"]);
+    assert.deepEqual(cancelado.historico.map((evento) => evento.status), ["recebido", "em_preparacao", "cancelado"]);
     assert.equal(cancelado.historico.at(-1)?.motivo, "Produto indisponível");
     // Cancelado é terminal.
     assert.equal((await avancar(A, pizzaria, cancelado.id, "cancelado")).statusCode, 409);
@@ -297,7 +303,7 @@ describe("realtime e card na conversa", () => {
     const evento = doCliente[0];
     assert.equal(evento?.pedido.id, pedido.id);
     assert.equal(evento?.pedido.numero, pedido.numero);
-    assert.equal(evento?.pedido.status, "confirmado");
+    assert.equal(evento?.pedido.status, "em_preparacao");
     assert.equal(evento?.conversaId, conversaBP);
     assert.equal(evento?.motivoCancelamento, null);
     // O resumo do card vem completo: o cliente troca o card sem recarregar o histórico.
@@ -308,7 +314,7 @@ describe("realtime e card na conversa", () => {
     assert.equal(mensagensNovas.length, 0);
     assert.equal(doTerceiro.length, 0, "quem não é do pedido não recebe nada");
 
-    const cancelamento = await cancelar(A, pizzaria, pedido.id, "confirmado", "Loja impossibilitada de atender");
+    const cancelamento = await cancelar(A, pizzaria, pedido.id, "em_preparacao", "Loja impossibilitada de atender");
     assert.equal(cancelamento.statusCode, 200);
     await aguardarAte(() => doCliente.length === 2);
     assert.equal(doCliente[1]?.pedido.status, "cancelado");
@@ -336,7 +342,7 @@ describe("realtime e card na conversa", () => {
 
 describe("pagamento preservado", () => {
   it("forma de pagamento e troco não mudam ao longo do fluxo, e cartão nunca ganha troco", async () => {
-    const dinheiro = await levarAte(await criarPedido(), "em_rota");
+    const dinheiro = await levarAte(await criarPedido(), "saiu_para_entrega");
     assert.equal(dinheiro.formaPagamentoNaEntrega, "dinheiro");
     assert.equal(dinheiro.trocoParaCentavos, 10000);
 

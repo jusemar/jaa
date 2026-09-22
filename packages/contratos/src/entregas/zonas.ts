@@ -69,6 +69,7 @@ export const configuracaoDespachoSchema = z.object({
   maxPedidosPorSaida: z.number().int().min(MAXIMO_PEDIDOS_POR_SAIDA_MINIMO).max(MAXIMO_PEDIDOS_POR_SAIDA_MAXIMO),
   tempoFormacaoMinutos: z.number().int().min(TEMPO_FORMACAO_MINIMO_MINUTOS).max(TEMPO_FORMACAO_MAXIMO_MINUTOS),
   combinarZonas: z.boolean(),
+  liberacaoAutomatica: z.boolean(),
 });
 
 export type ConfiguracaoDespacho = z.infer<typeof configuracaoDespachoSchema>;
@@ -81,6 +82,7 @@ export const CONFIGURACAO_DESPACHO_PADRAO: ConfiguracaoDespacho = {
   maxPedidosPorSaida: MAXIMO_PEDIDOS_POR_SAIDA_PADRAO,
   tempoFormacaoMinutos: TEMPO_FORMACAO_PADRAO_MINUTOS,
   combinarZonas: true,
+  liberacaoAutomatica: true,
 };
 
 /**

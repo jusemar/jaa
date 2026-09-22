@@ -105,27 +105,7 @@ export async function obterSaidaDaEmpresaAutorizado(
 }
 
 /**
- * INICIAR: o entregador recebeu fisicamente os pedidos e saiu. A saída vira "em andamento" e cada
- * pedido PRONTO avança para "saiu para entrega" pela máquina de estados existente (com histórico),
- * nunca por atalho — por isso quem chama passa `avancarPedido`.
- */
-export async function iniciarSaidaAutorizada(
-  banco: Banco,
-  usuarioId: string,
-  empresaId: string,
-  saidaId: string,
-  avancarPedido: (pedidoId: string) => Promise<void>,
-): Promise<{ tipo: "iniciada"; saida: SaidaComParadasRegistro } | SemAcesso | SemSaida | { tipo: "status-invalido" }> {
-  const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-entregadores");
-  if (!acesso) return { tipo: "empresa-nao-encontrada" };
-
-  const atual = await buscarSaidaDaEmpresa(banco, empresaId, saidaId);
-  if (!atual) return { tipo: "saida-nao-encontrada" };
-  return iniciarSaida(banco, atual, avancarPedido);
-}
-
-/**
- * O MESMO início, pedido pelo ENTREGADOR ATUAL da saída — é ele quem sai com os pedidos, e o
+ * INICIAR, pedido pelo ENTREGADOR ATUAL da saída: é ele quem sai com os pedidos, e o
  * rastreamento só começa com a saída em andamento. A autorização é a de sempre para o lado dele:
  * só quem está com a saída (vínculo ativo) a enxerga; de outra pessoa é indistinguível de inexistente.
  */
@@ -141,8 +121,8 @@ export async function iniciarMinhaSaida(
 }
 
 /**
- * Núcleo do início, único para empresa e entregador: só sai de PREPARADA (atribuída e ainda não
- * iniciada), a troca de status é condicional no banco (dois toques simultâneos: um vence) e cada
+ * Núcleo do início: só sai de LIBERADA PARA RETIRADA, a troca de
+ * status é condicional no banco (dois toques simultâneos: um vence) e cada
  * pedido PRONTO avança pela máquina de estados do pedido.
  */
 async function iniciarSaida(
@@ -150,7 +130,7 @@ async function iniciarSaida(
   atual: SaidaComParadasRegistro,
   avancarPedido: (pedidoId: string) => Promise<void>,
 ): Promise<{ tipo: "iniciada"; saida: SaidaComParadasRegistro } | { tipo: "status-invalido" }> {
-  if (atual.saida.status !== "preparada") return { tipo: "status-invalido" };
+  if (atual.saida.status !== "liberada_retirada") return { tipo: "status-invalido" };
 
   const iniciada = await marcarSaidaIniciada(banco, atual.saida.id);
   if (!iniciada) return { tipo: "status-invalido" };
@@ -253,7 +233,7 @@ export async function calcularFilaDoPedido(banco: Banco, pedidoId: string): Prom
   const posicao = ativas.findIndex((item) => item.pedidoId === pedidoId);
   if (posicao < 0) return { pedidoId, situacao: "encerrado", entregasAntes: null };
 
-  // Em formação, aguardando entregador ou preparada: para o cliente é tudo "separado para a entrega".
+  // Antes do início real, para o cliente é tudo "separado para a entrega".
   if (saida.saida.status !== "em_andamento") return { pedidoId, situacao: "aguardando_saida", entregasAntes: posicao };
   return posicao === 0 ? { pedidoId, situacao: "indo_ate_voce", entregasAntes: 0 } : { pedidoId, situacao: "na_fila", entregasAntes: posicao };
 }

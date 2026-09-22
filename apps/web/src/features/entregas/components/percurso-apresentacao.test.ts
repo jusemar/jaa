@@ -41,6 +41,7 @@ const saida = (dados: Partial<SaidaEntrega> = {}): SaidaEntrega => ({
   prazoFormacaoEm: null,
   fechadaEm: "2026-09-16T11:59:00.000Z",
   atribuidaEm: "2026-09-16T12:00:00.000Z",
+  liberadaEm: null,
   iniciadaEm: null,
   concluidaEm: null,
   ...dados,

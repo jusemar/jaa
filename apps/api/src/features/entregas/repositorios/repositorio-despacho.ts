@@ -256,7 +256,7 @@ export async function atribuirSaidaAoPrimeiroDaFila(
     await travarEmpresa(transacao, dados.empresaId);
 
     const [saida] = await transacao
-      .select({ id: saidasEntrega.id, status: saidasEntrega.status })
+      .select({ id: saidasEntrega.id, status: saidasEntrega.status, liberadaEm: saidasEntrega.liberadaEm })
       .from(saidasEntrega)
       .where(and(eq(saidasEntrega.id, dados.saidaId), eq(saidasEntrega.empresaId, dados.empresaId), eq(saidasEntrega.status, "aguardando_entregador")))
       .for("update")
@@ -294,7 +294,12 @@ export async function atribuirSaidaAoPrimeiroDaFila(
 
     await transacao
       .update(saidasEntrega)
-      .set({ entregadorId: entregador.id, status: "preparada", atribuidaEm: dados.agora })
+      .set({
+        entregadorId: entregador.id,
+        // A decisão de liberar pode ter ocorrido antes de existir alguém na fila.
+        status: saida.liberadaEm ? "liberada_retirada" : "preparada",
+        atribuidaEm: dados.agora,
+      })
       .where(eq(saidasEntrega.id, dados.saidaId));
 
     for (const parada of paradas) {

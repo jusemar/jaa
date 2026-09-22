@@ -1,6 +1,7 @@
 import {
   contaAtualSchema,
   identidadePessoalSchema,
+  situacaoSenhaSchema,
   type ContaAtual,
   type CriarIdentidadePessoalEntrada,
   type IdentidadePessoal,
@@ -20,10 +21,24 @@ export function criarIdentidadePessoal(
   });
 }
 
+export function definirSenhaInicial(senha: string) {
+  return requisitarApi("/conta/senha", situacaoSenhaSchema, {
+    method: "POST",
+    body: JSON.stringify({ senha }),
+  });
+}
+
 /**
  * Entrar com IDENTIFICADOR (celular ou @usuario) + SENHA. A rota do Jaa só descobre de qual conta o
  * identificador fala; quem autentica e cria a sessão é o Better Auth, do outro lado.
  */
-export function entrarComSenha(identificador: string, senha: string): Promise<ResultadoApi<unknown>> {
-  return requisitarApi("/autenticacao/entrar", { parse: (valor) => valor }, { method: "POST", body: JSON.stringify({ identificador, senha }) });
+export function entrarComSenha(
+  identificador: string,
+  senha: string,
+): Promise<ResultadoApi<unknown>> {
+  return requisitarApi(
+    "/autenticacao/entrar",
+    { parse: (valor) => valor },
+    { method: "POST", body: JSON.stringify({ identificador, senha }) },
+  );
 }

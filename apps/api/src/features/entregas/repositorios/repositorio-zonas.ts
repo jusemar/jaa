@@ -134,6 +134,7 @@ export async function buscarConfiguracaoDespacho(banco: Banco, empresaId: string
     maxPedidosPorSaida: linha.maxPedidosPorSaida,
     tempoFormacaoMinutos: linha.tempoFormacaoMinutos,
     combinarZonas: linha.combinarZonas,
+    liberacaoAutomatica: linha.liberacaoAutomatica,
   };
 }
 
@@ -144,5 +145,10 @@ export async function salvarConfiguracaoDespacho(banco: Banco, empresaId: string
     .onConflictDoUpdate({ target: configuracoesDespacho.empresaId, set: configuracao })
     .returning();
   if (!linha) throw new Error("Gravação da configuração de despacho não retornou registro.");
-  return { maxPedidosPorSaida: linha.maxPedidosPorSaida, tempoFormacaoMinutos: linha.tempoFormacaoMinutos, combinarZonas: linha.combinarZonas };
+  return {
+    maxPedidosPorSaida: linha.maxPedidosPorSaida,
+    tempoFormacaoMinutos: linha.tempoFormacaoMinutos,
+    combinarZonas: linha.combinarZonas,
+    liberacaoAutomatica: linha.liberacaoAutomatica,
+  };
 }

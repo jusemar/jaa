@@ -1,6 +1,11 @@
 import { fromNodeHeaders } from "better-auth/node";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { CABECALHO_IP_CLIENTE, CAMINHO_BASE_AUTENTICACAO, type Autenticacao } from "../autenticacao.js";
+import type { ErroApi } from "@jaa/contratos";
+import {
+  CABECALHO_IP_CLIENTE,
+  CAMINHO_BASE_AUTENTICACAO,
+  type Autenticacao,
+} from "../autenticacao.js";
 
 // Cabeçalhos que não podem ser repassados: descrevem o corpo original, que é serializado de novo.
 const CABECALHOS_DO_CORPO_ORIGINAL = ["content-length", "transfer-encoding"];
@@ -19,6 +24,7 @@ export async function encaminharParaBetterAuth(
   resposta: FastifyReply,
   caminho: string,
   corpo: unknown,
+  erroDeAutenticacao?: ErroApi,
 ) {
   const url = new URL(`${CAMINHO_BASE_AUTENTICACAO}${caminho}`, urlBase);
   const cabecalhos = fromNodeHeaders(requisicao.headers);
@@ -28,8 +34,16 @@ export async function encaminharParaBetterAuth(
   cabecalhos.set(CABECALHO_IP_CLIENTE, requisicao.ip);
 
   const respostaAutenticacao = await autenticacao.handler(
-    new Request(url, { method: "POST", headers: cabecalhos, body: JSON.stringify(corpo) }),
+    new Request(url, {
+      method: "POST",
+      headers: cabecalhos,
+      body: JSON.stringify(corpo),
+    }),
   );
+
+  if (erroDeAutenticacao && respostaAutenticacao.status === 401) {
+    return resposta.code(401).send(erroDeAutenticacao);
+  }
 
   resposta.status(respostaAutenticacao.status);
   respostaAutenticacao.headers.forEach((valor, nome) => {
@@ -38,5 +52,7 @@ export async function encaminharParaBetterAuth(
   const cookies = respostaAutenticacao.headers.getSetCookie();
   if (cookies.length > 0) resposta.header("set-cookie", cookies);
 
-  return resposta.send(respostaAutenticacao.body ? await respostaAutenticacao.text() : null);
+  return resposta.send(
+    respostaAutenticacao.body ? await respostaAutenticacao.text() : null,
+  );
 }
