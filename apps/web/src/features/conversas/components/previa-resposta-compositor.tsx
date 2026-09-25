@@ -9,11 +9,25 @@ export type RespostaEmComposicao = {
   conteudoTruncado: boolean;
 };
 
-export function PreviaRespostaCompositor({ resposta, aoCancelar }: { resposta: RespostaEmComposicao; aoCancelar: () => void }) {
+export function PreviaRespostaCompositor({
+  resposta,
+  aoCancelar,
+}: {
+  resposta: RespostaEmComposicao;
+  aoCancelar: () => void;
+}) {
   return (
-    <div aria-label="Resposta em composição" data-mensagem-respondida-id={resposta.mensagemId} className="flex items-start gap-2 rounded-lg bg-superficie-suave p-1.5">
+    <div
+      aria-label="Resposta em composição"
+      data-mensagem-respondida-id={resposta.mensagemId}
+      className="flex items-start gap-2 rounded-jaa border border-borda bg-superficie p-1.5 shadow-suave"
+    >
       <div className="min-w-0 flex-1">
-        <ReferenciaResposta nomeAutor={resposta.nomeAutor} previaConteudo={resposta.previaConteudo} conteudoTruncado={resposta.conteudoTruncado} />
+        <ReferenciaResposta
+          nomeAutor={resposta.nomeAutor}
+          previaConteudo={resposta.previaConteudo}
+          conteudoTruncado={resposta.conteudoTruncado}
+        />
       </div>
       <button
         type="button"

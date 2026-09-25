@@ -1,14 +1,16 @@
 "use client";
 
-import { entregadorPodeReceberAtribuicao, type EntregaDoPedido, type EntregadorDaEmpresa, type FiltroPedidosEmpresa, type Pedido, type PedidoDaEmpresa } from "@jaa/contratos";
+import { EVENTO_SAIDA_ATUALIZADA, entregadorPodeReceberAtribuicao, eventoSaidaAtualizadaSchema, type EntregaDoPedido, type EntregadorDaEmpresa, type FiltroPedidosEmpresa, type Pedido, type PedidoDaEmpresa, type SaidaEntrega } from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
 import { EntregaDoPedidoEmpresa } from "@/features/entregas/components/entrega-do-pedido";
-import { atribuirEntrega, listarEntregadores, obterEntregaDoPedido } from "@/features/entregas/lib/api-entregas";
+import { atribuirEntrega, listarEntregadores, listarSaidasDaEmpresa, obterEntregaDoPedido } from "@/features/entregas/lib/api-entregas";
+import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { useStatusPedido } from "../hooks/use-status-pedido";
 import { avancarStatusPedido, cancelarPedido, listarPedidosDaEmpresa, obterPedidoDaEmpresa } from "../lib/api-pedidos";
 import { AcoesPedidoEmpresa } from "./acoes-pedido-empresa";
 import { DetalhePedido } from "./apresentacao-pedido";
 import { FiltrosPedidos, ListaPedidosEmpresa } from "./lista-pedidos-empresa";
+import { LegendaStatusEntrega } from "./resumo-logistico-pedido";
 
 // Interface TÉCNICA da operação: a empresa recebe, acompanha e conduz seus pedidos. Não é o design final.
 // Toda ação é autorizada e validada pela API; a tela só mostra a próxima ação possível.
@@ -22,31 +24,48 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
   // Entrega do pedido aberto: quem está levando + histórico de atribuições.
   const [entrega, setEntrega] = useState<EntregaDoPedido | null>(null);
   const [entregadores, setEntregadores] = useState<EntregadorDaEmpresa[]>([]);
+  const [saidas, setSaidas] = useState<SaidaEntrega[]>([]);
 
   const carregar = useCallback(
     async (filtroAtual: FiltroPedidosEmpresa) => {
-      const resultado = await listarPedidosDaEmpresa(empresaId, { filtro: filtroAtual });
+      const [resultado, rotas] = await Promise.all([listarPedidosDaEmpresa(empresaId, { filtro: filtroAtual }), listarSaidasDaEmpresa(empresaId, false)]);
       if (!resultado.ok) {
         setErro(resultado.mensagem);
         return;
       }
       setErro(null);
       setPedidos(resultado.dados.pedidos);
+      if (rotas.ok) setSaidas(rotas.dados.saidas);
     },
     [empresaId],
   );
 
   useEffect(() => {
     let ativo = true;
-    void listarPedidosDaEmpresa(empresaId, { filtro }).then((resultado) => {
+    void Promise.all([listarPedidosDaEmpresa(empresaId, { filtro }), listarSaidasDaEmpresa(empresaId, false)]).then(([resultado, rotas]) => {
       if (!ativo) return;
       if (resultado.ok) setPedidos(resultado.dados.pedidos);
       else setErro(resultado.mensagem);
+      if (rotas.ok) setSaidas(rotas.dados.saidas);
     });
     return () => {
       ativo = false;
     };
   }, [empresaId, filtro]);
+
+  useEffect(() => {
+    const socket = obterClienteRealtime();
+    const aoAtualizarSaida = (evento: unknown) => {
+      const resultado = eventoSaidaAtualizadaSchema.safeParse(evento);
+      if (!resultado.success) return;
+      const atualizada = resultado.data.saida;
+      setSaidas((atuais) => (atuais.some((item) => item.id === atualizada.id) ? atuais.map((item) => (item.id === atualizada.id ? atualizada : item)) : [atualizada, ...atuais]));
+    };
+    socket.on(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
+    return () => {
+      socket.off(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
+    };
+  }, []);
 
   // Status mudado aqui ou por outro operador: lista e pedido aberto acompanham sem F5.
   const abertoId = aberto?.id ?? null;
@@ -125,7 +144,8 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
       </div>
 
       <FiltrosPedidos filtro={filtro} aoFiltrar={setFiltro} />
-      <ListaPedidosEmpresa pedidos={pedidos} aoAbrir={(pedido) => void abrir(pedido.id)} />
+      <LegendaStatusEntrega />
+      <ListaPedidosEmpresa pedidos={pedidos} saidas={saidas} aoAbrir={(pedido) => void abrir(pedido.id)} />
 
       {aberto && (
         <DetalhePedido

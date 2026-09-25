@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { Banco } from "@jaa/banco";
-import { destinosPedido, historicoStatusPedido, identidades, itensPedido, mensagens, pedidos } from "@jaa/banco/schema";
-import type { DestinoPedido, EventoStatusPedido, FormaPagamentoEntrega, ItemPedido, StatusPedido, Uf } from "@jaa/contratos";
+import { destinosPedido, escolhasItemPedido, historicoStatusPedido, identidades, itensPedido, mensagens, pedidos } from "@jaa/banco/schema";
+import type { DestinoPedido, EscolhaItemPedido, EventoStatusPedido, FormaPagamentoEntrega, ItemPedido, StatusPedido, Uf } from "@jaa/contratos";
 import { and, asc, count, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 export type PedidoRegistro = typeof pedidos.$inferSelect;
@@ -19,12 +20,27 @@ export interface PedidoComItensRegistro {
   historico: EventoStatusPedido[];
 }
 
+/** Escolha a gravar em SNAPSHOT (nome do grupo, nome da opção e acréscimo do momento da compra). */
+export interface EscolhaParaGravar {
+  // Referência auxiliar: se a opção for apagada depois, o snapshot continua legível.
+  opcaoId: string;
+  grupoNome: string;
+  opcaoNome: string;
+  precoAdicionalCentavos: number;
+  posicao: number;
+}
+
 export interface ItemParaGravar {
   produtoId: string;
   nomeProduto: string;
+  // Já inclui os acréscimos das opções escolhidas (calculado pelo servidor, nunca pelo cliente).
   precoUnitarioCentavos: number;
   quantidade: number;
   subtotalCentavos: number;
+  // Vazio = produto comum, sem personalização.
+  escolhas: EscolhaParaGravar[];
+  // Instrução de preparo desta linha; null = sem observação.
+  observacao: string | null;
 }
 
 export class ErroPedidoDuplicado extends Error {
@@ -101,7 +117,19 @@ export async function inserirPedidoComItens(
         .returning({ id: pedidos.id });
       if (!pedido) throw new Error("Inserção de pedido não retornou registro.");
 
-      await transacao.insert(itensPedido).values(dados.itens.map((item) => ({ ...item, pedidoId: pedido.id, empresaId: dados.empresaId })));
+      /*
+       * Itens + escolhas na MESMA transação do pedido: um item personalizado nunca existe sem a
+       * montagem que o cliente escolheu. O id de cada item é gerado AQUI, para ligar item e escolhas
+       * sem depender da ordem em que o INSERT devolve as linhas.
+       */
+      const itens = dados.itens.map(({ escolhas, ...item }) => ({
+        linha: { ...item, id: randomUUID(), pedidoId: pedido.id, empresaId: dados.empresaId },
+        escolhas,
+      }));
+      await transacao.insert(itensPedido).values(itens.map(({ linha }) => linha));
+
+      const escolhas = itens.flatMap(({ linha, escolhas: doItem }) => doItem.map((escolha) => ({ ...escolha, itemPedidoId: linha.id })));
+      if (escolhas.length > 0) await transacao.insert(escolhasItemPedido).values(escolhas);
 
       // Destino: snapshot do endereço e do ponto confirmado (não depende do endereço salvo depois).
       await transacao.insert(destinosPedido).values({ ...dados.destino, pedidoId: pedido.id });
@@ -139,7 +167,30 @@ const colunasItem = {
   precoUnitarioCentavos: itensPedido.precoUnitarioCentavos,
   quantidade: itensPedido.quantidade,
   subtotalCentavos: itensPedido.subtotalCentavos,
+  observacao: itensPedido.observacao,
 };
+
+/** Escolhas de TODOS os itens do pedido em uma consulta (sem N+1), na ordem em que foram montadas. */
+async function escolhasPorItem(banco: Banco, itemIds: string[]): Promise<Map<string, EscolhaItemPedido[]>> {
+  const porItem = new Map<string, EscolhaItemPedido[]>();
+  if (itemIds.length === 0) return porItem;
+
+  const linhas = await banco
+    .select({
+      itemPedidoId: escolhasItemPedido.itemPedidoId,
+      grupoNome: escolhasItemPedido.grupoNome,
+      opcaoNome: escolhasItemPedido.opcaoNome,
+      precoAdicionalCentavos: escolhasItemPedido.precoAdicionalCentavos,
+    })
+    .from(escolhasItemPedido)
+    .where(inArray(escolhasItemPedido.itemPedidoId, itemIds))
+    .orderBy(asc(escolhasItemPedido.itemPedidoId), asc(escolhasItemPedido.posicao), asc(escolhasItemPedido.id));
+
+  for (const { itemPedidoId, ...escolha } of linhas) {
+    porItem.set(itemPedidoId, [...(porItem.get(itemPedidoId) ?? []), escolha]);
+  }
+  return porItem;
+}
 
 function serializarDestino(destino: DestinoRegistro): DestinoPedido {
   return {
@@ -173,7 +224,12 @@ export async function listarHistoricoPedido(banco: Banco, pedidoId: string): Pro
 
 async function montarPedido(banco: Banco, pedido: PedidoRegistro | undefined): Promise<PedidoComItensRegistro | null> {
   if (!pedido) return null;
-  const itens = await banco.select(colunasItem).from(itensPedido).where(eq(itensPedido.pedidoId, pedido.id)).orderBy(asc(itensPedido.nomeProduto), asc(itensPedido.id));
+  const linhasItens = await banco.select(colunasItem).from(itensPedido).where(eq(itensPedido.pedidoId, pedido.id)).orderBy(asc(itensPedido.nomeProduto), asc(itensPedido.id));
+  const escolhas = await escolhasPorItem(
+    banco,
+    linhasItens.map((item) => item.id),
+  );
+  const itens: ItemPedido[] = linhasItens.map((item) => ({ ...item, escolhas: escolhas.get(item.id) ?? [] }));
   const [cliente] = await banco
     .select({ identidadeId: identidades.id, tipo: identidades.tipo, nomeExibicao: identidades.nomeExibicao, nomeUsuario: identidades.nomeUsuario })
     .from(identidades)

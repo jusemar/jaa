@@ -11,17 +11,16 @@ import { iniciaisDoNome, type ParticipanteConversa } from "@jaa/contratos";
  * a pessoa reconhece "isto é comercial" antes mesmo de ler.
  */
 
-// Tons neutros/jade para pessoas; a escolha é estável por identidade (mesma pessoa, mesma cor).
-const TONS_PESSOA = [
-  "bg-[color-mix(in_oklab,var(--cor-marca)_18%,var(--cor-fundo))] text-conteudo",
-  "bg-conteudo text-marca-conteudo",
-  "bg-superficie-suave text-conteudo",
-] as const;
+/*
+ * Três tons, como na referência de UI/UX aprovada: marca, conteúdo (escuro) e realce. A escolha é
+ * estável por identidade (mesma pessoa, mesma cor sempre) em vez de depender da posição na lista.
+ */
+const TONS_PESSOA = ["bg-marca text-marca-conteudo", "bg-conteudo text-fundo", "bg-realce text-conteudo"] as const;
 
-const TOM_EMPRESA = "bg-[color-mix(in_oklab,var(--cor-ouro)_30%,var(--cor-fundo))] text-conteudo";
+const TOM_EMPRESA = "bg-[color-mix(in_oklab,var(--cor-ouro)_35%,var(--cor-superficie))] text-conteudo";
 
 const TAMANHOS = {
-  pequeno: "h-8 w-8 text-[0.65rem]",
+  pequeno: "h-8 w-8 text-[10px]",
   medio: "h-11 w-11 text-xs",
   grande: "h-16 w-16 text-lg",
 } as const;
@@ -57,7 +56,7 @@ export function AvatarIdentidade({
 
   const tom = identidade.tipo === "empresarial" ? TOM_EMPRESA : tomDe(identidade.identidadeId);
   return (
-    <span aria-hidden data-avatar={identidade.tipo} className={`${classes} ${tom} fonte-display grid place-items-center font-semibold`}>
+    <span aria-hidden data-avatar={identidade.tipo} className={`${classes} ${tom} grid place-items-center font-bold`}>
       {iniciaisDoNome(identidade.nomeExibicao)}
     </span>
   );

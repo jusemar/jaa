@@ -15,8 +15,8 @@ const resumo: ResumoPedido = {
   trocoParaCentavos: null,
   totalCentavos: 9180,
   itens: [
-    { nomeProduto: "Pizza Calabresa", quantidade: 2, subtotalCentavos: 7980 },
-    { nomeProduto: "Refrigerante 2L", quantidade: 1, subtotalCentavos: 1200 },
+    { nomeProduto: "Pizza Calabresa", quantidade: 2, subtotalCentavos: 7980, escolhas: [], observacao: null },
+    { nomeProduto: "Refrigerante 2L", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null },
   ],
 };
 
@@ -29,8 +29,8 @@ const pedido: Pedido = {
   empresa: { identidadeId: "bbbbbbbb-0000-4000-8000-000000000000", nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh" },
   cliente: { identidadeId: "aaaaaaaa-0000-4000-8000-000000000000", nomeExibicao: "Junior Rocha", nomeUsuario: "junior", tipo: "pessoal" },
   itens: [
-    { id: "11111111-0000-4000-8000-000000000000", produtoId: "22222222-0000-4000-8000-000000000000", nomeProduto: "Pizza Calabresa", precoUnitarioCentavos: 3990, quantidade: 2, subtotalCentavos: 7980 },
-    { id: "33333333-0000-4000-8000-000000000000", produtoId: "44444444-0000-4000-8000-000000000000", nomeProduto: "Refrigerante 2L", precoUnitarioCentavos: 1200, quantidade: 1, subtotalCentavos: 1200 },
+    { id: "11111111-0000-4000-8000-000000000000", produtoId: "22222222-0000-4000-8000-000000000000", nomeProduto: "Pizza Calabresa", precoUnitarioCentavos: 3990, quantidade: 2, subtotalCentavos: 7980, escolhas: [], observacao: null },
+    { id: "33333333-0000-4000-8000-000000000000", produtoId: "44444444-0000-4000-8000-000000000000", nomeProduto: "Refrigerante 2L", precoUnitarioCentavos: 1200, quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null },
   ],
   formaPagamentoNaEntrega: "dinheiro",
   trocoParaCentavos: null,

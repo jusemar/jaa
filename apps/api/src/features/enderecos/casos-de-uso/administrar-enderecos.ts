@@ -1,12 +1,18 @@
 import type { Banco } from "@jaa/banco";
-import { MAXIMO_ENDERECOS_POR_IDENTIDADE, alteracaoInvalidaLocalizacao, type Coordenadas } from "@jaa/contratos";
+import {
+  MAXIMO_ENDERECOS_POR_IDENTIDADE,
+  alteracaoInvalidaLocalizacao,
+  type Coordenadas,
+} from "@jaa/contratos";
 import {
   arquivarEndereco,
   atualizarEndereco,
+  atualizarEnderecoComLocalizacao,
   buscarEndereco,
   confirmarLocalizacao,
   contarEnderecos,
   inserirEndereco,
+  inserirEnderecoComLocalizacao,
   listarEnderecos,
   type DadosEndereco,
   type EnderecoRegistro,
@@ -18,21 +24,85 @@ import {
  * Endereço de outra pessoa é indistinguível de inexistente.
  */
 
-type Resultado<T> = { tipo: "ok"; dados: T } | { tipo: "endereco-nao-encontrado" } | { tipo: "limite-de-enderecos" };
+type Resultado<T> =
+  | { tipo: "ok"; dados: T }
+  | { tipo: "endereco-nao-encontrado" }
+  | { tipo: "limite-de-enderecos" };
 
-export function listarEnderecosDoCliente(banco: Banco, identidadeId: string): Promise<EnderecoRegistro[]> {
+export function listarEnderecosDoCliente(
+  banco: Banco,
+  identidadeId: string,
+): Promise<EnderecoRegistro[]> {
   return listarEnderecos(banco, identidadeId);
 }
 
-export async function obterEnderecoDoCliente(banco: Banco, identidadeId: string, enderecoId: string): Promise<Resultado<EnderecoRegistro>> {
+export async function obterEnderecoDoCliente(
+  banco: Banco,
+  identidadeId: string,
+  enderecoId: string,
+): Promise<Resultado<EnderecoRegistro>> {
   const endereco = await buscarEndereco(banco, identidadeId, enderecoId);
-  return endereco ? { tipo: "ok", dados: endereco } : { tipo: "endereco-nao-encontrado" };
+  return endereco
+    ? { tipo: "ok", dados: endereco }
+    : { tipo: "endereco-nao-encontrado" };
 }
 
-export async function cadastrarEndereco(banco: Banco, identidadeId: string, dados: DadosEndereco): Promise<Resultado<EnderecoRegistro>> {
-  if ((await contarEnderecos(banco, identidadeId)) >= MAXIMO_ENDERECOS_POR_IDENTIDADE) return { tipo: "limite-de-enderecos" };
+export async function cadastrarEndereco(
+  banco: Banco,
+  identidadeId: string,
+  dados: DadosEndereco,
+): Promise<Resultado<EnderecoRegistro>> {
+  if (
+    (await contarEnderecos(banco, identidadeId)) >=
+    MAXIMO_ENDERECOS_POR_IDENTIDADE
+  )
+    return { tipo: "limite-de-enderecos" };
   // Nasce sem ponto: a primeira utilização passa pela confirmação no mapa.
-  return { tipo: "ok", dados: await inserirEndereco(banco, identidadeId, dados) };
+  return {
+    tipo: "ok",
+    dados: await inserirEndereco(banco, identidadeId, dados),
+  };
+}
+
+export async function cadastrarEnderecoComLocalizacao(
+  banco: Banco,
+  identidadeId: string,
+  dados: DadosEndereco,
+  coordenadas: Coordenadas,
+): Promise<Resultado<EnderecoRegistro>> {
+  if (
+    (await contarEnderecos(banco, identidadeId)) >=
+    MAXIMO_ENDERECOS_POR_IDENTIDADE
+  )
+    return { tipo: "limite-de-enderecos" };
+  return {
+    tipo: "ok",
+    dados: await inserirEnderecoComLocalizacao(
+      banco,
+      identidadeId,
+      dados,
+      coordenadas,
+    ),
+  };
+}
+
+export async function editarEnderecoComLocalizacao(
+  banco: Banco,
+  identidadeId: string,
+  enderecoId: string,
+  dados: DadosEndereco,
+  coordenadas: Coordenadas,
+): Promise<Resultado<EnderecoRegistro>> {
+  const atualizado = await atualizarEnderecoComLocalizacao(
+    banco,
+    identidadeId,
+    enderecoId,
+    dados,
+    coordenadas,
+  );
+  return atualizado
+    ? { tipo: "ok", dados: atualizado }
+    : { tipo: "endereco-nao-encontrado" };
 }
 
 /**
@@ -40,22 +110,53 @@ export async function cadastrarEndereco(banco: Banco, identidadeId: string, dado
  * (pode ser outro destino físico), a confirmação anterior deixa de valer e o ponto é limpo: a próxima
  * utilização pede nova confirmação no mapa. Apelido não invalida nada.
  */
-export async function editarEndereco(banco: Banco, identidadeId: string, enderecoId: string, dados: DadosEndereco): Promise<Resultado<EnderecoRegistro>> {
+export async function editarEndereco(
+  banco: Banco,
+  identidadeId: string,
+  enderecoId: string,
+  dados: DadosEndereco,
+): Promise<Resultado<EnderecoRegistro>> {
   const atual = await buscarEndereco(banco, identidadeId, enderecoId);
   if (!atual) return { tipo: "endereco-nao-encontrado" };
 
   const manterLocalizacao = !alteracaoInvalidaLocalizacao(atual, dados);
-  const atualizado = await atualizarEndereco(banco, identidadeId, enderecoId, dados, manterLocalizacao);
-  return atualizado ? { tipo: "ok", dados: atualizado } : { tipo: "endereco-nao-encontrado" };
+  const atualizado = await atualizarEndereco(
+    banco,
+    identidadeId,
+    enderecoId,
+    dados,
+    manterLocalizacao,
+  );
+  return atualizado
+    ? { tipo: "ok", dados: atualizado }
+    : { tipo: "endereco-nao-encontrado" };
 }
 
 // Confirmar ou reajustar o pin: ação explícita do cliente, que substitui o ponto e a data.
-export async function confirmarPontoDeEntrega(banco: Banco, identidadeId: string, enderecoId: string, coordenadas: Coordenadas): Promise<Resultado<EnderecoRegistro>> {
-  const confirmado = await confirmarLocalizacao(banco, identidadeId, enderecoId, coordenadas);
-  return confirmado ? { tipo: "ok", dados: confirmado } : { tipo: "endereco-nao-encontrado" };
+export async function confirmarPontoDeEntrega(
+  banco: Banco,
+  identidadeId: string,
+  enderecoId: string,
+  coordenadas: Coordenadas,
+): Promise<Resultado<EnderecoRegistro>> {
+  const confirmado = await confirmarLocalizacao(
+    banco,
+    identidadeId,
+    enderecoId,
+    coordenadas,
+  );
+  return confirmado
+    ? { tipo: "ok", dados: confirmado }
+    : { tipo: "endereco-nao-encontrado" };
 }
 
 // Remoção lógica: pedidos antigos continuam com o snapshot e a referência ao endereço de origem.
-export async function arquivarEnderecoDoCliente(banco: Banco, identidadeId: string, enderecoId: string): Promise<Resultado<null>> {
-  return (await arquivarEndereco(banco, identidadeId, enderecoId)) ? { tipo: "ok", dados: null } : { tipo: "endereco-nao-encontrado" };
+export async function arquivarEnderecoDoCliente(
+  banco: Banco,
+  identidadeId: string,
+  enderecoId: string,
+): Promise<Resultado<null>> {
+  return (await arquivarEndereco(banco, identidadeId, enderecoId))
+    ? { tipo: "ok", dados: null }
+    : { tipo: "endereco-nao-encontrado" };
 }

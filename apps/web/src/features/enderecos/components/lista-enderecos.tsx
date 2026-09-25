@@ -43,13 +43,23 @@ export function ListaEnderecos({
             key={endereco.id}
             data-endereco={endereco.id}
             data-selecionado={endereco.id === selecionadoId}
-            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+            /*
+              Degradação progressiva SEM breakpoint: o bloco de texto tem `basis-56`, então enquanto
+              couber texto + ações na mesma linha elas convivem; quando não cabe, o texto ocupa a
+              linha inteira e as ações descem para a linha seguinte. Nada desaparece e nada vaza.
+            */
+            className="flex flex-wrap items-start justify-between gap-2 px-3 py-2.5"
           >
-            <span className="flex min-w-0 flex-col">
-              <span className="text-xs text-conteudo-suave">
+            {/*
+              `min-w-0` + `overflow-wrap: anywhere`: a lista também aparece na coluna estreita do
+              pedido, e rua/bairro/cidade longos precisam QUEBRAR LINHA em vez de alargar a coluna.
+              Nada é cortado — é o endereço da entrega, tem de ser lido inteiro.
+            */}
+            <span className="flex min-w-0 flex-1 basis-56 flex-col">
+              <span className="text-xs text-conteudo-suave [overflow-wrap:anywhere]">
                 {formatarEnderecoResumido(endereco)}
               </span>
-              <span className="text-xs text-conteudo-suave">
+              <span className="text-xs text-conteudo-suave [overflow-wrap:anywhere]">
                 {endereco.bairro}, {endereco.cidade}/{endereco.uf} · CEP{" "}
                 {formatarCep(endereco.cep)}
               </span>
@@ -63,26 +73,34 @@ export function ListaEnderecos({
                   : "Ponto de entrega ainda não confirmado"}
               </span>
             </span>
-            <span className="flex shrink-0 flex-wrap items-center gap-1">
+            {/*
+              As ações NUNCA somem nem saem do card: a faixa quebra sozinha (`flex-wrap`) e cada
+              botão tem alvo de toque de 36px. Sem `shrink-0` no bloco todo — era ele que impedia a
+              faixa de ceder espaço e fazia os botões vazarem em coluna estreita.
+            */}
+            <span className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 data-usar-endereco
+                aria-label={`Usar este endereço: ${endereco.apelido}`}
                 onClick={() => aoUsar(endereco)}
-                className="rounded bg-marca px-2 py-1 text-xs text-white"
+                className="min-h-9 rounded-jaa-compacto bg-marca px-3 text-xs font-medium text-marca-conteudo transition-colors hover:bg-marca/90"
               >
-                Usar este endereço
+                Usar este
               </button>
               <button
                 type="button"
+                aria-label={`${confirmado ? "Ajustar ponto no mapa" : "Confirmar no mapa"}: ${endereco.apelido}`}
                 onClick={() => aoAjustarPonto(endereco)}
-                className="rounded-jaa border px-2 py-1 text-xs"
+                className="min-h-9 rounded-jaa-compacto border border-borda px-3 text-xs font-medium transition-colors hover:bg-realce"
               >
-                {confirmado ? "Ajustar ponto no mapa" : "Confirmar no mapa"}
+                {confirmado ? "Ajustar ponto" : "Confirmar no mapa"}
               </button>
               <button
                 type="button"
+                aria-label={`Editar ${endereco.apelido}`}
                 onClick={() => aoEditar(endereco)}
-                className="rounded-jaa border px-2 py-1 text-xs"
+                className="min-h-9 rounded-jaa-compacto border border-borda px-3 text-xs font-medium transition-colors hover:bg-realce"
               >
                 Editar
               </button>
@@ -91,7 +109,7 @@ export function ListaEnderecos({
                   type="button"
                   aria-label={`Remover ${endereco.apelido}`}
                   onClick={() => aoRemover(endereco)}
-                  className="rounded px-1 text-xs underline"
+                  className="min-h-9 rounded-jaa-compacto px-3 text-xs font-medium text-conteudo-suave transition-colors hover:bg-perigo/10 hover:text-perigo"
                 >
                   Remover
                 </button>

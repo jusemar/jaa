@@ -8,10 +8,12 @@ import {
 } from "@jaa/contratos";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as z from "zod";
+import { type ArmazenamentoDeArquivos } from "../../../lib/armazenamento/armazenamento-arquivos.js";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
 import { exigirIdentidadeAutenticada } from "../../autenticacao/lib/exigir-identidade-autenticada.js";
 import { consultarCatalogo, consultarProdutoDoCatalogo } from "../casos-de-uso/consultar-catalogo.js";
-import { serializarEmpresaPublica, serializarProdutoPublico } from "../lib/serializar-catalogo.js";
+import { serializarCategoriaPublica, serializarEmpresaPublica, serializarProdutoPublico } from "../lib/serializar-catalogo.js";
+import { serializarGruposPublicos } from "../../produtos/lib/serializar-personalizacao.js";
 import { buscarEmpresasPublicas } from "../repositorios/repositorio-empresas-publicas.js";
 
 const parametrosEmpresaSchema = z.object({ identidadeId: z.uuid() });
@@ -36,8 +38,13 @@ function responderDadosInvalidos(resposta: FastifyReply) {
  * - `/descoberta/empresas`: busca TÉCNICA temporária, autenticada, até existir o "Encontrar".
  * Pendente antes de abrir ao público: rate limit específico e cache.
  */
-export function registrarRotasCatalogoPublico(servidor: FastifyInstance, dependencias: { banco: Banco; autenticacao: Autenticacao }) {
-  const { banco } = dependencias;
+export function registrarRotasCatalogoPublico(
+  servidor: FastifyInstance,
+  dependencias: { banco: Banco; autenticacao: Autenticacao; armazenamento: ArmazenamentoDeArquivos },
+) {
+  const { banco, armazenamento } = dependencias;
+  // Mesma montagem de URL da administração: o banco guarda a CHAVE do arquivo, nunca o endereço.
+  const urlPublica = (chave: string) => armazenamento.urlPublica(chave);
 
   servidor.get("/publico/empresas/:identidadeId/catalogo", async (requisicao, resposta) => {
     const parametros = parametrosEmpresaSchema.safeParse(requisicao.params);
@@ -45,7 +52,13 @@ export function registrarRotasCatalogoPublico(servidor: FastifyInstance, depende
 
     const resultado = await consultarCatalogo(banco, parametros.data.identidadeId);
     if (resultado.tipo !== "catalogo") return responder404(resposta, resultado.tipo);
-    const catalogo: CatalogoPublico = { empresa: serializarEmpresaPublica(resultado.empresa), produtos: resultado.produtos.map(serializarProdutoPublico) };
+    const catalogo: CatalogoPublico = {
+      empresa: serializarEmpresaPublica(resultado.empresa),
+      categorias: resultado.categorias.map(serializarCategoriaPublica),
+      produtos: resultado.produtos.map((produto) =>
+        serializarProdutoPublico(produto, { urlPublica, personalizavel: resultado.personalizaveis.has(produto.id) }),
+      ),
+    };
     return catalogo;
   });
 
@@ -55,7 +68,12 @@ export function registrarRotasCatalogoPublico(servidor: FastifyInstance, depende
 
     const resultado = await consultarProdutoDoCatalogo(banco, parametros.data.identidadeId, parametros.data.produtoId);
     if (resultado.tipo !== "produto") return responder404(resposta, resultado.tipo);
-    const detalhe: ProdutoPublicoDetalhe = { empresa: serializarEmpresaPublica(resultado.empresa), produto: serializarProdutoPublico(resultado.produto) };
+    const grupos = serializarGruposPublicos(resultado.grupos);
+    const detalhe: ProdutoPublicoDetalhe = {
+      empresa: serializarEmpresaPublica(resultado.empresa),
+      produto: serializarProdutoPublico(resultado.produto, { urlPublica, personalizavel: grupos.length > 0 }),
+      grupos,
+    };
     return detalhe;
   });
 

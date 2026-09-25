@@ -112,7 +112,7 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
                 aria-checked={perfil.statusEscolhido === status}
                 data-status={status}
                 onClick={() => mudarPrivacidade("statusEscolhido", status)}
-                className={`min-h-11 rounded-full border px-4 text-sm font-medium ${
+                className={`min-h-11 rounded-jaa-compacto border px-4 text-sm font-medium sm:min-h-10 ${
                   perfil.statusEscolhido === status ? "border-marca bg-marca-suave text-marca" : "border-borda bg-superficie text-conteudo-suave"
                 }`}
               >

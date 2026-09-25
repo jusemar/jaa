@@ -55,9 +55,29 @@ describe("catálogo do cliente", () => {
       assert.equal(resposta.statusCode, 200, resposta.body);
       const dados: CatalogoPublico = resposta.json();
       assert.deepEqual(dados.empresa, { identidadeId: pizzaria.identidadeId, nome: "Pizzaria BH", nomeUsuario: `${PREFIXO}_pizza`, slug: `${PREFIXO}-pizzaria` });
+      // Categorias vêm na ordem da EMPRESA; aqui nenhuma foi cadastrada, então a lista é vazia.
+      assert.deepEqual(dados.categorias, []);
       assert.deepEqual(dados.produtos, [
-        { id: calabresa.id, nome: "Pizza Calabresa", descricao: "Molho e calabresa", precoCentavos: 3990, disponibilidade: "disponivel" },
-        { id: refrigerante.id, nome: "Refrigerante 2L", descricao: null, precoCentavos: 1200, disponibilidade: "disponivel" },
+        {
+          id: calabresa.id,
+          nome: "Pizza Calabresa",
+          descricao: "Molho e calabresa",
+          precoCentavos: 3990,
+          disponibilidade: "disponivel",
+          categoriaId: null,
+          imagemUrl: null,
+          personalizavel: false,
+        },
+        {
+          id: refrigerante.id,
+          nome: "Refrigerante 2L",
+          descricao: null,
+          precoCentavos: 1200,
+          disponibilidade: "disponivel",
+          categoriaId: null,
+          imagemUrl: null,
+          personalizavel: false,
+        },
       ]);
       for (const proibido of [esgotado.id, "Esgotada", pizzaria.id, "empresaId", "papel", "proprietario", "usuarioId", "criadoEm", "atualizadoEm", "Junior", "Dipirona"]) {
         assert.ok(!resposta.body.includes(proibido), proibido);
@@ -70,7 +90,18 @@ describe("catálogo do cliente", () => {
     assert.equal(aberto.statusCode, 200);
     assert.deepEqual(aberto.json(), {
       empresa: { identidadeId: pizzaria.identidadeId, nome: "Pizzaria BH", nomeUsuario: `${PREFIXO}_pizza`, slug: `${PREFIXO}-pizzaria` },
-      produto: { id: calabresa.id, nome: "Pizza Calabresa", descricao: "Molho e calabresa", precoCentavos: 3990, disponibilidade: "disponivel" },
+      produto: {
+        id: calabresa.id,
+        nome: "Pizza Calabresa",
+        descricao: "Molho e calabresa",
+        precoCentavos: 3990,
+        disponibilidade: "disponivel",
+        categoriaId: null,
+        imagemUrl: null,
+        personalizavel: false,
+      },
+      // Produto sem grupo de opções: nada a montar.
+      grupos: [],
     });
     for (const [identidadeId, produtoId] of [[pizzaria.identidadeId, esgotado.id], [pizzaria.identidadeId, dipirona.id], [pizzaria.identidadeId, randomUUID()]] as const) {
       const resposta = await detalhe(identidadeId, produtoId, B);

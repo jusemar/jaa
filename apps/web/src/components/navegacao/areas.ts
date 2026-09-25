@@ -1,4 +1,14 @@
 import type { IdentidadeOperavel } from "@jaa/contratos";
+import type { ComponentType, SVGProps } from "react";
+import {
+  IconeCaixa,
+  IconeConversa,
+  IconeEntrega,
+  IconeMapa,
+  IconePedidos,
+  IconePerfil,
+  IconePessoas,
+} from "@/components/ui/icones";
 
 /*
  * ÁREAS DO APP — a lista de telas depende de QUEM a pessoa está sendo agora.
@@ -15,23 +25,24 @@ import type { IdentidadeOperavel } from "@jaa/contratos";
 export interface AreaApp {
   id: string;
   rotulo: string;
-  icone: string;
+  // Componente do conjunto único de ícones do Jaa — nunca emoji, que muda de forma a cada sistema.
+  Icone: ComponentType<SVGProps<SVGSVGElement>>;
   descricao: string;
 }
 
 export const AREAS_PESSOAIS: AreaApp[] = [
-  { id: "conversas", rotulo: "Conversas", icone: "💬", descricao: "Suas conversas no Jaa" },
-  { id: "contatos", rotulo: "Contatos", icone: "👥", descricao: "Sua agenda e a pesquisa no Jaa" },
-  { id: "entregas", rotulo: "Entregas", icone: "🛵", descricao: "Convites e entregas atribuídas a você" },
-  { id: "perfil", rotulo: "Perfil", icone: "⚙️", descricao: "Seu perfil, status, privacidade e conta" },
+  { id: "conversas", rotulo: "Conversas", Icone: IconeConversa, descricao: "Suas conversas no Jaa" },
+  { id: "contatos", rotulo: "Contatos", Icone: IconePessoas, descricao: "Sua agenda e a pesquisa no Jaa" },
+  { id: "entregas", rotulo: "Entregas", Icone: IconeEntrega, descricao: "Convites e entregas atribuídas a você" },
+  { id: "perfil", rotulo: "Perfil", Icone: IconePerfil, descricao: "Seu perfil, status, privacidade e conta" },
 ];
 
 export const AREAS_EMPRESARIAIS: AreaApp[] = [
-  { id: "conversas", rotulo: "Conversas", icone: "💬", descricao: "Conversas da empresa" },
-  { id: "pedidos", rotulo: "Pedidos", icone: "🧾", descricao: "Pedidos recebidos e a próxima ação de cada um" },
-  { id: "produtos", rotulo: "Produtos", icone: "📦", descricao: "Catálogo e categorias da empresa" },
-  { id: "logistica", rotulo: "Logística", icone: "🗺️", descricao: "Entregadores, saídas, base e zonas" },
-  { id: "perfil", rotulo: "Perfil", icone: "⚙️", descricao: "Perfil público da empresa e configurações" },
+  { id: "conversas", rotulo: "Conversas", Icone: IconeConversa, descricao: "Conversas da empresa" },
+  { id: "pedidos", rotulo: "Pedidos", Icone: IconePedidos, descricao: "Pedidos recebidos e a próxima ação de cada um" },
+  { id: "produtos", rotulo: "Produtos", Icone: IconeCaixa, descricao: "Catálogo e categorias da empresa" },
+  { id: "logistica", rotulo: "Logística", Icone: IconeMapa, descricao: "Entregadores, saídas, base e zonas" },
+  { id: "perfil", rotulo: "Perfil", Icone: IconePerfil, descricao: "Perfil público da empresa e configurações" },
 ];
 
 export function areasDaIdentidade(identidade: IdentidadeOperavel | null): AreaApp[] {

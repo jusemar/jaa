@@ -12,8 +12,33 @@ import * as z from "zod";
  */
 
 export const UNIDADES_FEDERACAO = [
-  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR",
-  "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
 ] as const;
 
 export const ufSchema = z.enum(UNIDADES_FEDERACAO);
@@ -27,7 +52,8 @@ export const cepSchema = z
   .transform((valor) => valor.replace(/\D/g, ""))
   .pipe(z.string().regex(/^\d{8}$/, "CEP deve ter 8 dígitos."));
 
-const textoObrigatorio = (maximo: number, mensagem: string) => z.string().trim().min(1, mensagem).max(maximo);
+const textoObrigatorio = (maximo: number, mensagem: string) =>
+  z.string().trim().min(1, mensagem).max(maximo);
 // Campo opcional: ausente e vazio viram null (nunca string vazia no banco).
 const textoOpcional = (maximo: number) =>
   z
@@ -55,15 +81,27 @@ export const MAXIMO_ENDERECOS_POR_IDENTIDADE = 20;
 export const latitudeSchema = z.number().finite().min(-90).max(90);
 export const longitudeSchema = z.number().finite().min(-180).max(180);
 
-export const coordenadasSchema = z.object({ latitude: latitudeSchema, longitude: longitudeSchema });
+export const coordenadasSchema = z.object({
+  latitude: latitudeSchema,
+  longitude: longitudeSchema,
+});
 
 export type Coordenadas = z.infer<typeof coordenadasSchema>;
 
 const camposTextuais = {
-  apelido: textoObrigatorio(APELIDO_ENDERECO_TAMANHO_MAXIMO, "Dê um apelido ao endereço (ex.: Casa)."),
+  apelido: textoObrigatorio(
+    APELIDO_ENDERECO_TAMANHO_MAXIMO,
+    "Dê um apelido ao endereço (ex.: Casa).",
+  ),
   cep: cepSchema,
-  logradouro: textoObrigatorio(LOGRADOURO_TAMANHO_MAXIMO, "Informe o logradouro."),
-  numero: textoObrigatorio(NUMERO_ENDERECO_TAMANHO_MAXIMO, "Informe o número (ou S/N)."),
+  logradouro: textoObrigatorio(
+    LOGRADOURO_TAMANHO_MAXIMO,
+    "Informe o logradouro.",
+  ),
+  numero: textoObrigatorio(
+    NUMERO_ENDERECO_TAMANHO_MAXIMO,
+    "Informe o número (ou S/N).",
+  ),
   complemento: textoOpcional(COMPLEMENTO_TAMANHO_MAXIMO),
   bairro: textoObrigatorio(BAIRRO_TAMANHO_MAXIMO, "Informe o bairro."),
   cidade: textoObrigatorio(CIDADE_TAMANHO_MAXIMO, "Informe a cidade."),
@@ -78,12 +116,16 @@ export type CriarEnderecoEntrada = z.input<typeof criarEnderecoEntradaSchema>;
 // Edição envia o endereço completo (formulário inteiro): simples de validar e de comparar.
 export const atualizarEnderecoEntradaSchema = criarEnderecoEntradaSchema;
 
-export type AtualizarEnderecoEntrada = z.input<typeof atualizarEnderecoEntradaSchema>;
+export type AtualizarEnderecoEntrada = z.input<
+  typeof atualizarEnderecoEntradaSchema
+>;
 
 // Confirmação/ajuste do ponto: só coordenadas, sempre por ação explícita do cliente.
 export const confirmarLocalizacaoEntradaSchema = coordenadasSchema;
 
-export type ConfirmarLocalizacaoEntrada = z.infer<typeof confirmarLocalizacaoEntradaSchema>;
+export type ConfirmarLocalizacaoEntrada = z.infer<
+  typeof confirmarLocalizacaoEntradaSchema
+>;
 
 export const enderecoClienteSchema = z.object({
   id: z.uuid(),
@@ -100,7 +142,9 @@ export const enderecoClienteSchema = z.object({
 
 export type EnderecoCliente = z.infer<typeof enderecoClienteSchema>;
 
-export const listaEnderecosSchema = z.object({ enderecos: z.array(enderecoClienteSchema) });
+export const listaEnderecosSchema = z.object({
+  enderecos: z.array(enderecoClienteSchema),
+});
 
 export type ListaEnderecos = z.infer<typeof listaEnderecosSchema>;
 
@@ -129,8 +173,34 @@ export const sugestaoLocalizacaoSchema = z.object({
 
 export type SugestaoLocalizacao = z.infer<typeof sugestaoLocalizacaoSchema>;
 
-export function enderecoTemLocalizacaoConfirmada(endereco: Pick<EnderecoCliente, "latitude" | "longitude" | "localizacaoConfirmadaEm">): boolean {
-  return endereco.localizacaoConfirmadaEm !== null && endereco.latitude !== null && endereco.longitude !== null;
+// Rascunho contextual do carrinho: texto e ponto só são persistidos juntos após a cobertura.
+export const salvarEnderecoParaEmpresaEntradaSchema = z.object({
+  endereco: criarEnderecoEntradaSchema,
+  coordenadas: coordenadasSchema,
+});
+
+export type SalvarEnderecoParaEmpresaEntrada = z.input<
+  typeof salvarEnderecoParaEmpresaEntradaSchema
+>;
+
+export const coberturaEntregaSchema = z.object({
+  atendida: z.boolean(),
+  zonasConfiguradas: z.boolean(),
+});
+
+export type CoberturaEntrega = z.infer<typeof coberturaEntregaSchema>;
+
+export function enderecoTemLocalizacaoConfirmada(
+  endereco: Pick<
+    EnderecoCliente,
+    "latitude" | "longitude" | "localizacaoConfirmadaEm"
+  >,
+): boolean {
+  return (
+    endereco.localizacaoConfirmadaEm !== null &&
+    endereco.latitude !== null &&
+    endereco.longitude !== null
+  );
 }
 
 /*
@@ -140,21 +210,40 @@ export function enderecoTemLocalizacaoConfirmada(endereco: Pick<EnderecoCliente,
  * Complemento e ponto de referência entram na lista porque "Apto 302" → "Casa 2 dos fundos" pode ser
  * outra entrada física; na dúvida, preferimos pedir nova confirmação a entregar no lugar errado.
  */
-export const CAMPOS_ESTRUTURAIS_ENDERECO = ["cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf"] as const;
+export const CAMPOS_ESTRUTURAIS_ENDERECO = [
+  "cep",
+  "logradouro",
+  "numero",
+  "complemento",
+  "bairro",
+  "cidade",
+  "uf",
+] as const;
 
-export type CampoEstruturalEndereco = (typeof CAMPOS_ESTRUTURAIS_ENDERECO)[number];
+export type CampoEstruturalEndereco =
+  (typeof CAMPOS_ESTRUTURAIS_ENDERECO)[number];
 
 // Aceita o endereço inteiro (com apelido, datas etc.): só os campos estruturais são comparados.
 type DadosComparaveis = { [Campo in CampoEstruturalEndereco]?: string | null };
 
-const normalizarComparacao = (valor: string | null | undefined) => (valor ?? "").trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ");
+const normalizarComparacao = (valor: string | null | undefined) =>
+  (valor ?? "").trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ");
 
-export function alteracaoInvalidaLocalizacao<T extends DadosComparaveis, U extends DadosComparaveis>(atual: T, novo: U): boolean {
-  return CAMPOS_ESTRUTURAIS_ENDERECO.some((campo) => normalizarComparacao(atual[campo] ?? null) !== normalizarComparacao(novo[campo] ?? null));
+export function alteracaoInvalidaLocalizacao<
+  T extends DadosComparaveis,
+  U extends DadosComparaveis,
+>(atual: T, novo: U): boolean {
+  return CAMPOS_ESTRUTURAIS_ENDERECO.some(
+    (campo) =>
+      normalizarComparacao(atual[campo] ?? null) !==
+      normalizarComparacao(novo[campo] ?? null),
+  );
 }
 
 // Uma linha legível ("Rua X, 150 — Apto 302"); o texto é sempre o que o cliente cadastrou.
-export function formatarEnderecoResumido(endereco: Pick<EnderecoCliente, "logradouro" | "numero" | "complemento">): string {
+export function formatarEnderecoResumido(
+  endereco: Pick<EnderecoCliente, "logradouro" | "numero" | "complemento">,
+): string {
   return `${endereco.logradouro}, ${endereco.numero}${endereco.complemento ? ` — ${endereco.complemento}` : ""}`;
 }
 

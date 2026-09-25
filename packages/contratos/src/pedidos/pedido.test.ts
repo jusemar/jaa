@@ -5,6 +5,9 @@ import {
   MAXIMO_ITENS_POR_PEDIDO,
   QUANTIDADE_MAXIMA_POR_ITEM,
   criarPedidoEntradaSchema,
+  OBSERVACAO_ITEM_TAMANHO_MAXIMO,
+  itemPedidoEntradaSchema,
+  itemPedidoSchema,
   pedidoSchema,
   trocoEsperadoCentavos,
 } from "./pedido.ts";
@@ -93,7 +96,7 @@ describe("pedido e card na conversa", () => {
       formaPagamentoNaEntrega: "dinheiro",
       trocoParaCentavos: 10000,
       totalCentavos: 9180,
-      itens: [{ id: uuid, produtoId: uuid, nomeProduto: "Pizza Calabresa", precoUnitarioCentavos: 3990, quantidade: 2, subtotalCentavos: 7980 }],
+      itens: [{ id: uuid, produtoId: uuid, nomeProduto: "Pizza Calabresa", precoUnitarioCentavos: 3990, quantidade: 2, subtotalCentavos: 7980, escolhas: [], observacao: null }],
       criadoEm: "2026-09-15T12:00:00.000Z",
       atualizadoEm: "2026-09-15T12:00:00.000Z",
     };
@@ -108,8 +111,57 @@ describe("pedido e card na conversa", () => {
     // O pedido público não expõe a empresa por id interno nem dados de cartão.
     assert.deepEqual(Object.keys(pedidoSchema.parse(pedido).empresa).sort(), ["identidadeId", "nome", "nomeUsuario", "slug"]);
 
-    const card = { id: uuid, conversaId: uuid, remetenteIdentidadeId: uuid, tipo: "pedido", conteudo: "", criadoEm: "2026-09-15T12:00:00.000Z", estado: "enviada", mensagemRespondida: null, editadaEm: null, excluidaEm: null, pedido: { id: uuid, numero: 3, status: "recebido", formaPagamentoNaEntrega: "cartao", trocoParaCentavos: null, totalCentavos: 1200, itens: [{ nomeProduto: "Refrigerante", quantidade: 1, subtotalCentavos: 1200 }] } };
+    const card = { id: uuid, conversaId: uuid, remetenteIdentidadeId: uuid, tipo: "pedido", conteudo: "", criadoEm: "2026-09-15T12:00:00.000Z", estado: "enviada", mensagemRespondida: null, editadaEm: null, excluidaEm: null, pedido: { id: uuid, numero: 3, status: "recebido", formaPagamentoNaEntrega: "cartao", trocoParaCentavos: null, totalCentavos: 1200, itens: [{ nomeProduto: "Refrigerante", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null }] } };
     assert.equal(mensagemSchema.safeParse(card).success, true);
     assert.equal(mensagemSchema.safeParse({ ...card, tipo: "audio" }).success, false);
+  });
+
+  it("item MONTADO guarda o snapshot das escolhas; `escolhas` é obrigatório (vazio no produto comum)", () => {
+    const item = { id: uuid, produtoId: uuid, nomeProduto: "Monte seu prato", precoUnitarioCentavos: 2990, quantidade: 1, subtotalCentavos: 2990, observacao: null };
+    const montado = {
+      ...item,
+      escolhas: [
+        { grupoNome: "Tamanho", opcaoNome: "Grande", precoAdicionalCentavos: 500 },
+        { grupoNome: "Acompanhamentos", opcaoNome: "Arroz", precoAdicionalCentavos: 0 },
+      ],
+    };
+    assert.equal(itemPedidoSchema.safeParse(montado).success, true);
+    // Sem `escolhas` o item não é válido: a ausência esconderia se houve montagem ou não.
+    assert.equal(itemPedidoSchema.safeParse(item).success, false);
+    assert.equal(itemPedidoSchema.safeParse({ ...item, escolhas: [] }).success, true);
+  });
+
+  it("o cliente envia só produto, quantidade e as OPÇÕES escolhidas — nunca preço nem subtotal", () => {
+    const entrada = itemPedidoEntradaSchema.parse({
+      produtoId: uuid,
+      quantidade: 2,
+      opcaoIds: [uuid],
+      // Enviados de propósito: o contrato descarta tudo o que é dinheiro.
+      precoUnitarioCentavos: 1,
+      subtotalCentavos: 1,
+    });
+    assert.deepEqual(Object.keys(entrada).sort(), ["opcaoIds", "produtoId", "quantidade"]);
+    // Sem montagem, `opcaoIds` simplesmente não vem.
+    assert.deepEqual(Object.keys(itemPedidoEntradaSchema.parse({ produtoId: uuid, quantidade: 1 })).sort(), ["produtoId", "quantidade"]);
+    assert.equal(itemPedidoEntradaSchema.safeParse({ produtoId: uuid, quantidade: 1, opcaoIds: ["nao-e-uuid"] }).success, false);
+  });
+
+  it("observação é da LINHA, opcional e normalizada (vazia vira null)", () => {
+    const comObservacao = itemPedidoEntradaSchema.parse({ produtoId: uuid, quantidade: 1, observacao: "  sem   cebola  " });
+    assert.equal(comObservacao.observacao, "sem cebola", "espaços sobrando são normalizados");
+
+    // Vazia ou só espaços não é observação: vira null (o banco não guarda string vazia).
+    assert.equal(itemPedidoEntradaSchema.parse({ produtoId: uuid, quantidade: 1, observacao: "   " }).observacao, null);
+    // Ausente continua ausente: produto comum não precisa mandar o campo.
+    assert.deepEqual(Object.keys(itemPedidoEntradaSchema.parse({ produtoId: uuid, quantidade: 1 })).sort(), ["produtoId", "quantidade"]);
+    // Acima do limite é recusado no contrato, antes de chegar ao banco.
+    assert.equal(itemPedidoEntradaSchema.safeParse({ produtoId: uuid, quantidade: 1, observacao: "x".repeat(OBSERVACAO_ITEM_TAMANHO_MAXIMO + 1) }).success, false);
+  });
+
+  it("o item gravado exige `observacao` (null quando não há), como exige `escolhas`", () => {
+    const item = { id: uuid, produtoId: uuid, nomeProduto: "Monte seu prato", precoUnitarioCentavos: 2990, quantidade: 1, subtotalCentavos: 2990, escolhas: [] };
+    assert.equal(itemPedidoSchema.safeParse(item).success, false, "ausência esconderia se houve observação");
+    assert.equal(itemPedidoSchema.safeParse({ ...item, observacao: null }).success, true);
+    assert.equal(itemPedidoSchema.safeParse({ ...item, observacao: "sem cebola" }).success, true);
   });
 });

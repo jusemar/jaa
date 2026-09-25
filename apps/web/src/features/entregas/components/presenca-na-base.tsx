@@ -69,38 +69,7 @@ export function MinhaSituacaoNaBase({
             className="flex flex-col gap-0.5 px-3 py-2"
           >
             <span className="font-medium">{situacao.empresa.nome}</span>
-            <span
-              data-estado-operacional={situacao.estado}
-              className={`text-xs ${situacao.estado === "disponivel_na_base" ? "text-marca" : "text-conteudo-suave"}`}
-            >
-              {ROTULO_ESTADO_OPERACIONAL[situacao.estado]}
-            </span>
-            {situacao.estado !== "em_entrega" && (
-              <span
-                data-presenca={situacao.naBase ? "na-base" : "fora-da-base"}
-                className="text-xs text-conteudo-suave"
-              >
-                {situacao.naBase ? "Na base" : "Fora da base"}
-              </span>
-            )}
-            {situacao.posicaoFila !== null ? (
-              <span
-                data-posicao-fila={situacao.posicaoFila}
-                className="text-xs"
-              >
-                {rotuloSituacaoEntregador(situacao)} · {situacao.totalNaFila} na
-                fila
-              </span>
-            ) : (
-              <span className="text-xs text-conteudo-suave">
-                {rotuloSituacaoEntregador(situacao)}
-              </span>
-            )}
-            {!situacao.baseConfigurada && (
-              <span className="text-xs text-aviso">
-                A empresa ainda não confirmou o ponto da base.
-              </span>
-            )}
+            <DetalhesEstadoOperacional situacao={situacao} />
           </li>
         ))}
       </ol>
@@ -117,6 +86,50 @@ export function MinhaSituacaoNaBase({
         </button>
       )}
     </div>
+  );
+}
+
+/** Uma única representação do estado operacional; presença/fila são detalhes, não outro estado. */
+export function DetalhesEstadoOperacional({
+  situacao,
+}: {
+  situacao: SituacaoOperacional;
+}) {
+  return (
+    <>
+      <span
+        data-estado-operacional={situacao.estado}
+        className={`text-xs font-medium ${situacao.estado === "disponivel_na_base" || situacao.estado === "em_entrega" ? "text-marca" : "text-conteudo-suave"}`}
+      >
+        <span aria-hidden>● </span>
+        {ROTULO_ESTADO_OPERACIONAL[situacao.estado]}
+      </span>
+      {situacao.estado !== "em_entrega" ? (
+        <>
+          <span
+            data-presenca={situacao.naBase ? "na-base" : "fora-da-base"}
+            className="text-xs text-conteudo-suave"
+          >
+            {situacao.naBase ? "Na base" : "Fora da base"}
+          </span>
+          {situacao.posicaoFila !== null ? (
+            <span data-posicao-fila={situacao.posicaoFila} className="text-xs">
+              {rotuloSituacaoEntregador(situacao)} · {situacao.totalNaFila} na
+              fila
+            </span>
+          ) : situacao.estado === "disponivel_fora_base" ? (
+            <span className="text-xs text-conteudo-suave">
+              {rotuloSituacaoEntregador(situacao)}
+            </span>
+          ) : null}
+        </>
+      ) : null}
+      {!situacao.baseConfigurada ? (
+        <span className="text-xs text-aviso">
+          A empresa ainda não confirmou o ponto da base.
+        </span>
+      ) : null}
+    </>
   );
 }
 

@@ -5,7 +5,11 @@ import { useRef } from "react";
 // Interface TÉCNICA: ações de uma mensagem num menu compacto (⋯). Só aparecem as ações permitidas;
 // a API continua sendo quem autoriza cada uma.
 
-export type AcaoMensagem = { rotulo: string; executar: () => void; perigosa?: boolean };
+export type AcaoMensagem = {
+  rotulo: string;
+  executar: () => void;
+  perigosa?: boolean;
+};
 
 export function MenuMensagem({ acoes }: { acoes: AcaoMensagem[] }) {
   const detalhesRef = useRef<HTMLDetailsElement>(null);
@@ -20,7 +24,10 @@ export function MenuMensagem({ acoes }: { acoes: AcaoMensagem[] }) {
       >
         ⋯
       </summary>
-      <ul role="menu" className="absolute right-0 z-10 mt-1 flex min-w-40 flex-col rounded-jaa border border-borda bg-superficie py-1 text-sm shadow">
+      <ul
+        role="menu"
+        className="absolute right-0 z-10 mt-1 flex min-w-40 flex-col rounded-jaa border border-borda bg-superficie py-1 text-sm shadow"
+      >
         {acoes.map((acao) => (
           <li key={acao.rotulo} role="none">
             <button

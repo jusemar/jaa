@@ -62,3 +62,36 @@ export function aplicarNaoLidasNaLista(atuais: ItemListaConversas[], evento: Eve
 export function rotuloNaoLidas(naoLidas: number): string {
   return naoLidas >= LIMITE_CONTAGEM_NAO_LIDAS || naoLidas > 99 ? "99+" : String(naoLidas);
 }
+
+/*
+ * FILTROS DA INBOX — recorte de LEITURA, nunca de autorização: a lista já veio do servidor para a
+ * identidade atuante, e aqui a pessoa só escolhe o que quer enxergar agora.
+ *
+ * Tudo é derivado do que a lista já tem (`naoLidas` e o tipo da outra identidade); nada é inventado
+ * nem pedido de novo à API. "Não lidas" ignora a conversa que está aberta e sendo lida, para o item
+ * não sumir debaixo do dedo enquanto se lê.
+ */
+export const FILTROS_CONVERSAS = ["todas", "nao-lidas", "empresas"] as const;
+
+export type FiltroConversas = (typeof FILTROS_CONVERSAS)[number];
+
+export const ROTULO_FILTRO_CONVERSAS: Record<FiltroConversas, string> = {
+  todas: "Todas",
+  "nao-lidas": "Não lidas",
+  empresas: "Empresas",
+};
+
+export function filtrarConversas(
+  itens: ItemListaConversas[],
+  filtro: FiltroConversas,
+  conversaEmLeituraId: string | null = null,
+): ItemListaConversas[] {
+  if (filtro === "empresas") return itens.filter((item) => item.outraIdentidade.tipo === "empresarial");
+  if (filtro === "nao-lidas") return itens.filter((item) => item.naoLidas > 0 && item.id !== conversaEmLeituraId);
+  return itens;
+}
+
+/** Quantas conversas têm mensagem por ler — o número que acompanha o filtro "Não lidas". */
+export function contarConversasNaoLidas(itens: ItemListaConversas[], conversaEmLeituraId: string | null = null): number {
+  return filtrarConversas(itens, "nao-lidas", conversaEmLeituraId).length;
+}

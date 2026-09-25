@@ -39,29 +39,57 @@ export type ResultadoSalvarZona =
   | { tipo: "nome-duplicado" }
   | { tipo: "sobreposta"; zonaConflitante: { id: string; nome: string } };
 
-export async function serializarZona(banco: Banco, zona: ZonaRegistro, compatibilidades: Array<{ zonaMenorId: string; zonaMaiorId: string }>): Promise<ZonaEntrega> {
+export async function serializarZona(
+  banco: Banco,
+  zona: ZonaRegistro,
+  compatibilidades: Array<{ zonaMenorId: string; zonaMaiorId: string }>,
+): Promise<ZonaEntrega> {
   return {
     id: zona.id,
     nome: zona.nome,
     vertices: zona.vertices,
     ativa: zona.ativa,
     compativeisCom: compatibilidades
-      .filter((par) => par.zonaMenorId === zona.id || par.zonaMaiorId === zona.id)
-      .map((par) => (par.zonaMenorId === zona.id ? par.zonaMaiorId : par.zonaMenorId)),
+      .filter(
+        (par) => par.zonaMenorId === zona.id || par.zonaMaiorId === zona.id,
+      )
+      .map((par) =>
+        par.zonaMenorId === zona.id ? par.zonaMaiorId : par.zonaMenorId,
+      ),
     criadoEm: zona.criadoEm.toISOString(),
     atualizadoEm: zona.atualizadoEm.toISOString(),
   };
 }
 
-export async function listarZonasSerializadas(banco: Banco, empresaId: string): Promise<ZonaEntrega[]> {
-  const [zonas, compatibilidades] = await Promise.all([listarZonas(banco, empresaId), listarCompatibilidades(banco, empresaId)]);
-  return Promise.all(zonas.map((zona) => serializarZona(banco, zona, compatibilidades)));
+export async function listarZonasSerializadas(
+  banco: Banco,
+  empresaId: string,
+): Promise<ZonaEntrega[]> {
+  const [zonas, compatibilidades] = await Promise.all([
+    listarZonas(banco, empresaId),
+    listarCompatibilidades(banco, empresaId),
+  ]);
+  return Promise.all(
+    zonas.map((zona) => serializarZona(banco, zona, compatibilidades)),
+  );
 }
 
-export async function listarZonasAutorizado(banco: Banco, usuarioId: string, empresaId: string): Promise<{ tipo: "lista"; zonas: ZonaEntrega[] } | SemAcesso> {
-  const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "ver-logistica");
+export async function listarZonasAutorizado(
+  banco: Banco,
+  usuarioId: string,
+  empresaId: string,
+): Promise<{ tipo: "lista"; zonas: ZonaEntrega[] } | SemAcesso> {
+  const acesso = await autorizarEmpresa(
+    banco,
+    usuarioId,
+    empresaId,
+    "ver-logistica",
+  );
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
-  return { tipo: "lista", zonas: await listarZonasSerializadas(banco, empresaId) };
+  return {
+    tipo: "lista",
+    zonas: await listarZonasSerializadas(banco, empresaId),
+  };
 }
 
 /**
@@ -74,16 +102,27 @@ async function validarEGravar(
   dados: { nome: string; vertices: PoligonoZona; ativa: boolean },
   zonaId: string | null,
 ): Promise<ResultadoSalvarZona> {
-  if (!zonaTemGeometriaValida(dados.vertices)) return { tipo: "geometria-invalida" };
+  if (!zonaTemGeometriaValida(dados.vertices))
+    return { tipo: "geometria-invalida" };
 
   if (dados.ativa) {
-    const outras = (await listarZonasAtivas(banco, empresaId)).filter((zona) => zona.id !== zonaId);
-    const conflito = outras.find((zona) => zonasSobrepoem(zona.vertices, dados.vertices));
-    if (conflito) return { tipo: "sobreposta", zonaConflitante: { id: conflito.id, nome: conflito.nome } };
+    const outras = (await listarZonasAtivas(banco, empresaId)).filter(
+      (zona) => zona.id !== zonaId,
+    );
+    const conflito = outras.find((zona) =>
+      zonasSobrepoem(zona.vertices, dados.vertices),
+    );
+    if (conflito)
+      return {
+        tipo: "sobreposta",
+        zonaConflitante: { id: conflito.id, nome: conflito.nome },
+      };
   }
 
   try {
-    const zona = zonaId ? await atualizarZona(banco, empresaId, zonaId, dados) : await inserirZona(banco, empresaId, dados);
+    const zona = zonaId
+      ? await atualizarZona(banco, empresaId, zonaId, dados)
+      : await inserirZona(banco, empresaId, dados);
     return zona ? { tipo: "salva", zona } : { tipo: "zona-nao-encontrada" };
   } catch (erro) {
     if (ehNomeDeZonaDuplicado(erro)) return { tipo: "nome-duplicado" };
@@ -97,7 +136,12 @@ export async function criarZonaAutorizada(
   empresaId: string,
   dados: { nome: string; vertices: PoligonoZona; ativa: boolean },
 ): Promise<ResultadoSalvarZona> {
-  const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-logistica");
+  const acesso = await autorizarEmpresa(
+    banco,
+    usuarioId,
+    empresaId,
+    "gerenciar-logistica",
+  );
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
   return validarEGravar(banco, empresaId, dados, null);
 }
@@ -109,9 +153,15 @@ export async function atualizarZonaAutorizada(
   zonaId: string,
   dados: { nome: string; vertices: PoligonoZona; ativa: boolean },
 ): Promise<ResultadoSalvarZona> {
-  const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-logistica");
+  const acesso = await autorizarEmpresa(
+    banco,
+    usuarioId,
+    empresaId,
+    "gerenciar-logistica",
+  );
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
-  if (!(await buscarZona(banco, empresaId, zonaId))) return { tipo: "zona-nao-encontrada" };
+  if (!(await buscarZona(banco, empresaId, zonaId)))
+    return { tipo: "zona-nao-encontrada" };
   return validarEGravar(banco, empresaId, dados, zonaId);
 }
 
@@ -126,22 +176,53 @@ export async function definirCompatibilidadesAutorizado(
   empresaId: string,
   zonaId: string,
   zonaIds: string[],
-): Promise<{ tipo: "definida"; zonas: ZonaEntrega[] } | SemAcesso | { tipo: "zona-nao-encontrada" }> {
-  const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-logistica");
+): Promise<
+  | { tipo: "definida"; zonas: ZonaEntrega[] }
+  | SemAcesso
+  | { tipo: "zona-nao-encontrada" }
+> {
+  const acesso = await autorizarEmpresa(
+    banco,
+    usuarioId,
+    empresaId,
+    "gerenciar-logistica",
+  );
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
-  if (!(await buscarZona(banco, empresaId, zonaId))) return { tipo: "zona-nao-encontrada" };
+  if (!(await buscarZona(banco, empresaId, zonaId)))
+    return { tipo: "zona-nao-encontrada" };
   // Zona de outra empresa (ou inexistente) nunca entra no par.
   const informadas = [...new Set(zonaIds)].filter((id) => id !== zonaId);
-  if ((await contarZonasDaEmpresa(banco, empresaId, informadas)) !== informadas.length) return { tipo: "zona-nao-encontrada" };
+  if (
+    (await contarZonasDaEmpresa(banco, empresaId, informadas)) !==
+    informadas.length
+  )
+    return { tipo: "zona-nao-encontrada" };
 
   await definirCompatibilidades(banco, empresaId, zonaId, informadas);
-  return { tipo: "definida", zonas: await listarZonasSerializadas(banco, empresaId) };
+  return {
+    tipo: "definida",
+    zonas: await listarZonasSerializadas(banco, empresaId),
+  };
 }
 
-export async function obterConfiguracaoAutorizada(banco: Banco, usuarioId: string, empresaId: string): Promise<{ tipo: "configuracao"; configuracao: ConfiguracaoDespacho } | SemAcesso> {
-  const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "ver-logistica");
+export async function obterConfiguracaoAutorizada(
+  banco: Banco,
+  usuarioId: string,
+  empresaId: string,
+): Promise<
+  { tipo: "configuracao"; configuracao: ConfiguracaoDespacho } | SemAcesso
+> {
+  const acesso = await autorizarEmpresa(
+    banco,
+    usuarioId,
+    empresaId,
+    "ver-logistica",
+  );
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
-  return { tipo: "configuracao", configuracao: await buscarConfiguracaoDespacho(banco, empresaId) };
+  return {
+    tipo: "configuracao",
+    configuracao: await buscarConfiguracaoDespacho(banco, empresaId),
+  };
 }
 
 export async function salvarConfiguracaoAutorizada(
@@ -149,17 +230,48 @@ export async function salvarConfiguracaoAutorizada(
   usuarioId: string,
   empresaId: string,
   entrada: Partial<ConfiguracaoDespacho>,
-): Promise<{ tipo: "configuracao"; configuracao: ConfiguracaoDespacho } | SemAcesso> {
-  const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-logistica");
+): Promise<
+  { tipo: "configuracao"; configuracao: ConfiguracaoDespacho } | SemAcesso
+> {
+  const acesso = await autorizarEmpresa(
+    banco,
+    usuarioId,
+    empresaId,
+    "gerenciar-logistica",
+  );
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
   const atual = await buscarConfiguracaoDespacho(banco, empresaId);
-  return { tipo: "configuracao", configuracao: await salvarConfiguracaoDespacho(banco, empresaId, { ...atual, ...entrada }) };
+  return {
+    tipo: "configuracao",
+    configuracao: await salvarConfiguracaoDespacho(banco, empresaId, {
+      ...atual,
+      ...entrada,
+    }),
+  };
 }
 
 /**
  * Zona de um PONTO. Sempre do snapshot do pedido (o que o cliente confirmou naquele pedido): mudar o
  * endereço salvo depois não reclassifica pedido nenhum. `null` = fora das zonas configuradas.
  */
-export async function zonaDoPonto(banco: Banco, empresaId: string, ponto: { latitude: number; longitude: number }): Promise<string | null> {
+export async function zonaDoPonto(
+  banco: Banco,
+  empresaId: string,
+  ponto: { latitude: number; longitude: number },
+): Promise<string | null> {
   return classificarPonto(await listarZonasAtivas(banco, empresaId), ponto);
+}
+
+/** Mesma classificação da logística, exposta para endereço e pedido sem duplicar geometria. */
+export async function avaliarCoberturaDoPonto(
+  banco: Banco,
+  empresaId: string,
+  ponto: { latitude: number; longitude: number },
+): Promise<{ atendida: boolean; zonasConfiguradas: boolean }> {
+  const zonas = await listarZonasAtivas(banco, empresaId);
+  return {
+    zonasConfiguradas: zonas.length > 0,
+    // Sem zona configurada, preserva o fluxo manual legado da empresa.
+    atendida: zonas.length === 0 || classificarPonto(zonas, ponto) !== null,
+  };
 }

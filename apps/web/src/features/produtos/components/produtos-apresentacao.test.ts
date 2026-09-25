@@ -4,6 +4,7 @@ import type { CategoriaProduto, Produto } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FormularioProduto } from "./formulario-produto.tsx";
+import { GerenciadorCategorias } from "./gerenciador-categorias.tsx";
 import { ControlePaginacao, ListaProdutos } from "./lista-produtos.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
@@ -98,5 +99,40 @@ describe("FormularioProduto", () => {
     assert.ok(html.includes("Salvar produto"));
     assert.ok(html.includes('type="file"') && html.includes('accept="image/jpeg,image/png,image/webp"'));
     assert.ok(texto(html).includes("Adicionar imagem"));
+  });
+});
+
+describe("GerenciadorCategorias", () => {
+  const categorias = [{ id: "cccccccc-0000-4000-8000-000000000000", nome: "Bebidas", posicao: 0, produtos: 2 }];
+  const marcacao = () =>
+    renderToStaticMarkup(
+      createElement(GerenciadorCategorias, { empresaId: "aaaaaaaa-0000-4000-8000-000000000000", categorias, aoMudar: () => {} }),
+    );
+
+  it("adicionar categoria é um envio de formulário de verdade, não um clique solto", () => {
+    const marcado = marcacao();
+    // O botão precisa ser `submit` DENTRO do form: é o que faz Enter no campo também funcionar.
+    const formulario = marcado.slice(marcado.indexOf("<form"), marcado.indexOf("</form>"));
+    assert.ok(formulario.includes('name="nomeCategoria"'), "o campo tem nome, que é como o valor é lido");
+    assert.ok(formulario.includes('type="submit"'), "o botão envia o formulário");
+    assert.ok(texto(formulario).includes("Adicionar categoria"));
+  });
+
+  /*
+   * REGRESSÃO: o formulário aceitava envio com o nome vazio e retornava em silêncio — para quem usa,
+   * "cliquei em adicionar e não aconteceu nada". O campo passou a ser obrigatório, então o próprio
+   * navegador barra e aponta o campo antes mesmo de chegar ao código.
+   */
+  it("o campo da nova categoria é obrigatório: clicar com ele vazio nunca é um clique mudo", () => {
+    const marcado = marcacao();
+    const campo = marcado.match(/<input[^>]*name="nomeCategoria"[^>]*>/)?.[0] ?? "";
+    assert.ok(campo !== "", "campo da nova categoria existe");
+    assert.ok(campo.includes("required"), "campo obrigatório");
+  });
+
+  it("apagar categoria avisa que os produtos dela continuam existindo", () => {
+    const marcado = marcacao();
+    assert.ok(marcado.includes(`data-remover-categoria="${categorias[0]!.id}"`));
+    assert.ok(texto(marcado).includes("2 produtos"));
   });
 });

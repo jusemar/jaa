@@ -56,7 +56,7 @@ describe("lista de endereços do cliente", () => {
       "Rua das Flores, 150 — Apto 302",
       "Centro, Belo Horizonte/MG",
       "CEP 30123-000",
-      "Usar este endereço",
+      "Usar este",
     ]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
@@ -79,6 +79,7 @@ describe("lista de endereços do cliente", () => {
     const conteudo = texto(
       renderToStaticMarkup(
         createElement(EtapaEnderecoEntrega, {
+          empresaIdentidadeId: "cccccccc-0000-4000-8000-000000000000",
           aoSelecionar: () => {},
           aoVoltar: () => {},
         }),
@@ -102,7 +103,9 @@ describe("lista de endereços do cliente", () => {
     assert.ok(conteudo.includes("Ponto de entrega ainda não confirmado"));
     assert.ok(conteudo.includes("📍 Localização confirmada"));
     // Já confirmado oferece ajuste; ainda não confirmado convida a confirmar.
-    assert.ok(conteudo.includes("Ajustar ponto no mapa"));
+    assert.ok(conteudo.includes("Ajustar ponto"));
+    // O significado completo continua disponível para leitor de tela.
+    assert.ok(html.includes("Ajustar ponto no mapa:"));
     assert.ok(conteudo.includes("Confirmar no mapa"));
   });
 
@@ -159,6 +162,8 @@ describe("sugestão no mapa de entrega", () => {
     const sugestao = { latitude: -20.004977, longitude: -44.01567 };
     const html = renderToStaticMarkup(
       createElement(ConfirmarPontoEntrega, {
+        chaveMapa: "novo",
+        empresaIdentidadeId: "cccccccc-0000-4000-8000-000000000000",
         endereco: {
           ...semPonto,
           cep: "30626497",
@@ -177,7 +182,8 @@ describe("sugestão no mapa de entrega", () => {
     assert.ok(html.includes('data-ponto-selecionado="-20.004977,-44.01567"'));
     assert.equal(html.includes("data-ponto-pendente"), false);
     assert.equal(html.includes("data-confirmar-ponto"), true);
-    assert.equal(html.includes('disabled=""'), false);
+    assert.equal(html.includes('disabled=""'), true);
+    assert.ok(texto(html).includes("Salvar endereço"));
   });
 });
 
@@ -243,5 +249,44 @@ describe("entrega no pedido", () => {
         "Este pedido é anterior ao ponto de entrega confirmado.",
       ),
     );
+  });
+
+  /*
+   * REGRESSÃO: o bloco de ações era `shrink-0`, então em coluna estreita (o painel "Seu pedido")
+   * ele não cedia espaço e os botões vazavam para fora do card — alguns ficavam inalcançáveis.
+   * Agora a faixa quebra sozinha e TODAS as ações continuam presentes e clicáveis.
+   */
+  it("as quatro ações do endereço continuam presentes e podem quebrar linha sem vazar", () => {
+    // Com remoção habilitada: é o cenário com mais botões, o que mais apertava a coluna estreita.
+    const html = renderToStaticMarkup(
+      createElement(ListaEnderecos, {
+        enderecos: [confirmado],
+        selecionadoId: null,
+        aoUsar: () => {},
+        aoEditar: () => {},
+        aoAjustarPonto: () => {},
+        aoRemover: () => {},
+      }),
+    );
+    const conteudo = texto(html);
+    for (const acao of ["Usar este", "Ajustar ponto", "Editar", "Remover"]) {
+      assert.ok(conteudo.includes(acao), acao);
+    }
+
+    const bloco = html.slice(html.indexOf("data-usar-endereco"));
+    const faixa = html.slice(html.lastIndexOf("<span", html.indexOf("data-usar-endereco")), html.indexOf("data-usar-endereco"));
+    assert.ok(faixa.includes("flex-wrap"), "a faixa de ações quebra linha quando não cabe");
+    assert.ok(!faixa.includes("shrink-0"), "a faixa não é rígida: era isso que fazia os botões vazarem");
+    // Alvo de toque adequado em todos os botões da faixa.
+    assert.equal((bloco.match(/min-h-9/g) ?? []).length >= 3, true, "botões com alvo de toque");
+  });
+
+  it("o texto do endereço tem prioridade e pode encolher; as ações nunca o empurram para fora", () => {
+    const html = lista([confirmado]);
+    // `basis-56` dá ao texto um tamanho de partida; `min-w-0` deixa ele encolher em vez de estourar.
+    const textoDoItem = html.slice(html.indexOf("<li"), html.indexOf("data-usar-endereco"));
+    assert.ok(textoDoItem.includes("min-w-0"));
+    assert.ok(textoDoItem.includes("basis-56"));
+    assert.ok(textoDoItem.includes("[overflow-wrap:anywhere]"), "endereço longo quebra linha");
   });
 });

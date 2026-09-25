@@ -4,6 +4,7 @@ import { autorizarEmpresa } from "../../empresas/lib/autorizacao-empresas.js";
 import { buscarIdentidadePessoalPorNomeUsuario } from "../../identidades/repositorios/repositorio-identidades.js";
 import {
   alterarDisponibilidade,
+  buscarCandidatosEntregador,
   alterarStatusEntregador,
   buscarEntregadorDaEmpresa,
   buscarVinculoEntregador,
@@ -34,6 +35,16 @@ export async function listarEntregadoresAutorizado(
   const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-entregadores");
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
   return { tipo: "lista", entregadores: await listarEntregadoresDaEmpresa(banco, empresaId) };
+}
+
+export async function buscarCandidatosEntregadorAutorizado(banco: Banco, usuarioId: string, empresaId: string, termo: string) {
+  const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-entregadores");
+  if (!acesso) return { tipo: "empresa-nao-encontrada" } as const;
+  const candidatos = await buscarCandidatosEntregador(banco, empresaId, termo);
+  return {
+    tipo: "lista" as const,
+    candidatos: candidatos.map(({ pessoa, status }) => ({ pessoa, situacao: status === "inativo" ? ("inativo" as const) : ("novo" as const) })),
+  };
 }
 
 /**

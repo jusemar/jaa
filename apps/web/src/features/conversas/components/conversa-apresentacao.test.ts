@@ -62,14 +62,15 @@ describe("BalaoMensagem", () => {
   });
 
   it("mensagem própria mostra o estado junto ao horário, no mesmo rodapé", () => {
-    const esperados = { enviada: ["✓", "Enviada"], entregue: ["✓✓", "Entregue"], lida: ["✓✓", "Lida"] } as const;
-    for (const [estado, [simbolo, rotulo]] of Object.entries(esperados)) {
+    // O estado é um ÍCONE do conjunto do Jaa; quem carrega o significado é o aria-label/title.
+    for (const [estado, rotulo] of Object.entries({ enviada: "Enviada", entregue: "Entregue", lida: "Lida" })) {
       const marcacao = balao(mensagem(3, EU, ha(5), estado as Mensagem["estado"]));
       const rodape = marcacao.slice(marcacao.indexOf("data-rodape"));
       assert.ok(rodape.includes("<time"), "horário no rodapé");
       assert.ok(rodape.includes(`data-estado="${estado}"`), "estado no mesmo rodapé do horário");
       assert.ok(rodape.includes(`aria-label="${rotulo}"`));
-      assert.ok(texto(rodape).endsWith(simbolo));
+      // Um traço para "enviada" e dois para entregue/lida: a diferença continua visível.
+      assert.ok(rodape.includes("<svg"), "o estado é desenhado, não um caractere de texto");
     }
   });
 
@@ -208,7 +209,7 @@ describe("mensagem de pedido no balão", () => {
       formaPagamentoNaEntrega: "dinheiro",
       trocoParaCentavos: null,
       totalCentavos: 9180,
-      itens: [{ nomeProduto: "Pizza Calabresa", quantidade: 2, subtotalCentavos: 7980 }, { nomeProduto: "Refrigerante 2L", quantidade: 1, subtotalCentavos: 1200 }],
+      itens: [{ nomeProduto: "Pizza Calabresa", quantidade: 2, subtotalCentavos: 7980, escolhas: [], observacao: null }, { nomeProduto: "Refrigerante 2L", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null }],
     },
   };
 
@@ -256,12 +257,26 @@ describe("CabecalhoConversa", () => {
     assert.ok(!cabecalho("online", false).includes("data-tipo-participante"));
   });
 
-  it("no celular há caminho de volta para a lista; no desktop ele não existe", () => {
+  it("em tela reduzida há caminho de volta para a lista; nas três colunas ele não existe", () => {
     const comVoltar = html(createElement(CabecalhoConversa, { outraIdentidade: OUTRA, presenca: null, digitando: false, aoVoltar: () => {} }));
     assert.ok(comVoltar.includes("data-voltar-conversas"));
-    // Só no celular: no desktop os dois painéis convivem e voltar não faz sentido.
-    assert.ok(/data-voltar-conversas[^>]*md:hidden|md:hidden[^>]*data-voltar-conversas/.test(comVoltar));
+    /*
+     * A seta existe onde vale UMA TELA POR VEZ, e desaparece exatamente onde lista, conversa e
+     * pedido convivem (`xl`) — o mesmo e único breakpoint do mensageiro, nunca `md`/`lg` soltos.
+     */
+    assert.ok(/data-voltar-conversas[^>]*xl:hidden|xl:hidden[^>]*data-voltar-conversas/.test(comVoltar));
     assert.equal(cabecalho("online", false).includes("data-voltar-conversas"), false);
+  });
+
+  it("usa a MESMA superfície clara das demais áreas do aplicativo", () => {
+    const barra = cabecalho("online", false);
+    const abertura = barra.slice(0, barra.indexOf(">") + 1);
+    /*
+     * Uma superfície só no Design System: o cinza próprio do cabeçalho fazia esta barra parecer de
+     * outro sistema, ao lado da navegação e da lista. Quem separa as regiões é a borda.
+     */
+    assert.ok(abertura.includes("bg-superficie") && !abertura.includes("bg-superficie-suave"));
+    assert.ok(abertura.includes("border-b border-borda"), "a separação continua sendo a borda");
   });
 
   it("não tem horário global nem prévia da última mensagem", () => {
@@ -358,13 +373,18 @@ describe("ListaConversas", () => {
   });
 });
 
-describe("mídias futuras no compositor", () => {
-  it("Foto, Vídeo, Áudio e Documento aparecem desabilitados, com 'Em breve', sem seletor de arquivo", () => {
+describe("anexar (mídia futura) no compositor", () => {
+  it("um único botão de anexar, desabilitado, anunciando os quatro tipos e sem seletor de arquivo", () => {
     const marcacao = html(createElement(AcoesMidiaDesabilitadas));
-    for (const rotulo of ["Foto", "Vídeo", "Áudio", "Documento"]) {
-      const botao = marcacao.match(new RegExp(`<button[^>]*data-midia-futura="${rotulo}"[^>]*>`))?.[0] ?? "";
-      assert.ok(botao.includes("disabled"), `${rotulo} desabilitado`);
-      assert.ok(botao.includes('type="button"'), `${rotulo} não envia formulário`);
+    const botoes = marcacao.match(/<button[^>]*data-midia-futura="[^"]*"[^>]*>/g) ?? [];
+    // UM controle, como no WhatsApp: quatro botões só para dizer "em breve" tomavam a linha do compositor.
+    assert.equal(botoes.length, 1);
+    const botao = botoes[0] ?? "";
+    assert.ok(botao.includes("disabled"), "desabilitado");
+    assert.ok(botao.includes('type="button"'), "não envia o formulário");
+    // Nada da informação se perde: os quatro tipos continuam no rótulo acessível e na dica.
+    for (const tipo of ["foto", "vídeo", "áudio", "documento"]) {
+      assert.ok(botao.toLowerCase().includes(tipo), tipo);
     }
     assert.ok(texto(marcacao).includes("Em breve"));
     assert.ok(!/<input|type="file"|<form|ondrop|accept=/i.test(marcacao), "sem seletor, upload ou drop");

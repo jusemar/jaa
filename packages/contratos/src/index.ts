@@ -6,6 +6,7 @@ export * from "./identidades/perfil.ts";
 export * from "./empresas/empresa.ts";
 export * from "./produtos/produto.ts";
 export * from "./produtos/categoria.ts";
+export * from "./produtos/personalizacao.ts";
 export * from "./arquivos/arquivo.ts";
 export * from "./catalogo/catalogo-publico.ts";
 export * from "./enderecos/endereco.ts";

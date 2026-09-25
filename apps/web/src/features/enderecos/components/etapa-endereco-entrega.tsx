@@ -8,11 +8,11 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import {
   arquivarEndereco,
-  atualizarEndereco,
-  confirmarLocalizacao,
-  criarEndereco,
+  atualizarEnderecoParaEmpresa,
+  criarEnderecoParaEmpresa,
   listarEnderecos,
-  obterSugestaoLocalizacao,
+  obterSugestaoLocalizacaoDoRascunho,
+  validarCoberturaEntrega,
 } from "../lib/api-enderecos";
 import { ConfirmarPontoEntrega } from "./confirmar-ponto-entrega";
 import {
@@ -32,12 +32,33 @@ type Etapa =
   | { modo: "lista" }
   | { modo: "novo" }
   | { modo: "editar"; endereco: EnderecoCliente }
-  | { modo: "mapa"; endereco: EnderecoCliente; sugestao: Coordenadas | null };
+  | {
+      modo: "mapa";
+      dados: DadosFormularioEndereco;
+      enderecoOriginal: EnderecoCliente | null;
+      sugestao: Coordenadas | null;
+    };
+
+const dadosDoEndereco = (
+  endereco: EnderecoCliente,
+): DadosFormularioEndereco => ({
+  apelido: endereco.apelido,
+  cep: endereco.cep,
+  logradouro: endereco.logradouro,
+  numero: endereco.numero,
+  complemento: endereco.complemento,
+  bairro: endereco.bairro,
+  cidade: endereco.cidade,
+  uf: endereco.uf,
+  pontoReferencia: endereco.pontoReferencia,
+});
 
 export function EtapaEnderecoEntrega({
+  empresaIdentidadeId,
   aoSelecionar,
   aoVoltar,
 }: {
+  empresaIdentidadeId: string;
   aoSelecionar: (endereco: EnderecoCliente) => void;
   aoVoltar: () => void;
 }) {
@@ -68,22 +89,46 @@ export function EtapaEnderecoEntrega({
   async function abrirMapa(endereco: EnderecoCliente) {
     setErro(null);
     const jaConfirmado = enderecoTemLocalizacaoConfirmada(endereco);
-    const sugestao = jaConfirmado
-      ? null
-      : await obterSugestaoLocalizacao(endereco.id);
+    let sugestao: Coordenadas | null = null;
+    if (jaConfirmado) {
+      sugestao = {
+        latitude: endereco.latitude as number,
+        longitude: endereco.longitude as number,
+      };
+    } else {
+      const resultado = await obterSugestaoLocalizacaoDoRascunho(
+        empresaIdentidadeId,
+        dadosDoEndereco(endereco),
+      );
+      sugestao = resultado.ok ? resultado.dados.coordenadas : null;
+    }
     setEtapa({
       modo: "mapa",
-      endereco,
-      sugestao: sugestao?.ok ? sugestao.dados.coordenadas : null,
+      dados: dadosDoEndereco(endereco),
+      enderecoOriginal: endereco,
+      sugestao,
     });
   }
 
   // Selecionar: só segue direto quando o ponto já foi confirmado antes (primeira vez passa pelo mapa).
-  function usar(endereco: EnderecoCliente) {
+  async function usar(endereco: EnderecoCliente) {
     if (!enderecoTemLocalizacaoConfirmada(endereco)) {
-      void abrirMapa(endereco);
+      await abrirMapa(endereco);
       return;
     }
+    const cobertura = await validarCoberturaEntrega(empresaIdentidadeId, {
+      latitude: endereco.latitude as number,
+      longitude: endereco.longitude as number,
+    });
+    if (!cobertura.ok || !cobertura.dados.atendida) {
+      setErro(
+        cobertura.ok
+          ? "Esta empresa ainda não realiza entregas neste endereço."
+          : cobertura.mensagem,
+      );
+      return;
+    }
+    setErro(null);
     aoSelecionar(endereco);
   }
 
@@ -91,19 +136,21 @@ export function EtapaEnderecoEntrega({
     setErro(null);
     setEnviando(true);
     try {
-      const resultado =
-        etapa.modo === "editar"
-          ? await atualizarEndereco(etapa.endereco.id, dados)
-          : await criarEndereco(dados);
+      const enderecoOriginal = etapa.modo === "editar" ? etapa.endereco : null;
+      const resultado = await obterSugestaoLocalizacaoDoRascunho(
+        empresaIdentidadeId,
+        dados,
+      );
       if (!resultado.ok) {
         setErro(resultado.mensagem);
         return;
       }
-      await recarregar();
-      // Endereço novo (ou alterado a ponto de perder a confirmação) vai direto para o mapa.
-      if (enderecoTemLocalizacaoConfirmada(resultado.dados))
-        setEtapa({ modo: "lista" });
-      else await abrirMapa(resultado.dados);
+      setEtapa({
+        modo: "mapa",
+        dados,
+        enderecoOriginal,
+        sugestao: resultado.dados.coordenadas,
+      });
     } finally {
       setEnviando(false);
     }
@@ -114,10 +161,18 @@ export function EtapaEnderecoEntrega({
     setErro(null);
     setEnviando(true);
     try {
-      const resultado = await confirmarLocalizacao(
-        etapa.endereco.id,
-        coordenadas,
-      );
+      const resultado = etapa.enderecoOriginal
+        ? await atualizarEnderecoParaEmpresa(
+            etapa.enderecoOriginal.id,
+            empresaIdentidadeId,
+            etapa.dados,
+            coordenadas,
+          )
+        : await criarEnderecoParaEmpresa(
+            empresaIdentidadeId,
+            etapa.dados,
+            coordenadas,
+          );
       if (!resultado.ok) {
         setErro(resultado.mensagem);
         return;
@@ -149,10 +204,13 @@ export function EtapaEnderecoEntrega({
   if (etapa.modo === "mapa") {
     return (
       <ConfirmarPontoEntrega
-        endereco={
-          enderecos.find((salvo) => salvo.id === etapa.endereco.id) ??
-          etapa.endereco
-        }
+        empresaIdentidadeId={empresaIdentidadeId}
+        endereco={{
+          ...etapa.dados,
+          complemento: etapa.dados.complemento ?? null,
+          pontoReferencia: etapa.dados.pontoReferencia ?? null,
+        }}
+        chaveMapa={etapa.enderecoOriginal?.id ?? "novo"}
         sugestao={etapa.sugestao}
         enviando={enviando}
         erro={erro}
@@ -179,7 +237,7 @@ export function EtapaEnderecoEntrega({
           <ListaEnderecos
             enderecos={enderecos}
             selecionadoId={null}
-            aoUsar={usar}
+            aoUsar={(endereco) => void usar(endereco)}
             aoEditar={(endereco) => setEtapa({ modo: "editar", endereco })}
             aoAjustarPonto={(endereco) => void abrirMapa(endereco)}
             aoRemover={(endereco) => void remover(endereco)}

@@ -1,8 +1,10 @@
 import {
   enderecoClienteSchema,
+  coberturaEntregaSchema,
   listaEnderecosSchema,
   sugestaoLocalizacaoSchema,
   type Coordenadas,
+  type CoberturaEntrega,
   type CriarEnderecoEntrada,
   type EnderecoCliente,
   type ListaEnderecos,
@@ -17,32 +19,153 @@ const caminho = (sufixo = "") => `/enderecos${sufixo}`;
 const comIdentidade = () => cabecalhosIdentidadeAtuante();
 
 export function listarEnderecos(): Promise<ResultadoApi<ListaEnderecos>> {
-  return requisitarApi(caminho(), listaEnderecosSchema, { headers: comIdentidade() });
-}
-
-export function criarEndereco(entrada: CriarEnderecoEntrada): Promise<ResultadoApi<EnderecoCliente>> {
-  return requisitarApi(caminho(), enderecoClienteSchema, { method: "POST", headers: comIdentidade(), body: JSON.stringify(entrada) });
-}
-
-export function atualizarEndereco(enderecoId: string, entrada: CriarEnderecoEntrada): Promise<ResultadoApi<EnderecoCliente>> {
-  return requisitarApi(caminho(`/${encodeURIComponent(enderecoId)}`), enderecoClienteSchema, { method: "PATCH", headers: comIdentidade(), body: JSON.stringify(entrada) });
-}
-
-export function arquivarEndereco(enderecoId: string): Promise<ResultadoApi<null>> {
-  // 204 sem corpo: o schema apenas aceita a resposta vazia.
-  return requisitarApi(caminho(`/${encodeURIComponent(enderecoId)}`), z.null(), { method: "DELETE", headers: comIdentidade() });
-}
-
-// Confirmação/ajuste do PONTO: só acontece por ação explícita do cliente no mapa.
-export function confirmarLocalizacao(enderecoId: string, coordenadas: Coordenadas): Promise<ResultadoApi<EnderecoCliente>> {
-  return requisitarApi(caminho(`/${encodeURIComponent(enderecoId)}/localizacao`), enderecoClienteSchema, {
-    method: "POST",
+  return requisitarApi(caminho(), listaEnderecosSchema, {
     headers: comIdentidade(),
-    body: JSON.stringify(coordenadas),
   });
 }
 
+export function criarEndereco(
+  entrada: CriarEnderecoEntrada,
+): Promise<ResultadoApi<EnderecoCliente>> {
+  return requisitarApi(caminho(), enderecoClienteSchema, {
+    method: "POST",
+    headers: comIdentidade(),
+    body: JSON.stringify(entrada),
+  });
+}
+
+export function atualizarEndereco(
+  enderecoId: string,
+  entrada: CriarEnderecoEntrada,
+): Promise<ResultadoApi<EnderecoCliente>> {
+  return requisitarApi(
+    caminho(`/${encodeURIComponent(enderecoId)}`),
+    enderecoClienteSchema,
+    {
+      method: "PATCH",
+      headers: comIdentidade(),
+      body: JSON.stringify(entrada),
+    },
+  );
+}
+
+export function arquivarEndereco(
+  enderecoId: string,
+): Promise<ResultadoApi<null>> {
+  // 204 sem corpo: o schema apenas aceita a resposta vazia.
+  return requisitarApi(
+    caminho(`/${encodeURIComponent(enderecoId)}`),
+    z.null(),
+    { method: "DELETE", headers: comIdentidade() },
+  );
+}
+
+// Confirmação/ajuste do PONTO: só acontece por ação explícita do cliente no mapa.
+export function confirmarLocalizacao(
+  enderecoId: string,
+  coordenadas: Coordenadas,
+): Promise<ResultadoApi<EnderecoCliente>> {
+  return requisitarApi(
+    caminho(`/${encodeURIComponent(enderecoId)}/localizacao`),
+    enderecoClienteSchema,
+    {
+      method: "POST",
+      headers: comIdentidade(),
+      body: JSON.stringify(coordenadas),
+    },
+  );
+}
+
+export function validarCoberturaEntrega(
+  empresaIdentidadeId: string,
+  coordenadas: Coordenadas,
+): Promise<ResultadoApi<CoberturaEntrega>> {
+  return requisitarApi(
+    `/empresas/${encodeURIComponent(empresaIdentidadeId)}/cobertura-entrega`,
+    coberturaEntregaSchema,
+    {
+      method: "POST",
+      headers: comIdentidade(),
+      body: JSON.stringify(coordenadas),
+    },
+  );
+}
+
+export function confirmarLocalizacaoParaEmpresa(
+  enderecoId: string,
+  empresaIdentidadeId: string,
+  coordenadas: Coordenadas,
+): Promise<ResultadoApi<EnderecoCliente>> {
+  return requisitarApi(
+    caminho(
+      `/${encodeURIComponent(enderecoId)}/localizacao/empresas/${encodeURIComponent(empresaIdentidadeId)}`,
+    ),
+    enderecoClienteSchema,
+    {
+      method: "POST",
+      headers: comIdentidade(),
+      body: JSON.stringify(coordenadas),
+    },
+  );
+}
+
 // Palpite para abrir o mapa perto do lugar provável; nunca altera o endereço nem confirma o ponto.
-export function obterSugestaoLocalizacao(enderecoId: string): Promise<ResultadoApi<SugestaoLocalizacao>> {
-  return requisitarApi(caminho(`/${encodeURIComponent(enderecoId)}/sugestao-localizacao`), sugestaoLocalizacaoSchema, { headers: comIdentidade() });
+export function obterSugestaoLocalizacao(
+  enderecoId: string,
+): Promise<ResultadoApi<SugestaoLocalizacao>> {
+  return requisitarApi(
+    caminho(`/${encodeURIComponent(enderecoId)}/sugestao-localizacao`),
+    sugestaoLocalizacaoSchema,
+    { headers: comIdentidade() },
+  );
+}
+
+export function obterSugestaoLocalizacaoDoRascunho(
+  empresaIdentidadeId: string,
+  endereco: CriarEnderecoEntrada,
+): Promise<ResultadoApi<SugestaoLocalizacao>> {
+  return requisitarApi(
+    `/empresas/${encodeURIComponent(empresaIdentidadeId)}/enderecos/sugestao-localizacao`,
+    sugestaoLocalizacaoSchema,
+    {
+      method: "POST",
+      headers: comIdentidade(),
+      body: JSON.stringify(endereco),
+    },
+  );
+}
+
+export function criarEnderecoParaEmpresa(
+  empresaIdentidadeId: string,
+  endereco: CriarEnderecoEntrada,
+  coordenadas: Coordenadas,
+): Promise<ResultadoApi<EnderecoCliente>> {
+  return requisitarApi(
+    `/empresas/${encodeURIComponent(empresaIdentidadeId)}/enderecos`,
+    enderecoClienteSchema,
+    {
+      method: "POST",
+      headers: comIdentidade(),
+      body: JSON.stringify({ endereco, coordenadas }),
+    },
+  );
+}
+
+export function atualizarEnderecoParaEmpresa(
+  enderecoId: string,
+  empresaIdentidadeId: string,
+  endereco: CriarEnderecoEntrada,
+  coordenadas: Coordenadas,
+): Promise<ResultadoApi<EnderecoCliente>> {
+  return requisitarApi(
+    caminho(
+      `/${encodeURIComponent(enderecoId)}/empresas/${encodeURIComponent(empresaIdentidadeId)}`,
+    ),
+    enderecoClienteSchema,
+    {
+      method: "PATCH",
+      headers: comIdentidade(),
+      body: JSON.stringify({ endereco, coordenadas }),
+    },
+  );
 }

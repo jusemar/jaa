@@ -125,8 +125,9 @@ describe("criar pedido a partir da conversa", () => {
       trocoParaCentavos: 10000,
       totalCentavos: 9180,
       itens: [
-        { nomeProduto: "Pizza Calabresa", quantidade: 2, subtotalCentavos: 7980 },
-        { nomeProduto: "Refrigerante 2L", quantidade: 1, subtotalCentavos: 1200 },
+        // Produto comum: sem montagem nem observação, mas os campos existem (vazio/null, nunca ausentes).
+        { nomeProduto: "Pizza Calabresa", quantidade: 2, subtotalCentavos: 7980, escolhas: [], observacao: null },
+        { nomeProduto: "Refrigerante 2L", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null },
       ],
     });
     assert.deepEqual((await ctx.historico(comoPizzaria, conversaBP)).mensagens.at(-1), card);
@@ -281,5 +282,151 @@ describe("autorização do pedido", () => {
       assert.equal(item.empresaId, (await ctx.banco.select().from(pedidos).where(eq(pedidos.id, pedidoDeB.id)))[0]?.empresaId);
       assert.equal(item.subtotalCentavos, item.precoUnitarioCentavos * item.quantidade);
     }
+  });
+});
+
+/*
+ * PEDIDO COM MONTAGEM (produto personalizado). O caminho completo — grupos lidos do banco, preço
+ * recalculado com os acréscimos e SNAPSHOT das escolhas no pedido.
+ *
+ * As regras puras (mínimo, máximo, opção desconhecida, preço unitário, itens repetidos) têm cobertura
+ * própria e rápida em calculo-pedido.test.ts; aqui o que se verifica é a persistência e a leitura.
+ */
+describe("pedido com produto montado pelo cliente", () => {
+  let prato: Produto;
+  let grandeId = "";
+  let arrozId = "";
+  let pequenoId = "";
+
+  before(async () => {
+    prato = await criarProduto(pizzaria, { nome: "Monte seu prato", precoCentavos: 2490 });
+    const rota = `/empresas/${pizzaria.id}/produtos/${prato.id}/grupos-opcoes`;
+
+    const tamanho = (await ctx.api(A, "POST", rota, { nome: "Tamanho", minimoEscolhas: 1, maximoEscolhas: 1 })).json();
+    const grupoTamanho = tamanho.grupos[0].id;
+    await ctx.api(A, "POST", `${rota}/${grupoTamanho}/opcoes`, { nome: "Pequeno" });
+    await ctx.api(A, "POST", `${rota}/${grupoTamanho}/opcoes`, { nome: "Grande", precoAdicionalCentavos: 500 });
+
+    const acompanhamentos = (await ctx.api(A, "POST", rota, { nome: "Acompanhamentos", minimoEscolhas: 0, maximoEscolhas: 2 })).json();
+    const grupoAcompanhamentos = acompanhamentos.grupos[1].id;
+    await ctx.api(A, "POST", `${rota}/${grupoAcompanhamentos}/opcoes`, { nome: "Arroz" });
+
+    // Os ids vêm da consulta PÚBLICA: é exatamente o que o cliente tem em mãos.
+    const detalhe = (await ctx.api(null, "GET", `/publico/empresas/${pizzaria.identidadeId}/catalogo/produtos/${prato.id}`)).json();
+    pequenoId = detalhe.grupos[0].opcoes.find((opcao: { nome: string }) => opcao.nome === "Pequeno").id;
+    grandeId = detalhe.grupos[0].opcoes.find((opcao: { nome: string }) => opcao.nome === "Grande").id;
+    arrozId = detalhe.grupos[1].opcoes.find((opcao: { nome: string }) => opcao.nome === "Arroz").id;
+  });
+
+  it("servidor soma os acréscimos e grava o snapshot das escolhas", async () => {
+    const resposta = await pedir(B, {
+      ...pedidoBase(),
+      itens: [{ produtoId: prato.id, quantidade: 2, opcaoIds: [arrozId, grandeId] }],
+    });
+    assert.equal(resposta.statusCode, 201, resposta.body);
+    const pedido: Pedido = resposta.json();
+
+    const item = pedido.itens[0]!;
+    // 24,90 + 5,00 (Grande) + 0 (Arroz) = 29,90 por unidade; 2 unidades = 59,80.
+    assert.equal(item.precoUnitarioCentavos, 2990);
+    assert.equal(item.subtotalCentavos, 5980);
+    assert.equal(pedido.totalCentavos, 5980);
+    // Na ordem dos grupos, não na ordem em que o cliente enviou.
+    assert.deepEqual(
+      item.escolhas,
+      [
+        { grupoNome: "Tamanho", opcaoNome: "Grande", precoAdicionalCentavos: 500 },
+        { grupoNome: "Acompanhamentos", opcaoNome: "Arroz", precoAdicionalCentavos: 0 },
+      ],
+    );
+  });
+
+  it("montagens diferentes do MESMO produto convivem no pedido, com preços diferentes", async () => {
+    const resposta = await pedir(B, {
+      ...pedidoBase(),
+      itens: [
+        { produtoId: prato.id, quantidade: 1, opcaoIds: [grandeId] },
+        { produtoId: prato.id, quantidade: 1, opcaoIds: [pequenoId] },
+      ],
+    });
+    assert.equal(resposta.statusCode, 201, resposta.body);
+    const pedido: Pedido = resposta.json();
+    assert.equal(pedido.itens.length, 2, "dois itens do mesmo produto");
+    assert.deepEqual([...pedido.itens].map((item) => item.precoUnitarioCentavos).sort((a, b) => a - b), [2490, 2990]);
+    assert.equal(pedido.totalCentavos, 5480);
+  });
+
+  it("grupo obrigatório vazio e opção além do máximo são recusados, sem criar nada", async () => {
+    const antes = (await ctx.banco.select({ total: count() }).from(pedidos))[0]!.total;
+
+    const semTamanho = await pedir(B, { ...pedidoBase(), itens: [{ produtoId: prato.id, quantidade: 1, opcaoIds: [arrozId] }] });
+    assert.equal(semTamanho.statusCode, 409, semTamanho.body);
+    assert.equal(semTamanho.json().codigo, "ESCOLHAS_INVALIDAS");
+    assert.ok(semTamanho.json().mensagem.includes("Tamanho"), "a recusa diz qual grupo");
+
+    const opcaoDeOutroProduto = await pedir(B, { ...pedidoBase(), itens: [{ produtoId: refrigerante.id, quantidade: 1, opcaoIds: [grandeId] }] });
+    assert.equal(opcaoDeOutroProduto.statusCode, 409, opcaoDeOutroProduto.body);
+
+    const doisTamanhos = await pedir(B, { ...pedidoBase(), itens: [{ produtoId: prato.id, quantidade: 1, opcaoIds: [pequenoId, grandeId] }] });
+    assert.equal(doisTamanhos.statusCode, 409, doisTamanhos.body);
+
+    assert.equal((await ctx.banco.select({ total: count() }).from(pedidos))[0]!.total, antes, "nenhum pedido criado");
+  });
+
+  it("observação é de CADA unidade: dois pratos iguais com observações diferentes são itens distintos", async () => {
+    const resposta = await pedir(B, {
+      ...pedidoBase(),
+      itens: [
+        { produtoId: prato.id, quantidade: 1, opcaoIds: [grandeId], observacao: "  sem   cebola " },
+        { produtoId: prato.id, quantidade: 2, opcaoIds: [grandeId] },
+      ],
+    });
+    assert.equal(resposta.statusCode, 201, resposta.body);
+    const pedido: Pedido = resposta.json();
+
+    assert.equal(pedido.itens.length, 2, "mesma montagem, observações diferentes = duas linhas");
+    const comObservacao = pedido.itens.find((item) => item.observacao !== null);
+    const semObservacao = pedido.itens.find((item) => item.observacao === null);
+    // Normalizada pelo contrato antes de gravar.
+    assert.equal(comObservacao?.observacao, "sem cebola");
+    assert.equal(comObservacao?.quantidade, 1);
+    assert.equal(semObservacao?.quantidade, 2);
+    // Observação é instrução de preparo: não entra na conta.
+    assert.equal(pedido.totalCentavos, 3 * 2990);
+
+    // O card na conversa também carrega a observação (é o que a empresa lê primeiro).
+    const card = (await ctx.historico(comoPizzaria, conversaBP)).mensagens.at(-1);
+    assert.equal(card?.tipo, "pedido");
+    assert.ok(card?.pedido?.itens.some((item) => item.observacao === "sem cebola"));
+  });
+
+  it("repetir a MESMA observação na mesma montagem é repetição de item, e é recusada", async () => {
+    const resposta = await pedir(B, {
+      ...pedidoBase(),
+      itens: [
+        { produtoId: prato.id, quantidade: 1, opcaoIds: [grandeId], observacao: "sem cebola" },
+        { produtoId: prato.id, quantidade: 1, opcaoIds: [grandeId], observacao: "sem cebola" },
+      ],
+    });
+    assert.equal(resposta.statusCode, 409, resposta.body);
+    assert.equal(resposta.json().codigo, "ITENS_INVALIDOS");
+  });
+
+  it("mudar o cardápio depois NÃO altera o pedido: as escolhas são snapshot", async () => {
+    const resposta = await pedir(B, { ...pedidoBase(), itens: [{ produtoId: prato.id, quantidade: 1, opcaoIds: [grandeId] }] });
+    assert.equal(resposta.statusCode, 201, resposta.body);
+    const pedidoId = resposta.json().id;
+    const rota = `/empresas/${pizzaria.id}/produtos/${prato.id}/grupos-opcoes`;
+
+    // A empresa renomeia a opção, muda o acréscimo e depois apaga o grupo inteiro.
+    const grupos = (await ctx.api(A, "GET", rota)).json();
+    const grupoTamanho = grupos.grupos.find((grupo: { nome: string }) => grupo.nome === "Tamanho");
+    const grande = grupoTamanho.opcoes.find((opcao: { nome: string }) => opcao.nome === "Grande");
+    await ctx.api(A, "PATCH", `${rota}/${grupoTamanho.id}/opcoes/${grande.id}`, { nome: "Família", precoAdicionalCentavos: 900 });
+    await ctx.api(A, "DELETE", `${rota}/${grupoTamanho.id}`);
+
+    const relido: Pedido = (await ctx.api(B, "GET", `/pedidos/${pedidoId}`)).json();
+    assert.deepEqual(relido.itens[0]!.escolhas, [{ grupoNome: "Tamanho", opcaoNome: "Grande", precoAdicionalCentavos: 500 }]);
+    assert.equal(relido.itens[0]!.precoUnitarioCentavos, 2990, "o preço do pedido não muda");
   });
 });

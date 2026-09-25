@@ -3,6 +3,7 @@ import { empresaPublicaSchema } from "../catalogo/catalogo-publico.ts";
 import { coordenadasSchema, ufSchema } from "../enderecos/endereco.ts";
 import { participanteConversaSchema } from "../conversas/conversa.ts";
 import { eventoStatusPedidoSchema, statusPedidoSchema } from "./status-pedido.ts";
+import { MAXIMO_ESCOLHAS_POR_GRUPO, MAXIMO_GRUPOS_POR_PRODUTO } from "../produtos/personalizacao.ts";
 
 /*
  * PEDIDO JAA: domínio ÚNICO, qualquer que seja a origem (hoje, a conversa com a empresa; no futuro,
@@ -42,10 +43,46 @@ export const pagamentoNaEntregaEntradaSchema = z.discriminatedUnion("forma", [
 
 export type PagamentoNaEntradaEntrada = z.input<typeof pagamentoNaEntregaEntradaSchema>;
 
-// O cliente envia produto e quantidade; jamais preço, subtotal ou total.
+// Teto defensivo: mais opções que isso nunca cabem nos grupos de um produto.
+export const MAXIMO_OPCOES_POR_ITEM = MAXIMO_GRUPOS_POR_PRODUTO * MAXIMO_ESCOLHAS_POR_GRUPO;
+
+export const OBSERVACAO_ITEM_TAMANHO_MAXIMO = 200;
+
+/*
+ * OBSERVAÇÃO DE UMA UNIDADE do item ("sem cebola", "carne bem passada"). Pertence à LINHA do pedido,
+ * não ao pedido inteiro: dois pratos montados no mesmo pedido podem ter observações diferentes, e
+ * quem prepara precisa ler cada uma junto do prato a que ela se refere.
+ *
+ * Vazia ou só espaços vira null (o banco não guarda string vazia). É INSTRUÇÃO de preparo: não muda
+ * preço, disponibilidade nem qualquer regra comercial.
+ */
+export const observacaoItemSchema = z
+  .string()
+  .transform((valor) => {
+    const limpa = valor.normalize("NFC").replace(/\s+/g, " ").trim();
+    return limpa === "" ? null : limpa;
+  })
+  .pipe(
+    z
+      .string()
+      .max(OBSERVACAO_ITEM_TAMANHO_MAXIMO, `A observação deve ter no máximo ${OBSERVACAO_ITEM_TAMANHO_MAXIMO} caracteres.`)
+      .refine((valor) => !/[\p{Cc}]/u.test(valor), "A observação contém caracteres inválidos.")
+      .nullable(),
+  )
+  .nullable();
+
+/*
+ * O cliente envia produto, quantidade e as OPÇÕES que escolheu — jamais preço, subtotal ou total.
+ * `opcaoIds` é uma lista simples: o servidor é quem sabe a que grupo cada opção pertence, então o
+ * navegador não consegue "reagrupar" nada para burlar mínimo, máximo ou acréscimo.
+ * Ausente ou vazio = produto comum, sem personalização.
+ */
 export const itemPedidoEntradaSchema = z.object({
   produtoId: z.uuid(),
   quantidade: z.number().int().min(1).max(QUANTIDADE_MAXIMA_POR_ITEM),
+  opcaoIds: z.array(z.uuid()).max(MAXIMO_OPCOES_POR_ITEM).optional(),
+  // Instrução de preparo desta linha; ausente ou vazia = sem observação.
+  observacao: observacaoItemSchema.optional(),
 });
 
 /**
@@ -67,15 +104,33 @@ export const criarPedidoEntradaSchema = z.object({
 
 export type CriarPedidoEntrada = z.input<typeof criarPedidoEntradaSchema>;
 
+/*
+ * ESCOLHA do item, também em SNAPSHOT: o nome do grupo, o nome da opção e o acréscimo COMO ESTAVAM
+ * na compra. Renomear a opção, mudar o acréscimo ou apagar o grupo depois não altera pedido nenhum —
+ * é a mesma regra dos itens.
+ */
+export const escolhaItemPedidoSchema = z.object({
+  grupoNome: z.string(),
+  opcaoNome: z.string(),
+  precoAdicionalCentavos: z.number().int(),
+});
+
+export type EscolhaItemPedido = z.infer<typeof escolhaItemPedidoSchema>;
+
 // Snapshot histórico: nome e preço como estavam na compra (mudanças posteriores não alteram o pedido).
 export const itemPedidoSchema = z.object({
   id: z.uuid(),
   // Referência ao produto atual quando ainda existir; o snapshot vale por si.
   produtoId: z.uuid().nullable(),
   nomeProduto: z.string(),
+  // Preço do produto JÁ com os acréscimos das opções escolhidas (é o que o cliente pagou por unidade).
   precoUnitarioCentavos: z.number().int(),
   quantidade: z.number().int(),
   subtotalCentavos: z.number().int(),
+  // Na ordem em que os grupos são apresentados; vazio = produto comum.
+  escolhas: z.array(escolhaItemPedidoSchema),
+  // Observação desta linha, como foi escrita na compra; null = sem observação.
+  observacao: z.string().nullable(),
 });
 
 export type ItemPedido = z.infer<typeof itemPedidoSchema>;
@@ -136,7 +191,15 @@ export const resumoPedidoSchema = z.object({
   formaPagamentoNaEntrega: formaPagamentoEntregaSchema,
   trocoParaCentavos: z.number().int().nullable(),
   totalCentavos: z.number().int(),
-  itens: z.array(z.object({ nomeProduto: z.string(), quantidade: z.number().int(), subtotalCentavos: z.number().int() })),
+  itens: z.array(
+    z.object({
+      nomeProduto: z.string(),
+      quantidade: z.number().int(),
+      subtotalCentavos: z.number().int(),
+      escolhas: z.array(z.string()),
+      observacao: z.string().nullable(),
+    }),
+  ),
 });
 
 export type ResumoPedido = z.infer<typeof resumoPedidoSchema>;

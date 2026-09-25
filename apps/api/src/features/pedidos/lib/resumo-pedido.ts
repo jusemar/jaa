@@ -11,6 +11,13 @@ export function montarResumoPedido({ pedido, itens }: PedidoComItensRegistro): R
     formaPagamentoNaEntrega: pedido.formaPagamentoNaEntrega,
     trocoParaCentavos: pedido.trocoParaCentavos,
     totalCentavos: pedido.totalCentavos,
-    itens: itens.map((item) => ({ nomeProduto: item.nomeProduto, quantidade: item.quantidade, subtotalCentavos: item.subtotalCentavos })),
+    itens: itens.map((item) => ({
+      nomeProduto: item.nomeProduto,
+      quantidade: item.quantidade,
+      subtotalCentavos: item.subtotalCentavos,
+      // Só os nomes das opções: o card resume a montagem em uma linha, sem repetir preços.
+      escolhas: item.escolhas.map((escolha) => escolha.opcaoNome),
+      observacao: item.observacao,
+    })),
   };
 }

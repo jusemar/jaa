@@ -5,8 +5,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ResumoPercurso, podeDesenharPercurso } from "./percurso-saida.tsx";
 
-const texto = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/ /g, " ").replace(/\s+/g, " ");
-const uuid = (n: number) => `${String(n).repeat(8)}-0000-4000-8000-000000000000`;
+const texto = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/ /g, " ")
+    .replace(/\s+/g, " ");
+const uuid = (n: number) =>
+  `${String(n).repeat(8)}-0000-4000-8000-000000000000`;
 
 const rota = (dados: Partial<RotaDaSaida> = {}): RotaDaSaida => ({
   estado: "percurso_real",
@@ -27,8 +32,18 @@ const rota = (dados: Partial<RotaDaSaida> = {}): RotaDaSaida => ({
 
 const saida = (dados: Partial<SaidaEntrega> = {}): SaidaEntrega => ({
   id: uuid(1),
-  empresa: { identidadeId: uuid(2), nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh" },
-  entregador: { identidadeId: uuid(3), tipo: "pessoal", nomeExibicao: "Paulo Entregador", nomeUsuario: "paulo" },
+  empresa: {
+    identidadeId: uuid(2),
+    nome: "Pizzaria BH",
+    nomeUsuario: "pizzariabh",
+    slug: "pizzaria-bh",
+  },
+  entregador: {
+    identidadeId: uuid(3),
+    tipo: "pessoal",
+    nomeExibicao: "Paulo Entregador",
+    nomeUsuario: "paulo",
+  },
   status: "preparada",
   versaoSequencia: 2,
   paradas: [],
@@ -47,12 +62,13 @@ const saida = (dados: Partial<SaidaEntrega> = {}): SaidaEntrega => ({
   ...dados,
 });
 
-const render = (dados: Partial<SaidaEntrega> = {}) => renderToStaticMarkup(createElement(ResumoPercurso, { saida: saida(dados) }));
+const render = (dados: Partial<SaidaEntrega> = {}) =>
+  renderToStaticMarkup(createElement(ResumoPercurso, { saida: saida(dados) }));
 
 describe("resumo do percurso", () => {
   it("com percurso real mostra distância e tempo de TRAJETO, nunca previsão de entrega", () => {
     const conteudo = texto(render());
-    assert.ok(conteudo.includes("Percurso calculado pelas ruas"));
+    assert.ok(conteudo.includes("aprox. 14 min de trajeto"));
     assert.ok(conteudo.includes("5,3 km"));
     assert.ok(conteudo.includes("14 min"));
     assert.ok(conteudo.includes("não é previsão de entrega"));
@@ -61,24 +77,44 @@ describe("resumo do percurso", () => {
 
   it("nunca promete melhor rota", () => {
     const conteudo = texto(render()).toLowerCase();
-    for (const proibido of ["melhor rota", "rota mais rápida", "rota perfeita", "menor caminho", "eta"]) {
+    for (const proibido of [
+      "melhor rota",
+      "rota mais rápida",
+      "rota perfeita",
+      "menor caminho",
+      "eta",
+    ]) {
       assert.equal(conteudo.includes(proibido), false, proibido);
     }
   });
 
   it("em fallback não aparece número nenhum — só o motivo", () => {
     const html = render({
-      rota: rota({ estado: "aproximacao_local", motivoFallback: "provedor_indisponivel", provedor: null, geometria: null, distanciaMetros: null, duracaoSegundos: null, sequenciaDoProvedor: false }),
+      rota: rota({
+        estado: "aproximacao_local",
+        motivoFallback: "provedor_indisponivel",
+        provedor: null,
+        geometria: null,
+        distanciaMetros: null,
+        duracaoSegundos: null,
+        sequenciaDoProvedor: false,
+      }),
     });
     const conteudo = texto(html);
     assert.ok(html.includes('data-percurso="aproximacao_local"'));
     assert.ok(conteudo.includes("sem cálculo de percurso"));
     assert.ok(conteudo.includes("O serviço de rotas não respondeu."));
-    assert.equal(conteudo.includes("km"), false, "fallback não inventa distância");
+    assert.equal(
+      conteudo.includes("km"),
+      false,
+      "fallback não inventa distância",
+    );
   });
 
   it("sequência alterada depois do cálculo avisa que o percurso será recalculado", () => {
-    assert.ok(texto(render({ versaoSequencia: 3 })).includes("Sequência alterada"));
+    assert.ok(
+      texto(render({ versaoSequencia: 3 })).includes("Sequência alterada"),
+    );
   });
 
   it("saída sem rota calculada continua mostrando a sequência sugerida", () => {
@@ -90,8 +126,19 @@ describe("resumo do percurso", () => {
 
 describe("respeito aos termos do provedor", () => {
   it("o traçado só é desenhado sobre o mapa do MESMO provedor que calculou a rota", () => {
-    assert.equal(podeDesenharPercurso("mapbox", "© Mapbox © OpenStreetMap"), true);
-    assert.equal(podeDesenharPercurso("mapbox", "© OpenStreetMap"), false, "não mistura traçado de um fornecedor com tiles de outro");
-    assert.equal(podeDesenharPercurso(null, "© Mapbox"), false, "sem provedor não há traçado real para desenhar");
+    assert.equal(
+      podeDesenharPercurso("mapbox", "© Mapbox © OpenStreetMap"),
+      true,
+    );
+    assert.equal(
+      podeDesenharPercurso("mapbox", "© OpenStreetMap"),
+      false,
+      "não mistura traçado de um fornecedor com tiles de outro",
+    );
+    assert.equal(
+      podeDesenharPercurso(null, "© Mapbox"),
+      false,
+      "sem provedor não há traçado real para desenhar",
+    );
   });
 });

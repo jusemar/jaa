@@ -11,6 +11,7 @@ import {
   type ResumoPedido,
 } from "@jaa/contratos";
 import { formatarHorarioMensagem } from "@/features/conversas/lib/horarios";
+import { IconeFechar, IconePedidos, IconeSeta } from "@/components/ui/icones";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 
 // Interface TÉCNICA do Pedido Jaa: card na conversa e detalhe. O Jaa não processa pagamento; só mostra
@@ -41,24 +42,36 @@ export function CardPedido({ pedido, aoAbrir, visaoCliente = false }: { pedido: 
      * jade com texto quase branco). Herdar a cor do balão deixava o conteúdo do pedido branco sobre
      * verde-claro, praticamente ilegível. Quem identifica "fui eu que enviei" é o balão em volta.
      */
-    <div data-card-pedido={pedido.id} className="flex min-w-0 flex-col gap-1 rounded-jaa border border-marca/40 bg-mensagem-recebida p-2 text-left text-conteudo shadow-balao">
-      <p className="text-xs font-semibold text-marca">Pedido #{pedido.numero}</p>
+    <div data-card-pedido={pedido.id} className="flex min-w-0 flex-col gap-1.5 rounded-jaa-compacto border border-borda bg-mensagem-recebida p-3 text-left text-conteudo shadow-suave">
+      <p className="flex items-center gap-1.5 text-xs font-bold text-marca">
+        <IconePedidos className="h-4 w-4" />
+        Pedido #{pedido.numero}
+      </p>
       <ul className="text-xs">
-        {pedido.itens.map((item) => (
-          <li key={item.nomeProduto}>
+        {pedido.itens.map((item, indice) => (
+          // O mesmo produto pode aparecer duas vezes com montagens diferentes: a chave leva o índice.
+          <li key={`${item.nomeProduto}-${indice}`}>
             {item.quantidade}× {item.nomeProduto} — {formatarPrecoCentavos(item.subtotalCentavos)}
+            {/* Resumo da montagem escolhida: o snapshot do pedido, não o cardápio de hoje. */}
+            {item.escolhas.length > 0 && <span className="block text-conteudo-suave">{item.escolhas.join(" · ")}</span>}
+            {item.observacao && <span className="block italic text-conteudo-suave">“{item.observacao}”</span>}
           </li>
         ))}
       </ul>
-      <p data-total-pedido className="text-xs font-medium">
+      <p data-total-pedido className="fonte-display text-sm font-bold">
         Total: {formatarPrecoCentavos(pedido.totalCentavos)}
       </p>
       <LinhaPagamento pedido={pedido} />
       <p data-status-pedido={pedido.status} className="text-xs text-conteudo-suave">
         Status: {rotulos[pedido.status]}
       </p>
-      <button type="button" onClick={() => aoAbrir(pedido.id)} className="self-start rounded-full border border-borda px-2.5 py-0.5 text-xs font-medium text-marca hover:bg-marca-suave">
+      <button
+        type="button"
+        onClick={() => aoAbrir(pedido.id)}
+        className="flex min-h-9 items-center justify-center gap-1.5 rounded-jaa-compacto bg-marca-suave px-3 text-xs font-medium text-marca-suave-conteudo transition-colors hover:bg-marca-suave/80"
+      >
         Ver pedido
+        <IconeSeta className="h-3.5 w-3.5" />
       </button>
     </div>
   );
@@ -133,20 +146,47 @@ export function DetalhePedido({
 }) {
   const rotulos = visaoCliente ? ROTULO_STATUS_PEDIDO_CLIENTE : ROTULO_STATUS_PEDIDO;
   return (
-    <article aria-label="Detalhe do pedido" className="flex flex-col gap-1 rounded-jaa border border-borda bg-superficie p-3 text-sm">
-      <button type="button" onClick={aoFechar} className="self-end text-xs underline">
-        Fechar pedido
+    <article aria-label="Detalhe do pedido" className="flex flex-col gap-1.5 rounded-jaa border border-borda bg-superficie p-4 text-sm shadow-cartao">
+      <button
+        type="button"
+        onClick={aoFechar}
+        aria-label="Fechar pedido"
+        className="grid h-9 w-9 shrink-0 place-items-center self-end rounded-jaa-compacto text-conteudo-suave transition-colors hover:bg-realce hover:text-conteudo"
+      >
+        <IconeFechar className="h-4 w-4" />
       </button>
-      <h3 className="font-semibold">Pedido #{pedido.numero} — {pedido.empresa.nome}</h3>
+      <h3 className="fonte-display text-base font-bold">
+        Pedido #{pedido.numero} — {pedido.empresa.nome}
+      </h3>
       <p className="text-xs text-conteudo-suave">Cliente: {pedido.cliente.nomeExibicao}</p>
       <ol aria-label="Itens do pedido" className="flex flex-col gap-0.5 text-xs">
         {pedido.itens.map((item) => (
           <li key={item.id}>
             {item.quantidade}× {item.nomeProduto} — {formatarPrecoCentavos(item.precoUnitarioCentavos)} cada = {formatarPrecoCentavos(item.subtotalCentavos)}
+            {/*
+             * SNAPSHOT da montagem: grupo, opção e acréscimo como estavam na compra. Mudar o
+             * cardápio depois não altera este pedido — é o que a empresa precisa preparar e o que o
+             * cliente precisa conferir.
+             */}
+            {item.observacao && (
+              <span data-observacao-pedido className="ml-4 block italic text-conteudo-suave">
+                Observação: {item.observacao}
+              </span>
+            )}
+            {item.escolhas.length > 0 && (
+              <ul data-escolhas-pedido className="ml-4 flex flex-col text-conteudo-suave">
+                {item.escolhas.map((escolha, indice) => (
+                  <li key={`${escolha.grupoNome}-${escolha.opcaoNome}-${indice}`}>
+                    {escolha.grupoNome}: {escolha.opcaoNome}
+                    {escolha.precoAdicionalCentavos > 0 && ` (+${formatarPrecoCentavos(escolha.precoAdicionalCentavos)})`}
+                  </li>
+                ))}
+              </ul>
+            )}
           </li>
         ))}
       </ol>
-      <p data-total-pedido className="font-medium">
+      <p data-total-pedido className="fonte-display text-base font-bold">
         Total: {formatarPrecoCentavos(pedido.totalCentavos)}
       </p>
       <EnderecoDoPedido destino={pedido.destino} aoVerNoMapa={aoVerPontoNoMapa} />

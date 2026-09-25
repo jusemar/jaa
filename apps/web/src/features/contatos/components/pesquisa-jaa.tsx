@@ -1,8 +1,12 @@
 "use client";
 
-import { TERMO_BUSCA_TAMANHO_MINIMO, type ResultadoBusca } from "@jaa/contratos";
+import {
+  TERMO_BUSCA_TAMANHO_MINIMO,
+  type ResultadoBusca,
+} from "@jaa/contratos";
 import { useEffect, useRef, useState } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
+import { IconeBusca } from "@/components/ui/icones";
 import { pesquisarNoJaa, salvarContato } from "../lib/api-contatos";
 
 /**
@@ -16,9 +20,18 @@ import { pesquisarNoJaa, salvarContato } from "../lib/api-contatos";
  */
 const ESPERA_DIGITACAO_MS = 300;
 
-export function PesquisaJaa({ aoAbrirConversa, aoSalvarContato }: { aoAbrirConversa: (nomeUsuario: string) => void; aoSalvarContato?: () => void }) {
+export function PesquisaJaa({
+  aoAbrirConversa,
+  aoSalvarContato,
+}: {
+  aoAbrirConversa: (nomeUsuario: string) => void;
+  aoSalvarContato?: () => void;
+}) {
   const [termo, setTermo] = useState("");
-  const [resultado, setResultado] = useState<{ contatos: ResultadoBusca[]; externos: ResultadoBusca[] } | null>(null);
+  const [resultado, setResultado] = useState<{
+    contatos: ResultadoBusca[];
+    externos: ResultadoBusca[];
+  } | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState<string | null>(null);
@@ -69,8 +82,19 @@ export function PesquisaJaa({ aoAbrirConversa, aoSalvarContato }: { aoAbrirConve
       setResultado((atual) =>
         atual
           ? {
-              contatos: [{ ...item, ehContato: true }, ...atual.contatos.filter((outro) => outro.identidade.identidadeId !== item.identidade.identidadeId)],
-              externos: atual.externos.filter((outro) => outro.identidade.identidadeId !== item.identidade.identidadeId),
+              contatos: [
+                { ...item, ehContato: true },
+                ...atual.contatos.filter(
+                  (outro) =>
+                    outro.identidade.identidadeId !==
+                    item.identidade.identidadeId,
+                ),
+              ],
+              externos: atual.externos.filter(
+                (outro) =>
+                  outro.identidade.identidadeId !==
+                  item.identidade.identidadeId,
+              ),
             }
           : atual,
       );
@@ -79,12 +103,19 @@ export function PesquisaJaa({ aoAbrirConversa, aoSalvarContato }: { aoAbrirConve
     }
   }
 
-  const semResultados = resultado !== null && resultado.contatos.length === 0 && resultado.externos.length === 0 && !buscando;
+  const semResultados =
+    resultado !== null &&
+    resultado.contatos.length === 0 &&
+    resultado.externos.length === 0 &&
+    !buscando;
 
   return (
     <search className="flex flex-col gap-2">
-      <label className="flex flex-col gap-1 text-sm">
+      {/* Campo suave com o ícone à esquerda, como na referência de UI/UX aprovada. */}
+      {/* Mesma superfície clara da navegação; a borda desenha o campo, sem um cinza só daqui. */}
+      <label className="flex min-h-11 items-center gap-2 rounded-jaa-compacto border border-borda bg-superficie px-3 text-conteudo-suave focus-within:ring-2 focus-within:ring-marca/30 sm:min-h-10">
         <span className="sr-only">Pesquisar no Jaa</span>
+        <IconeBusca className="h-4 w-4 shrink-0" />
         <input
           type="search"
           name="pesquisaJaa"
@@ -93,15 +124,25 @@ export function PesquisaJaa({ aoAbrirConversa, aoSalvarContato }: { aoAbrirConve
           placeholder="Pesquisar no Jaa"
           aria-label="Pesquisar no Jaa"
           autoComplete="off"
-          className="min-h-11 w-full rounded-full border border-borda bg-superficie-suave px-4 text-base outline-none focus:border-marca focus:bg-superficie"
+          className="min-w-0 flex-1 bg-transparent text-sm text-conteudo outline-none placeholder:text-conteudo-suave"
         />
       </label>
 
-      {buscando && <p className="px-1 text-xs text-conteudo-suave">Procurando…</p>}
-      {semResultados && <p className="px-1 text-xs text-conteudo-suave">Nada encontrado para “{termo.trim()}”.</p>}
+      {buscando && (
+        <p className="px-1 text-xs text-conteudo-suave">Procurando…</p>
+      )}
+      {semResultados && (
+        <p className="px-1 text-xs text-conteudo-suave">
+          Nada encontrado para “{termo.trim()}”.
+        </p>
+      )}
 
       {resultado && resultado.contatos.length > 0 && (
-        <GrupoResultados titulo="Meus contatos" itens={resultado.contatos} aoAbrirConversa={aoAbrirConversa} />
+        <GrupoResultados
+          titulo="Meus contatos"
+          itens={resultado.contatos}
+          aoAbrirConversa={aoAbrirConversa}
+        />
       )}
       {resultado && resultado.externos.length > 0 && (
         <GrupoResultados
@@ -137,10 +178,19 @@ function GrupoResultados({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <p className="px-1 text-xs font-semibold uppercase tracking-wide text-conteudo-suave">{titulo}</p>
-      <ul aria-label={titulo} className="flex flex-col divide-y divide-borda overflow-hidden rounded-xl border border-borda bg-superficie">
+      <p className="px-1 text-xs font-semibold uppercase tracking-wide text-conteudo-suave">
+        {titulo}
+      </p>
+      <ul
+        aria-label={titulo}
+        className="flex flex-col divide-y divide-borda overflow-hidden rounded-xl border border-borda bg-superficie"
+      >
         {itens.map((item) => (
-          <li key={item.identidade.identidadeId} data-resultado-busca={item.identidade.identidadeId} className="flex items-center gap-2 px-2">
+          <li
+            key={item.identidade.identidadeId}
+            data-resultado-busca={item.identidade.identidadeId}
+            className="flex items-center gap-2 px-2"
+          >
             {/* Tocar no resultado abre a conversa: sem botão "Abrir conversa". */}
             <button
               type="button"
@@ -152,10 +202,14 @@ function GrupoResultados({
                 <span className="flex items-center gap-1.5 truncate text-sm font-medium text-conteudo">
                   {item.apelido ?? item.identidade.nomeExibicao}
                   {item.identidade.tipo === "empresarial" && (
-                    <span className="rounded-full bg-superficie-suave px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-conteudo-suave">Empresa</span>
+                    <span className="rounded-full bg-ouro/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-aviso">
+                      Empresa
+                    </span>
                   )}
                 </span>
-                <span className="truncate text-xs text-conteudo-suave">@{item.identidade.nomeUsuario}</span>
+                <span className="truncate text-xs text-conteudo-suave">
+                  @{item.identidade.nomeUsuario}
+                </span>
               </span>
             </button>
             {aoSalvar && !item.ehContato && (
@@ -165,7 +219,7 @@ function GrupoResultados({
                 disabled={salvando === item.identidade.identidadeId}
                 onClick={() => aoSalvar(item)}
                 aria-label={`Salvar ${item.identidade.nomeExibicao} nos contatos`}
-                className="shrink-0 rounded-full border border-borda px-3 py-1.5 text-xs text-conteudo disabled:opacity-50"
+                className="shrink-0 rounded-jaa-compacto border border-borda px-3 py-1.5 text-xs font-medium text-conteudo transition-colors hover:bg-realce disabled:opacity-50"
               >
                 Salvar
               </button>

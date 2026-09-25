@@ -12,6 +12,8 @@ export * from "./tabelas/empresas/relacoes.js";
 
 export * from "./tabelas/produtos/categorias-produto.js";
 export * from "./tabelas/produtos/produtos.js";
+export * from "./tabelas/produtos/grupos-opcoes-produto.js";
+export * from "./tabelas/produtos/opcoes-produto.js";
 export * from "./tabelas/produtos/relacoes.js";
 
 export * from "./tabelas/enderecos/enderecos-cliente.js";
@@ -27,9 +29,11 @@ export * from "./tabelas/entregas/saidas-entrega.js";
 export * from "./tabelas/entregas/consumos-roteamento.js";
 export * from "./tabelas/entregas/posicoes-saida.js";
 export * from "./tabelas/entregas/paradas-saida.js";
+export * from "./tabelas/entregas/recusas-saida.js";
 export * from "./tabelas/entregas/relacoes.js";
 export * from "./tabelas/pedidos/destinos-pedido.js";
 export * from "./tabelas/pedidos/itens-pedido.js";
+export * from "./tabelas/pedidos/escolhas-item-pedido.js";
 export * from "./tabelas/pedidos/historico-status-pedido.js";
 export * from "./tabelas/pedidos/relacoes.js";
 

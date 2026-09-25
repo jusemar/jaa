@@ -80,7 +80,7 @@ export function AcoesPedidoEmpresa({
                 aoCancelar(motivoEscolhido);
                 setCancelando(false);
               }}
-              className="rounded-full bg-perigo px-3 py-1.5 text-sm text-marca-conteudo disabled:opacity-50"
+              className="rounded-jaa-compacto bg-perigo px-3 py-1.5 text-sm font-medium text-marca-conteudo disabled:opacity-50"
             >
               Confirmar cancelamento
             </button>

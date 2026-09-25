@@ -161,6 +161,7 @@ describe("situação do entregador", () => {
     ]);
     const conteudo = texto(html);
     assert.ok(conteudo.includes("Em entrega"));
+    assert.equal((conteudo.match(/Em entrega/g) ?? []).length, 1);
     assert.equal(conteudo.includes("Disponível na base"), false);
     assert.equal(html.includes('data-presenca="na-base"'), false);
   });

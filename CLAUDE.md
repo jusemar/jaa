@@ -31,9 +31,9 @@ O Jaa **não deve nascer como marketplace com um chat anexado**. O núcleo do pr
 
 ## Estado atual
 
-A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa"), **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa"), **GESTÃO DO PEDIDO PELA EMPRESA + ACOMPANHAMENTO PELO CLIENTE** (seção 7, "Operação do pedido"), **ENDEREÇOS DO CLIENTE + PONTO DE ENTREGA CONFIRMADO** (seção 7, "Endereço e ponto de entrega") e **ENTREGADORES DA EMPRESA + ATRIBUIÇÃO DAS ENTREGAS** (seção 7, "Entregadores e atribuição").
+A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa"), **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa"), **GESTÃO DO PEDIDO PELA EMPRESA + ACOMPANHAMENTO PELO CLIENTE** (seção 7, "Operação do pedido"), **ENDEREÇOS DO CLIENTE + PONTO DE ENTREGA CONFIRMADO** (seção 7, "Endereço e ponto de entrega") **ENTREGADORES DA EMPRESA + ATRIBUIÇÃO DAS ENTREGAS** (seção 7, "Entregadores e atribuição") **SAÍDA DE ENTREGA com sequência sugerida e reordenação** (seção 7, "Saída de entrega"), **BASE DA EMPRESA + PRESENÇA + FILA AUTOMÁTICA** (seção 7, "Base, presença e fila automática") **ZONAS + FORMAÇÃO AUTOMÁTICA DE SAÍDAS + DESPACHO PELO PRIMEIRO APTO DA FILA** (seção 7, "Zonas e despacho automático") e **MOTOR DE ROTAS REAL com Mapbox como primeiro provedor** (seção 7, "Motor de rotas real").
 
-Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, pagamento dentro do Jaa, **rota otimizada, reordenação de paradas, GPS/rastreamento em tempo real, mapa do entregador em movimento, ETA, fila do cliente e frete** (o mapa existe para o cliente confirmar o ponto e para o entregador abrir o destino), loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
+Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, pagamento dentro do Jaa, **rastreamento GPS durante a entrega, mapa do entregador em movimento, ETA do cliente, push real e frete** (o mapa existe para o cliente confirmar o ponto e para o entregador abrir o destino), loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
 
 ## FASE 1: MENSAGERIA
 
@@ -1027,7 +1027,97 @@ Web (técnica): agindo como a empresa há **Entregadores** (convidar por @usuari
 
 Web: a pessoa vê **"Empresas em que trabalho"** (uma linha por empresa, com 🟢/⚪ e o botão inverso) dentro da sua área; a empresa vê, por entregador, **Vínculo** e **Disponibilidade** separados.
 
-**Preparado, sem implementar agora**: rota sugerida para várias paradas (que o entregador poderá reordenar), fila do cliente ("3 entregas antes da sua"), ETA, GPS e notificação "Indo até você".
+Sequência das paradas, fila do cliente e reordenação estão implementadas na seção "Saída de entrega". **Continuam fora**: motor de roteamento real, ETA, GPS e push.
+
+## Saída de entrega (Fase 2)
+
+**SaídaEntrega agrupa VÁRIOS pedidos de UMA empresa para UM entregador** (`saidas_entrega` + `paradas_saida`): é a operação real de sair com 5 pedidos, e a base da sequência e da fila. Uma saída **nunca mistura empresas** — se a mesma pessoa também leva pedidos de outra, aquilo é outra saída, invisível para esta. Uma empresa não sabe que ele tem saída em outra, quantas entregas são nem para onde.
+
+**Duas máquinas de estado, sem concorrência**: o PEDIDO continua com a sua (recebido → … → entregue/cancelado) e a SAÍDA tem a dela (`preparada → em_andamento → concluida`). Iniciar a saída não é atalho: cada pedido PRONTO avança para `saiu_para_entrega` **pela máquina existente**, com histórico e realtime. `em_rota` e `entregue` continuam avançando pedido a pedido.
+
+**Quem monta é a EMPRESA** (permissão `gerenciar-entregadores`), escolhendo pedidos elegíveis — desta empresa, **PRONTOS**, com destino confirmado e fora de qualquer saída ativa — e um entregador **ATIVO + DISPONÍVEL**. É tudo ou nada: se um pedido não pode entrar, nada é montado. A criação grava, **numa transação**, saída + paradas + a atribuição de cada pedido — a **atribuição continua sendo a fonte única** de "quem é o entregador atual"; a saída só agrupa e ordena. Índice único parcial garante **um pedido em no máximo uma saída ativa** (dois gestores disputando: um vence).
+
+**A sequência do Jaa é SUGESTÃO, não ordem.** Com o motor de rotas configurado, ela vem de roteamento real a partir da base da empresa (seção 7, "Motor de rotas real"); sem provedor, continua a **aproximação local determinística** (vizinho mais próximo em linha reta), que devolve **só a ordem** — nada de distância, duração ou ETA, porque linha reta não é distância rodoviária. Em qualquer dos casos a interface diz "Sequência sugerida pelo Jaa" e **nunca** "melhor rota" ou "mais rápida".
+
+**O ENTREGADOR reordena a própria sequência** (quem conhece a região é quem está na rua): só o entregador ATUAL da saída, e a nova ordem precisa conter **exatamente as paradas ativas, uma vez cada**. A reordenação é **versionada** (`versao_sequencia`): salvar com versão antiga devolve 409 `SEQUENCIA_DESATUALIZADA` e **nada é sobrescrito**. As paradas encerradas não são tocadas. A empresa **acompanha** a sequência (e vê a mudança sem F5), mas não reordena.
+
+**Paradas e conclusão**: pedido entregue ou cancelado **encerra a parada** (sai da sequência ativa, continua no histórico com o motivo); quando não resta parada ativa, a **saída se conclui sozinha**. Pedido dentro de saída ativa **não é reatribuído individualmente** (409 `SAIDA_EM_ANDAMENTO`) — senão o pedido diria Carlos e a saída, Paulo; **transferir uma saída inteira para outro entregador é pendência**. Ficar indisponível depois **não desfaz** a saída recebida: só impede saídas e atribuições novas.
+
+**"Atual/próxima" é posição operacional, não localização**: a primeira parada ativa da sequência. Sem GPS, o Jaa nunca afirma onde o entregador está — a tela da empresa é "Acompanhamento da saída", não "localização em tempo real".
+
+**FILA DO CLIENTE (derivada, nunca a rota)**: o dono do pedido recebe apenas `situacao` + `entregasAntes` (`GET /pedidos/:id/fila` e evento `pedido:fila`). Ele **nunca** recebe a saída, a sequência, os endereços, os nomes ou os ids dos outros pedidos. Reordenar muda a fila de todos automaticamente, porque ela é derivada. **"Indo até você"** só quando a saída está **em andamento** e o pedido é a **primeira parada ativa** — é sequência, não GPS; antes da saída sair, o cliente vê "separado para a entrega".
+
+**Realtime escopado**: `saida:atualizada` vai só para a identidade da EMPRESA e a do ENTREGADOR daquela saída; `pedido:fila`, só para o cliente daquele pedido. Nunca broadcast, e o cliente jamais recebe a saída completa.
+
+**Auditoria**: a saída guarda quem a montou (conta, nunca serializada), quando, o entregador, a sequência inicial, início e conclusão; as paradas guardam encerramento e motivo. Reordenar **não apaga histórico** — muda posições.
+
+## Base, presença e fila automática (Fase 2)
+
+**TRÊS conceitos distintos, que nunca se confundem** (`estadoOperacional()` em `@jaa/contratos`): **VÍNCULO** (`status`: a empresa autoriza aquela pessoa), **DISPONIBILIDADE DECLARADA** (`disponivel`: ele aceita entregas DAQUELA empresa) e **PRESENÇA NA BASE** (`na_base`: a localização confirma que ele está lá). Daí os estados derivados **Indisponível**, **Disponível fora da base**, **Disponível na base** e **Com pendência operacional**; **só ATIVO + ACEITANDO + NA BASE + APTO** participa da fila.
+
+**PONTO OPERACIONAL da empresa** (`bases_empresa`, 1:1 com a empresa): endereço **textual** + `latitude/longitude` confirmadas explicitamente no mapa + `raio_metros` configurável (padrão 150, entre 30 e 2000). Valem as **mesmas regras do endereço do cliente**: o mapa **não corrige** o texto digitado, a coordenada só passa a valer por **ação explícita** e mudar campo **estrutural** derruba a confirmação (mesma função `alteracaoInvalidaLocalizacao`). O **raio é a área da base** (detectar quem chegou) e **não** é região de entrega, taxa ou limite de atendimento. Sem ponto confirmado não há presença: a leitura é recusada com `BASE_NAO_CONFIGURADA`.
+
+**Quem decide presença é o SERVIDOR.** O aparelho envia só o que MEDIU (`latitude`, `longitude`, `precisaoMetros?`, `medidaEm`) em `POST /entregas/vinculos/:id/localizacao`; **não existe "estouNaBase" enviado pelo cliente**. A API valida o vínculo (filtrado pelo `usuarioId` da sessão: ninguém envia localização por outra pessoa), descarta leitura **velha** (> 2 min), **futura** (> 60 s) ou **imprecisa** (> 200 m, ou incerteza maior que o próprio raio) com `LOCALIZACAO_IMPRECISA`, e só então calcula a distância até o ponto da base.
+
+**Estabilização (histerese)**: são precisas **2 leituras consecutivas** dentro do raio para entrar e **2 além de 1,3× o raio** para sair. Uma única leitura ligeiramente fora **não** remove ninguém — oscilação de GPS perto da borda não pode tirar alguém da fila.
+
+**PRIVACIDADE — a localização serve SOMENTE para presença.** Nenhuma coordenada de entregador é persistida (só `na_base`, o horário da última leitura e o contador da histerese) nem trafega no realtime. A empresa recebe **"Na base"/"Fora da base"**, nunca posição, mapa, trajeto ou histórico de percurso; o cliente **não** recebe nada disso. Continuam **não implementados**: rastreamento durante a entrega, background tracking, ETA e mapa do entregador (seção 16).
+
+**FILA AUTOMÁTICA por empresa**, ordenada pelo **momento de entrada** (`filaEntrouEm` = `now()` do banco, desempate por id): entra sozinho quem fica elegível, **sem o gestor confirmar chegada**, sem drag-and-drop e sem reordenação manual. Sai ao **receber/iniciar uma saída**, parar de aceitar, ter o vínculo inativado, sair da base ou ficar inapto. Concluir a saída **não obriga retorno nem desliga "aceitando"**; quem volta à base entra no **FINAL** da fila (a posição anterior não volta). A invariante é do BANCO (CHECK `entregadores_empresa_fila_exige_presenca`), então toda mudança operacional passa por **uma transação única** que muda o campo, reavalia a fila e grava o **histórico mínimo** (`historico_fila_entregador`: entrada, saída e motivo — sem localização).
+
+**APTO PARA NOVA SAÍDA** (`apto_para_saida`) já existe como conceito e entra no estado derivado, mas **não há caixa financeiro**: nenhuma regra hoje torna alguém inapto. Cenário futuro previsto: entregador com muito **dinheiro de troco/recebimento** em mãos pode precisar acertar com a empresa antes de sair de novo — quando existir, será uma regra do domínio financeiro alimentando este mesmo campo, sem mudar fila nem presença.
+
+**Rotas e realtime**: `GET|POST /empresas/:id/base`, `POST /empresas/:id/base/localizacao` (permissões `ver-empresa`/`editar-empresa`), `GET /empresas/:id/operacao` (`gerenciar-entregadores`), `POST /entregas/vinculos/:id/localizacao` e `GET /entregas/situacao` (do próprio entregador). O evento `fila:atualizada` leva o painel só à identidade da EMPRESA; `entregador:situacao` leva a situação própria só à identidade do ENTREGADOR — nunca broadcast, e uma empresa não descobre a operação da outra (404 para quem não opera). Estar na base de uma empresa **não** coloca ninguém na fila de outra.
+
+**Pagamento continua na entrega** (DINHEIRO/CARTÃO). No carrinho, **Pix online** e **Cartão online** aparecem apenas como lembrete visual **desabilitado ("Em breve")**, como as mídias do chat: sem gateway, cobrança, QR, token, webhook ou dado bancário (seção 32).
+
+## Zonas e despacho automático (Fase 2)
+
+**ZONA DE ENTREGA é um POLÍGONO da EMPRESA** (`zonas_entrega`: vértices em `jsonb`, sem PostGIS), desenhado no mapa tocando nos cantos — não é bairro, CEP nem raio, e **nunca é compartilhada entre empresas**. O servidor valida geometria (polígono simples, sem laço nem área nula) e **recusa sobreposição entre zonas ATIVAS** (`ZONAS_SOBREPOSTAS`, dizendo qual conflita), porque área comum tornaria a classificação ambígua; zonas **vizinhas que só dividem a divisa são permitidas**. Zona desativada continua no histórico e para de classificar. As mesmas funções puras (`pontoDentroDaZona`, `zonasSobrepoem`, `classificarPonto`) valem no servidor e na interface, e a BORDA conta como dentro — a classificação é determinística, sem depender de arredondamento.
+
+**O CLIENTE NÃO ESCOLHE ZONA.** Quando o pedido fica **PRONTO**, o servidor o classifica pelo **PONTO SNAPSHOT do destino** (o que o cliente confirmou naquele pedido): editar o endereço salvo depois não reclassifica nada. Ponto que não cai em zona nenhuma **não é encaixado à força**: vira **pendência explícita** ("Pedido fora das zonas configuradas") para o gestor tratar à mão. **Sem zona ativa, a automação fica inteira desligada** e a montagem manual segue como antes — é assim que a empresa opta por entrar na automação.
+
+**Configuração por EMPRESA** (`configuracoes_despacho`): **máximo de pedidos por saída** (padrão 5, entre 1 e 15) e **tempo máximo de formação** (padrão 15 min, entre 1 e 180), além de **permitir combinar zonas**. Nada disso é regra universal do Jaa: 5 e 15 são só padrões.
+
+**SAÍDA EM FORMAÇÃO** é o novo primeiro estado da saída (`em_formacao → aguardando_entregador → preparada → em_andamento → concluida`; a saída montada à mão continua nascendo **preparada**). Só a saída EM FORMAÇÃO aceita pedido, e existe **no máximo uma por zona** (índice único parcial): o próximo pedido da zona entra na que já está aberta. Ela **fecha quando ocorrer primeiro** a quantidade máxima **OU** o tempo máximo — nunca as duas condições juntas. O relógio começa no PRIMEIRO pedido e o **prazo é persistido** (`prazo_formacao_em`).
+
+**REGRA ABSOLUTA**: depois de FECHADA — e muito mais depois de INICIADA — a saída **nunca** recebe pedido novo, nem da mesma zona, nem "no caminho", nem segundos depois. O pedido seguinte abre a próxima formação. Entrar em formação **não avança o status do pedido**: ele continua PRONTO até o início real da saída, que segue usando a máquina de estados existente.
+
+**COMBINAÇÃO CONTROLADA**: vencido o prazo com capacidade sobrando e "combinar" ligado, a saída pode absorver pedidos de outra formação da MESMA empresa cuja zona o gestor marcou como **compatível** (`compatibilidades_zona`, par normalizado e simétrico). É decisão EXPLÍCITA, não inferência: **sem motor rodoviário o Jaa não afirma que duas zonas ficam no caminho uma da outra** e a interface nunca diz "melhor rota", "mais rápida" ou ETA. A escolha entre candidatas é determinística (**pedido mais antigo primeiro**, desempate pelo id), o **limite de capacidade continua valendo** e o excedente permanece na formação de origem.
+
+**DESPACHO pelo PRIMEIRO APTO DA FILA**: a fila automática da base (seção "Base, presença e fila automática") é a autoridade — entra na conta só quem está **ATIVO + ACEITANDO + NA BASE + APTO** e sem saída em aberto. **Ninguém fora da base é escolhido.** A atribuição acontece numa transação com **trava por empresa** (`pg_advisory_xact_lock`), então duas saídas fechando ao mesmo tempo nunca ficam com a mesma pessoa; a atribuição da saída continua gravando `atribuicoes_entrega` (fonte única de "quem está com o pedido") e o entregador sai da fila. **Sem ninguém elegível a saída fica "aguardando entregador"** — nada é cancelado, nenhum pedido volta atrás — e quando alguém entra na fila o despacho acontece **na hora**, priorizando a saída cujo **pedido espera há mais tempo** (desempate estável), para nenhuma zona ficar sempre atrás.
+
+**ATRIBUIR ≠ INICIAR**: a saída atribuída fica reservada para aquela pessoa; "Iniciar saída" continua sendo o evento operacional explícito que avança cada pedido para `saiu_para_entrega`.
+
+**O TEMPO É DO SERVIDOR**: o prazo vive no banco e uma **rotina periódica da API** (`rotina-despacho.ts`, ~15 s) processa o que venceu; a reconciliação também roda em pontos naturais (pedido ficando pronto, entregador entrando na fila, gestor abrindo o painel). Nada depende de navegador aberto, `setTimeout` na tela ou F5 — e **reiniciar a API não perde vencimento**. Não foi preciso introduzir fila, worker ou agendador externo (seção 22).
+
+**Gestor no controle**: ele continua montando saída à mão, pode **fechar antecipadamente** uma formação e vê tudo agrupado (em formação / aguardando entregador / atribuídas / em andamento) com as pendências fora de zona. A intervenção nunca fura capacidade, empresa, máquina de estados nem saída já iniciada.
+
+**Permissões e realtime**: `ver-logistica` e `gerenciar-logistica` (separadas de `gerenciar-entregadores`) autorizam zonas e configuração; empresa sem acesso recebe 404, e entregador e cliente **não têm nenhuma rota aqui**. O evento `despacho:atualizado` vai só para a identidade da EMPRESA; `saida:atualizada` continua indo para empresa e entregador daquela saída (sem entregador ainda, só para a empresa), e o cliente segue recebendo apenas `pedido:fila` com a posição do próprio pedido.
+
+## Motor de rotas real (Fase 2)
+
+**MotorDeRotasJaa é a fronteira**: o domínio (saída, pedidos, zonas, base) fala em **origem, paradas, sequência, percurso e estado do cálculo**; nenhum endpoint, parâmetro ou formato de fornecedor aparece fora da implementação do provedor. Mapbox é o PRIMEIRO provedor — trocar por outro é escrever outra implementação de `ProvedorRoteamento`, sem tocar em pedido, saída ou zona.
+
+**Duas operações separadas, de propósito**: OTIMIZAR ("em que ordem visitar?") e PERCURSO ("qual o caminho real NESTA ordem?"). Elas não são a mesma coisa e nunca são chamadas juntas por engano.
+
+**ORIGEM = base confirmada da EMPRESA**, nunca a localização do navegador ou do usuário. A origem é **snapshot na saída** (`saidas_entrega.origem_latitude/longitude`): mudar a base depois não reescreve uma saída já planejada, em andamento ou histórica. **PARADAS = pontos snapshot dos pedidos** — nada é geocodificado de novo e o texto do endereço nunca muda.
+
+**Limitação REAL do Mapbox, tratada e documentada** (`provedor-mapbox.ts`): a Optimization API v1 só resolve "destino final livre" com viagem CIRCULAR; com `roundtrip=false` ela exige um destino escolhido, e no Jaa o entregador **não volta à empresa**. Estratégia: pedir a ORDEM com `roundtrip=true&source=first&destination=any`, **descartar a volta** e calcular o percurso **ABERTO** dessa ordem na Directions API. O Jaa não finge que o Mapbox otimizou uma rota aberta — por isso a interface diz "sequência sugerida" e "percurso calculado pelas ruas", nunca "melhor rota" ou "rota mais rápida".
+
+**Capacidade do fornecedor é limite do motor**: Optimization aceita 12 coordenadas (origem + 11 paradas) e Directions 25 (origem + 24). Acima disso o motor **nem chama**: nenhum pedido é truncado, nenhuma parada some e a saída fica em fallback com o motivo `capacidade_excedida`.
+
+**A ordem do ENTREGADOR prevalece**: quando ele reordena, o motor só **recalcula o percurso** daquela ordem — nunca reotimiza, o que desfaria a escolha de quem está na rua. O versionamento/conflito da sequência continua igual, e `rota.versaoSequencia` diz para qual ordem o percurso vale (reordenou → o percurso envelhece e a tela avisa em vez de desenhar traçado errado).
+
+**Fallback: o provedor não é ponto único de falha.** Timeout, erro HTTP, resposta inválida, capacidade excedida, token ausente ou base sem ponto confirmado → a operação **continua** com a aproximação local determinística, o estado vira `aproximacao_local` e o motivo fica registrado. Em fallback **não existem distância, duração nem geometria**: o Jaa não inventa número nem desenha linha reta fingindo ser rua (CHECK no banco garante isso).
+
+**Custo sob controle**: o provedor é chamado em **dois momentos operacionais** e só neles — ao **planejar a saída** (fechamento automático ou criação manual) e ao **recalcular o percurso** depois da reordenação do entregador. Ler a saída, listar, renderizar tela, dar F5 ou receber evento de realtime **nunca** chama rota. Cada chamada (ou recusa) vira uma linha em `consumos_roteamento` (empresa, saída, provedor, operação, resultado, nº de paradas, duração) — observabilidade para responder "quanto a Empresa X consumiu no período?", sem faturamento nesta etapa.
+
+**Segurança e multiempresa** continuam valendo: o token do provedor é **segredo de servidor** (`MAPBOX_TOKEN`), nunca vai ao Web/Mobile e não aparece em log; rota, percurso e consumo são escopados por empresa; o **cliente não recebe rota, geometria nem nada das outras paradas** (para ele segue existindo só a fila derivada); o **entregador mantém** acesso à própria saída e sequência.
+
+**Mapa**: a geometria só é desenhada quando existe percurso real ATUAL **e** os tiles são do mesmo provedor que calculou (`podeDesenharPercurso`), para respeitar os termos de uso — misturar traçado de um fornecedor com mapa de outro não é feito em silêncio. Em fallback nenhuma linha é desenhada. A biblioteca de visualização continua Leaflet: adotar Mapbox como provedor de ROTA não obriga a trocar o mapa.
+
+**Duração ≠ ETA.** A duração é do TRAJETO, sempre rotulada assim: não inclui preparo, espera na porta nem a fila de entregas. O ETA do cliente (GPS + rota restante + paradas anteriores) é etapa futura, assim como rastreamento em tempo real — a arquitetura está pronta para recebê-los, mas nada disso existe hoje.
 
 ## Presença e digitando (Fase 1)
 
@@ -1478,6 +1568,7 @@ Não inventar decisão para os itens abaixo. Eles serão definidos quando necess
 - hospedagem final da API;
 - storage de arquivos;
 - push notification provider/configuração final;
+- **plano/contrato comercial do provedor de rotas em produção** (Mapbox é o primeiro provedor implementado, com token opcional e fallback local; falta decidir limites, custo e os termos para exibir o traçado sobre mapas de outro fornecedor), e a compatibilidade manual entre zonas ainda não é enriquecida por análise real de percurso;
 - provedor de mapas/geocodificação para PRODUÇÃO (hoje: Leaflet + tiles OSM na Web e geocodificação opcional compatível com Nominatim, ambos livres e sem chave; a política de uso do OSM não cobre volume de produção, então o serviço definitivo será escolhido quando houver escala — sem inventar credenciais);
 - infraestrutura de filas;
 - Redis;

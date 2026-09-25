@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
-import { Figtree, Outfit } from "next/font/google";
+import { Manrope, Sora } from "next/font/google";
 import "./globals.css";
 
 /*
- * Tipografia da referência de UI/UX aprovada: Figtree no corpo (alta legibilidade em bloco de
- * conversa) e Outfit nos nomes e títulos, que é o que dá personalidade à marca.
+ * Tipografia da referência de UI/UX aprovada: MANROPE no corpo (numerais e preços muito legíveis em
+ * lista e balão de conversa) e SORA nos títulos, nomes e valores em destaque, que é o que dá
+ * personalidade sem pesar no texto corrido.
+ *
+ * As variáveis continuam se chamando `--font-jaa-sans`/`--font-jaa-display`: os componentes usam o
+ * nome SEMÂNTICO, então trocar a fonte é mexer só aqui.
  */
-const fonteCorpo = Figtree({ variable: "--font-jaa-sans", subsets: ["latin"], display: "swap" });
-const fonteDisplay = Outfit({ variable: "--font-jaa-display", subsets: ["latin"], display: "swap" });
+const fonteCorpo = Manrope({ variable: "--font-jaa-sans", subsets: ["latin"], display: "swap" });
+const fonteDisplay = Sora({ variable: "--font-jaa-display", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
   title: "Jaa — Suas conversas, do seu jeito",

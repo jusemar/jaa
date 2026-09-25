@@ -18,6 +18,7 @@ import {
   type EntregaDoPedido,
   type ErroApi,
   type ListaConvitesEntregador,
+  type ListaCandidatosEntregador,
   type ListaEntregadores,
   type ListaEntregas,
   type BaseEmpresa,
@@ -51,6 +52,7 @@ import {
 import {
   alterarMinhaDisponibilidade,
   alterarStatusEntregadorAutorizado,
+  buscarCandidatosEntregadorAutorizado,
   convidarEntregadorAutorizado,
   listarConvitesPendentes,
   listarEntregadoresAutorizado,
@@ -59,7 +61,9 @@ import {
 } from "../casos-de-uso/gerir-entregadores.js";
 import {
   criarSaidaAutorizada,
+  concluirProximaParadaMinhaSaida,
   iniciarMinhaSaida,
+  recusarMinhaSaida,
   listarMinhasSaidas,
   listarSaidasAutorizado,
   obterMinhaSaida,
@@ -69,6 +73,7 @@ import {
 } from "../casos-de-uso/gerir-saidas.js";
 import {
   aoEntregadorEntrarNaFila,
+  despacharPendentes,
   liberarSaidaManualmente,
   montarPainelDespacho,
   publicarDespacho,
@@ -184,6 +189,12 @@ export function registrarRotasEntregas(
       empresaId: string,
       pedidoId: string,
     ) => Promise<void>;
+    concluirPedidoPeloEntregador: (
+      usuarioId: string,
+      empresaId: string,
+      pedidoId: string,
+      statusAtual: "saiu_para_entrega" | "em_rota",
+    ) => Promise<boolean>;
   },
 ) {
   const preHandler = exigirIdentidadeAutenticada(dependencias);
@@ -210,6 +221,34 @@ export function registrarRotasEntregas(
         return responder(resposta, 404, EMPRESA_NAO_ENCONTRADA);
       const lista: ListaEntregadores = {
         entregadores: resultado.entregadores.map(serializarEntregador),
+      };
+      return lista;
+    },
+  );
+
+  servidor.get(
+    "/empresas/:empresaId/entregadores/busca",
+    { preHandler },
+    async (requisicao, resposta) => {
+      const { usuarioId } = obterIdentidadeExigida(requisicao);
+      const parametros = parametrosEmpresaSchema.safeParse(requisicao.params);
+      const consulta = z
+        .object({ termo: z.string().trim().min(2).max(80) })
+        .safeParse(requisicao.query);
+      if (!parametros.success || !consulta.success) {
+        const lista: ListaCandidatosEntregador = { candidatos: [] };
+        return lista;
+      }
+      const resultado = await buscarCandidatosEntregadorAutorizado(
+        banco,
+        usuarioId,
+        parametros.data.empresaId,
+        consulta.data.termo,
+      );
+      if (resultado.tipo !== "lista")
+        return responder(resposta, 404, EMPRESA_NAO_ENCONTRADA);
+      const lista: ListaCandidatosEntregador = {
+        candidatos: resultado.candidatos,
       };
       return lista;
     },
@@ -1352,6 +1391,120 @@ export function registrarRotasEntregas(
         if (emEntrega) await publicarOperacao(dependencias, emEntrega.registro);
       }
       return serializarSaidaComEmpresa(banco, resultado.saida);
+    },
+  );
+
+  /** O entregador atual confirma a próxima parada; o pedido é concluído pela máquina existente. */
+  servidor.post(
+    "/entregas/saidas/:saidaId/paradas/:pedidoId/concluir",
+    { preHandler },
+    async (requisicao, resposta) => {
+      const { usuarioId } = obterIdentidadeExigida(requisicao);
+      const parametros = parametrosSaidaSchema
+        .extend({ pedidoId: z.uuid() })
+        .safeParse(requisicao.params);
+      if (!parametros.success)
+        return responder(resposta, 400, {
+          codigo: "DADOS_INVALIDOS",
+          mensagem: "Saída ou pedido inválido.",
+        });
+
+      const resultado = await concluirProximaParadaMinhaSaida(
+        banco,
+        usuarioId,
+        parametros.data.saidaId,
+        parametros.data.pedidoId,
+        (empresaId, pedidoId, statusAtual) =>
+          dependencias.concluirPedidoPeloEntregador(
+            usuarioId,
+            empresaId,
+            pedidoId,
+            statusAtual,
+          ),
+      );
+      switch (resultado.tipo) {
+        case "saida-nao-encontrada":
+          return responder(resposta, 404, SAIDA_NAO_ENCONTRADA);
+        case "saida-nao-iniciada":
+          return responder(resposta, 409, {
+            codigo: "SAIDA_NAO_ESTA_EM_ANDAMENTO",
+            mensagem: "Inicie a rota antes de confirmar uma entrega.",
+          });
+        case "parada-nao-e-proxima":
+          return responder(resposta, 409, {
+            codigo: "DADOS_INVALIDOS",
+            mensagem: "Conclua primeiro a próxima parada da rota.",
+          });
+        case "pedido-ja-encerrado":
+        case "transicao-invalida":
+          return responder(resposta, 409, {
+            codigo: "TRANSICAO_PEDIDO_INVALIDA",
+            mensagem:
+              "Esta entrega já foi concluída ou não pode mais ser alterada.",
+          });
+        case "concluida":
+          return serializarSaidaComEmpresa(banco, resultado.saida);
+      }
+    },
+  );
+
+  /** Recusa pelo entregador atual, somente enquanto a rota liberada ainda não foi iniciada. */
+  servidor.post(
+    "/entregas/saidas/:saidaId/recusar",
+    { preHandler },
+    async (requisicao, resposta) => {
+      const { usuarioId } = obterIdentidadeExigida(requisicao);
+      const parametros = parametrosSaidaSchema.safeParse(requisicao.params);
+      if (!parametros.success)
+        return responder(resposta, 400, {
+          codigo: "DADOS_INVALIDOS",
+          mensagem: "Saída inválida.",
+        });
+
+      const resultado = await recusarMinhaSaida(
+        banco,
+        usuarioId,
+        parametros.data.saidaId,
+      );
+      if (resultado.tipo === "saida-nao-encontrada")
+        return responder(resposta, 404, SAIDA_NAO_ENCONTRADA);
+      if (resultado.tipo !== "recusada") {
+        return responder(resposta, 409, {
+          codigo: "SAIDA_NAO_PODE_SER_RECUSADA",
+          mensagem:
+            "Esta rota já foi iniciada, foi concluída ou não está liberada para retirada.",
+        });
+      }
+
+      const saidaSemEntregador = await serializarSaidaComEmpresa(
+        banco,
+        resultado.saida,
+      );
+      // A empresa vê a rota aguardando; outras abas do antigo entregador a removem imediatamente.
+      await publicarSaida(dependencias, resultado.saida);
+      dependencias.eventosEntregas.publicar({
+        tipo: "saida-atualizada",
+        destinatariosIdentidadeIds: [resultado.entregadorIdentidadeId],
+        saida: saidaSemEntregador,
+      });
+      for (const pedidoId of resultado.pedidoIds) {
+        dependencias.eventosEntregas.publicar({
+          tipo: "entrega-atualizada",
+          destinatariosIdentidadeIds: [resultado.entregadorIdentidadeId],
+          pedidoId,
+          entrega: null,
+        });
+      }
+
+      // Recusar não altera disponibilidade: reavalia a fila e tenta o próximo elegível.
+      const fila = await reavaliarFila(
+        banco,
+        resultado.entregadorId,
+        "Recusou rota de entrega",
+      );
+      if (fila) await publicarOperacao(dependencias, fila.registro);
+      await despacharPendentes(dependencias, resultado.empresaId);
+      return { status: "recusada" };
     },
   );
 

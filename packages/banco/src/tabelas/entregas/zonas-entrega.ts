@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, foreignKey, index, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { empresas } from "../empresas/empresas.js";
 
 /**
@@ -17,6 +17,7 @@ export const zonasEntrega = pgTable(
       .notNull()
       .references(() => empresas.id, { onDelete: "cascade" }),
     nome: text().notNull(),
+    freteCentavos: integer("frete_centavos").notNull().default(0),
     vertices: jsonb().notNull(),
     // Zona desativada continua no histórico das saídas, mas não classifica pedido novo.
     ativa: boolean().notNull().default(true),
@@ -33,6 +34,7 @@ export const zonasEntrega = pgTable(
     uniqueIndex("zonas_entrega_nome_por_empresa_unico").on(tabela.empresaId, sql`lower(${tabela.nome})`),
     index("zonas_entrega_empresa_id_idx").on(tabela.empresaId, tabela.ativa),
     check("zonas_entrega_nome_valido", sql`length(btrim(${tabela.nome})) between 1 and 60`),
+    check("zonas_entrega_frete_valido", sql`${tabela.freteCentavos} between 0 and 999999999`),
     // Polígono mínimo: uma lista com pelo menos 3 pontos. A geometria fina é validada no servidor.
     check(
       "zonas_entrega_poligono_minimo",

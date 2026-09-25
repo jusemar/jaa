@@ -1,7 +1,7 @@
 import type { Banco } from "@jaa/banco";
-import { atribuicoesEntrega, entregadoresEmpresa, identidades } from "@jaa/banco/schema";
+import { atribuicoesEntrega, entregadoresEmpresa, identidades, membrosEmpresa } from "@jaa/banco/schema";
 import type { StatusEntregador } from "@jaa/contratos";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { aplicarMudancaOperacional } from "./repositorio-fila.js";
 
 export type EntregadorRegistro = typeof entregadoresEmpresa.$inferSelect;
@@ -42,6 +42,36 @@ export function listarEntregadoresDaEmpresa(banco: Banco, empresaId: string): Pr
     .innerJoin(identidades, and(eq(identidades.usuarioId, entregadoresEmpresa.usuarioId), eq(identidades.tipo, "pessoal")))
     .where(eq(entregadoresEmpresa.empresaId, empresaId))
     .orderBy(asc(identidades.nomeExibicao));
+}
+
+export function buscarCandidatosEntregador(banco: Banco, empresaId: string, termo: string) {
+  const normalizado = termo.trim().replace(/^@/, "").toLocaleLowerCase("pt-BR");
+  const padrao = `%${normalizado}%`;
+  return banco
+    .select({
+      pessoa: {
+        identidadeId: identidades.id,
+        tipo: identidades.tipo,
+        nomeExibicao: identidades.nomeExibicao,
+        nomeUsuario: identidades.nomeUsuario,
+      },
+      status: entregadoresEmpresa.status,
+    })
+    .from(identidades)
+    .leftJoin(entregadoresEmpresa, and(eq(entregadoresEmpresa.usuarioId, identidades.usuarioId), eq(entregadoresEmpresa.empresaId, empresaId)))
+    .where(
+      and(
+        eq(identidades.tipo, "pessoal"),
+        or(ilike(identidades.nomeExibicao, padrao), ilike(identidades.nomeUsuario, padrao)),
+        or(isNull(entregadoresEmpresa.id), eq(entregadoresEmpresa.status, "inativo")),
+        sql`not exists (select 1 from ${membrosEmpresa} where ${membrosEmpresa.empresaId} = ${empresaId} and ${membrosEmpresa.usuarioId} = ${identidades.usuarioId})`,
+      ),
+    )
+    .orderBy(
+      sql`case when ${identidades.nomeUsuario} = ${normalizado} then 0 when ${identidades.nomeUsuario} ilike ${`${normalizado}%`} then 1 when ${identidades.nomeExibicao} ilike ${`${normalizado}%`} then 2 else 3 end`,
+      asc(identidades.nomeExibicao),
+    )
+    .limit(5);
 }
 
 export async function buscarEntregadorDaEmpresa(banco: Banco, empresaId: string, entregadorId: string): Promise<EntregadorComPessoaRegistro | null> {

@@ -6,6 +6,8 @@ import {
   aplicarExclusaoParaMimNaLista,
   aplicarMensagemNaLista,
   aplicarNaoLidasNaLista,
+  contarConversasNaoLidas,
+  filtrarConversas,
   mesclarConversas,
   rotuloNaoLidas,
 } from "./lista-conversas.ts";
@@ -135,5 +137,44 @@ describe("não lidas na lista", () => {
 
   it("rótulo 99+ a partir de 100", () => {
     assert.deepEqual([1, 99, 100].map(rotuloNaoLidas), ["1", "99", "99+"]);
+  });
+});
+
+describe("filtros da inbox", () => {
+  // A mesma lista que o servidor entregou; os filtros são recorte de LEITURA, derivado do que já veio.
+  const pessoaLida = item("a", 4);
+  const pessoaNaoLida = { ...item("b", 3), naoLidas: 2 };
+  const empresaNaoLida = {
+    ...item("c", 2),
+    naoLidas: 5,
+    outraIdentidade: { ...item("c", 2).outraIdentidade, tipo: "empresarial" as const, nomeUsuario: "c" },
+  };
+  const empresaLida = {
+    ...item("d", 1),
+    outraIdentidade: { ...item("d", 1).outraIdentidade, tipo: "empresarial" as const, nomeUsuario: "d" },
+  };
+  const lista = [pessoaLida, pessoaNaoLida, empresaNaoLida, empresaLida];
+
+  it("todas não filtra nada e preserva a ordem do servidor", () => {
+    assert.equal(ids(filtrarConversas(lista, "todas")), "abcd");
+  });
+
+  it("não lidas mostra só quem tem mensagem por ler", () => {
+    assert.equal(ids(filtrarConversas(lista, "nao-lidas")), "bc");
+    assert.equal(contarConversasNaoLidas(lista), 2);
+  });
+
+  it("a conversa aberta e sendo lida não some debaixo do dedo", () => {
+    assert.equal(ids(filtrarConversas(lista, "nao-lidas", pessoaNaoLida.id)), "c");
+    assert.equal(contarConversasNaoLidas(lista, pessoaNaoLida.id), 1);
+  });
+
+  it("empresas mostra só identidades empresariais, lidas ou não", () => {
+    assert.equal(ids(filtrarConversas(lista, "empresas")), "cd");
+  });
+
+  it("filtro sem resultado devolve lista vazia, nunca a lista inteira", () => {
+    assert.deepEqual(filtrarConversas([pessoaLida], "nao-lidas"), []);
+    assert.deepEqual(filtrarConversas([pessoaLida], "empresas"), []);
   });
 });

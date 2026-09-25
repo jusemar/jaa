@@ -12,7 +12,8 @@
     "gerar-migration": "drizzle-kit generate",
     "migrar": "drizzle-kit migrate",
     "verificar-migrations": "drizzle-kit check",
-    "verificar-conexao": "tsx --env-file-if-exists=.env scripts/verificar-conexao.ts"
+    "verificar-conexao": "tsx --env-file-if-exists=.env scripts/verificar-conexao.ts",
+    "semear-montagem": "tsx --env-file-if-exists=.env scripts/semear-montagem-local.ts"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

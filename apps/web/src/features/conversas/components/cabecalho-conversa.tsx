@@ -1,6 +1,7 @@
 import type { ParticipanteConversa } from "@jaa/contratos";
 import type { ReactNode } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
+import { IconeVoltar } from "@/components/ui/icones";
 
 /**
  * Cabeçalho da conversa: voltar (no celular), avatar, nome e a atividade atual.
@@ -27,58 +28,90 @@ export function CabecalhoConversa({
   // Só no celular: a conversa ocupa a tela toda e precisa de um caminho de volta para a lista.
   aoVoltar?: () => void;
 }) {
-  const descricaoPresenca = presenca === "online" ? "Disponível agora" : presenca === "offline" ? "Sem conexão agora" : null;
+  const descricaoPresenca =
+    presenca === "online"
+      ? "Disponível agora"
+      : presenca === "offline"
+        ? "Sem conexão agora"
+        : null;
 
   return (
     <header
       aria-label="Cabeçalho da conversa"
-      className="flex min-h-[4.5rem] shrink-0 items-center gap-3 border-b border-borda bg-superficie/95 px-3 py-2 backdrop-blur md:px-5"
+      /*
+       * 72px e a MESMA superfície clara da navegação e das demais áreas (`bg-superficie`): o cinza
+       * próprio daqui destacava esta barra como se fosse de outro sistema. Quem separa a barra do
+       * papel de parede da conversa é a borda de baixo, não um tom diferente.
+       */
+      className="grid min-h-[4.5rem] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-borda bg-superficie px-3 py-2 md:px-5"
       style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}
     >
-      {aoVoltar && (
-        <button
-          type="button"
-          data-voltar-conversas
-          aria-label="Voltar para conversas"
-          onClick={aoVoltar}
-          className="-ml-1 grid h-10 w-10 shrink-0 place-items-center rounded-full text-conteudo-suave hover:bg-superficie-suave md:hidden"
-        >
-          <span aria-hidden>←</span>
-        </button>
-      )}
-
-      <span className="relative shrink-0">
-        <AvatarIdentidade identidade={outraIdentidade} />
-        {presenca && (
-          <span
-            data-presenca={presenca}
-            title={descricaoPresenca ?? undefined}
-            className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-superficie ${presenca === "online" ? "bg-marca" : "bg-conteudo-suave/50"}`}
+      <div className="flex min-w-0 items-center gap-3">
+        {aoVoltar && (
+          <button
+            type="button"
+            data-voltar-conversas
+            aria-label="Voltar para conversas"
+            onClick={aoVoltar}
+            className="-ml-1 grid h-10 w-10 shrink-0 place-items-center rounded-jaa-compacto text-conteudo-suave hover:bg-realce xl:hidden"
           >
-            <span className="sr-only">{descricaoPresenca}</span>
-          </span>
+            <IconeVoltar className="h-5 w-5" />
+          </button>
         )}
-      </span>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <h2 className="flex items-center gap-2 truncate">
-          <span className="fonte-display truncate text-base font-semibold">{outraIdentidade.nomeExibicao}</span>
-          {outraIdentidade.tipo === "empresarial" && (
+        <span className="relative shrink-0">
+          <AvatarIdentidade identidade={outraIdentidade} tamanho="medio" />
+          {presenca && (
             <span
-              data-tipo-participante="empresarial"
-              className="shrink-0 rounded-full border border-ouro/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-aviso"
+              data-presenca={presenca}
+              title={descricaoPresenca ?? undefined}
+              className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-superficie ${presenca === "online" ? "bg-marca" : "bg-conteudo-suave/50"}`}
             >
-              Empresa
+              <span className="sr-only">{descricaoPresenca}</span>
             </span>
           )}
-        </h2>
-        <p
-          data-atividade={digitando ? "digitando" : (presenca ?? "desconhecida")}
-          aria-live="polite"
-          className={`min-h-4 truncate text-xs ${digitando || presenca === "online" ? "text-marca" : "text-conteudo-suave"}`}
-        >
-          {digitando ? "digitando…" : descricaoPresenca ? (presenca === "online" ? "online agora" : "sem conexão") : `@${outraIdentidade.nomeUsuario}`}
-        </p>
+        </span>
+
+        <div className="flex min-w-0 flex-col">
+          <h2 className="flex items-center gap-2 truncate">
+            <span className="fonte-display truncate text-sm font-bold sm:text-base">
+              {outraIdentidade.nomeExibicao}
+            </span>
+            {outraIdentidade.tipo === "empresarial" && (
+              <span
+                data-tipo-participante="empresarial"
+                className="shrink-0 rounded-full bg-ouro/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-aviso"
+              >
+                Empresa
+              </span>
+            )}
+          </h2>
+          {/*
+            Atividade em uma linha com a bolinha da referência. Quando a presença não é conhecida
+            (privacidade), nada é afirmado: aparece só o @usuario, sem bolinha.
+          */}
+          <p
+            data-atividade={
+              digitando ? "digitando" : (presenca ?? "desconhecida")
+            }
+            aria-live="polite"
+            className={`flex min-h-4 items-center gap-1.5 truncate text-xs ${digitando || presenca === "online" ? "text-marca" : "text-conteudo-suave"}`}
+          >
+            {(digitando || presenca === "online") && (
+              <span
+                aria-hidden
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-marca"
+              />
+            )}
+            {digitando
+              ? "digitando…"
+              : descricaoPresenca
+                ? presenca === "online"
+                  ? "online agora"
+                  : "sem conexão"
+                : `@${outraIdentidade.nomeUsuario}`}
+          </p>
+        </div>
       </div>
 
       {acoes && <div className="flex shrink-0 items-center gap-1">{acoes}</div>}

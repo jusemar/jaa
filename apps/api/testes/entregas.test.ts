@@ -15,6 +15,7 @@ import {
   type EventoVinculoEntregador,
   type ListaVinculosEntregador,
   type ListaConvitesEntregador,
+  type ListaCandidatosEntregador,
   type ListaEntregadores,
   type ListaEntregas,
   type Pedido,
@@ -118,6 +119,21 @@ before(async () => {
 after(() => ctx.encerrar());
 
 describe("quadro de entregadores", () => {
+  it("busca candidatos por nome ou @usuario, limita e não repete convite pendente", async () => {
+    const parcial: ListaCandidatosEntregador = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/entregadores/busca?termo=${PREFIXO}`)).json();
+    assert.ok(parcial.candidatos.length <= 5);
+    assert.equal(parcial.candidatos.some((item) => item.pessoa.nomeUsuario === `${PREFIXO}_a`), false, "operador da empresa não é candidato");
+    assert.equal(parcial.candidatos.some((item) => item.pessoa.nomeUsuario === `${PREFIXO}_p`), false, "entregador ativo não recebe novo convite");
+
+    const refinada: ListaCandidatosEntregador = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/entregadores/busca?termo=@${PREFIXO}_r`)).json();
+    assert.deepEqual(refinada.candidatos.map((item) => item.pessoa.nomeUsuario), [`${PREFIXO}_r`]);
+
+    const convite = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/entregadores`, { nomeUsuario: `${PREFIXO}_r` });
+    assert.equal(convite.statusCode, 201, convite.body);
+    const depois: ListaCandidatosEntregador = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/entregadores/busca?termo=${PREFIXO}_r`)).json();
+    assert.equal(depois.candidatos.length, 0, "convite pendente não volta como ação duplicada");
+  });
+
   it("convite nasce pendente, a pessoa aceita e o vínculo fica ativo", async () => {
     const convite = await ctx.api(A, "POST", `/empresas/${farmacia.id}/entregadores`, { nomeUsuario: `${PREFIXO}_p` });
     assert.equal(convite.statusCode, 201, convite.body);

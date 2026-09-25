@@ -1,7 +1,7 @@
 "use client";
 
 import { NOME_CATEGORIA_TAMANHO_MAXIMO, type CategoriaProduto } from "@jaa/contratos";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Aviso, Botao, CampoTexto, Cartao, EstadoVazio, Selo } from "@/components/ui/primitivos";
 import { atualizarCategoria, criarCategoria, removerCategoria } from "../lib/api-produtos";
 
@@ -13,6 +13,9 @@ export function GerenciadorCategorias({ empresaId, categorias, aoMudar }: { empr
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [emEdicao, setEmEdicao] = useState<string | null>(null);
+  // Erro do campo de criação, separado do erro da operação: um é do formulário, o outro é do servidor.
+  const [erroNome, setErroNome] = useState<string | null>(null);
+  const campoNovaRef = useRef<HTMLInputElement>(null);
 
   async function executar(acao: () => Promise<{ ok: boolean; mensagem?: string }>) {
     setOcupado(true);
@@ -27,10 +30,27 @@ export function GerenciadorCategorias({ empresaId, categorias, aoMudar }: { empr
     evento.preventDefault();
     const formulario = evento.currentTarget;
     const nome = String(new FormData(formulario).get("nomeCategoria") ?? "").trim();
-    if (!nome) return;
+
+    /*
+     * Nome vazio NÃO pode ser um clique mudo. Antes, o envio simplesmente retornava sem dizer nada —
+     * para quem usa, "cliquei em adicionar e não aconteceu nada". Agora o campo é `required` (o
+     * próprio navegador barra e aponta o campo) e, se ainda assim chegar vazio, a recusa é dita em
+     * texto e o foco volta para o campo.
+     */
+    if (!nome) {
+      setErroNome("Escreva o nome da categoria para adicionar.");
+      campoNovaRef.current?.focus();
+      return;
+    }
+
+    setErroNome(null);
     void executar(async () => {
       const resposta = await criarCategoria(empresaId, { nome, posicao: categorias.length });
-      if (resposta.ok) formulario.reset();
+      if (resposta.ok) {
+        formulario.reset();
+        // Foco de volta no campo: cadastrar categorias é uma tarefa em série.
+        campoNovaRef.current?.focus();
+      }
       return resposta;
     });
   }
@@ -39,10 +59,20 @@ export function GerenciadorCategorias({ empresaId, categorias, aoMudar }: { empr
     <Cartao className="flex flex-col gap-3 p-4">
       <form onSubmit={criar} className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex-1">
-          <CampoTexto id="categoria-nova" rotulo="Nova categoria" name="nomeCategoria" maxLength={NOME_CATEGORIA_TAMANHO_MAXIMO} placeholder="Bebidas" />
+          <CampoTexto
+            ref={campoNovaRef}
+            id="categoria-nova"
+            rotulo="Nova categoria"
+            name="nomeCategoria"
+            maxLength={NOME_CATEGORIA_TAMANHO_MAXIMO}
+            placeholder="Monte seu prato, Bebidas, Sobremesas…"
+            erro={erroNome}
+            required
+            onChange={() => erroNome !== null && setErroNome(null)}
+          />
         </div>
         <Botao type="submit" disabled={ocupado}>
-          Adicionar
+          {ocupado ? "Adicionando…" : "Adicionar categoria"}
         </Botao>
       </form>
 

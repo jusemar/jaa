@@ -15,6 +15,7 @@ import {
 } from "../lib/api-produtos";
 import { FormularioProduto, type DadosFormularioProduto } from "./formulario-produto";
 import { GerenciadorCategorias } from "./gerenciador-categorias";
+import { GerenciadorPersonalizacao } from "./gerenciador-personalizacao";
 import { ControlePaginacao, ListaProdutos, type Paginacao } from "./lista-produtos";
 
 /*
@@ -156,6 +157,16 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
               }
             : {})}
         />
+        {/*
+          Opções para o cliente montar: como o envio de imagem, só para produto JÁ SALVO — o grupo
+          pertence a um produto, que precisa existir antes. Fica depois do formulário porque é uma
+          etapa opcional: a maioria dos produtos é vendida como está.
+        */}
+        {produto && (
+          <div className="border-t border-borda pt-4">
+            <GerenciadorPersonalizacao empresaId={empresaId} produtoId={produto.id} />
+          </div>
+        )}
         {erro && <Aviso tom="erro">{erro}</Aviso>}
       </Secao>
     );

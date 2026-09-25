@@ -1,6 +1,22 @@
 import type { Banco } from "@jaa/banco";
-import { atribuicoesEntrega, destinosPedido, entregadoresEmpresa, identidades, paradasSaida, pedidos, posicoesSaida, saidasEntrega, zonasEntrega } from "@jaa/banco/schema";
-import { classificarPonto, poligonoZonaSchema, type StatusSaida, type Uf } from "@jaa/contratos";
+import {
+  atribuicoesEntrega,
+  destinosPedido,
+  entregadoresEmpresa,
+  identidades,
+  paradasSaida,
+  pedidos,
+  posicoesSaida,
+  recusasSaida,
+  saidasEntrega,
+  zonasEntrega,
+} from "@jaa/banco/schema";
+import {
+  classificarPonto,
+  poligonoZonaSchema,
+  type StatusSaida,
+  type Uf,
+} from "@jaa/contratos";
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
 export type SaidaRegistro = typeof saidasEntrega.$inferSelect;
@@ -14,7 +30,12 @@ export interface ParadaRegistro {
   totalCentavos: number;
   encerradaEm: Date | null;
   motivoEncerramento: string | null;
-  cliente: { identidadeId: string; tipo: "pessoal" | "empresarial"; nomeExibicao: string; nomeUsuario: string };
+  cliente: {
+    identidadeId: string;
+    tipo: "pessoal" | "empresarial";
+    nomeExibicao: string;
+    nomeUsuario: string;
+  };
   destino: {
     enderecoId: string | null;
     cep: string;
@@ -34,7 +55,12 @@ export interface ParadaRegistro {
 export interface SaidaComParadasRegistro {
   saida: SaidaRegistro;
   // Nulo enquanto a saída está em formação ou aguardando alguém elegível na fila da base.
-  entregador: { identidadeId: string; tipo: "pessoal" | "empresarial"; nomeExibicao: string; nomeUsuario: string } | null;
+  entregador: {
+    identidadeId: string;
+    tipo: "pessoal" | "empresarial";
+    nomeExibicao: string;
+    nomeUsuario: string;
+  } | null;
   paradas: ParadaRegistro[];
   // Zona que originou a saída e as que entraram por combinação autorizada (derivadas das paradas).
   zonaPrincipal: { id: string; nome: string } | null;
@@ -45,7 +71,10 @@ export interface SaidaComParadasRegistro {
  * A saída guarda só o agrupamento e a ordem: o DESTINO de cada parada vem do snapshot do pedido
  * (`destinos_pedido`), que é a fonte de verdade daquela entrega.
  */
-async function listarParadas(banco: Banco, saidaId: string): Promise<ParadaRegistro[]> {
+async function listarParadas(
+  banco: Banco,
+  saidaId: string,
+): Promise<ParadaRegistro[]> {
   const linhas = await banco
     .select({
       id: paradasSaida.id,
@@ -56,7 +85,12 @@ async function listarParadas(banco: Banco, saidaId: string): Promise<ParadaRegis
       motivoEncerramento: paradasSaida.motivoEncerramento,
       statusPedido: pedidos.status,
       totalCentavos: pedidos.totalCentavos,
-      cliente: { identidadeId: identidades.id, tipo: identidades.tipo, nomeExibicao: identidades.nomeExibicao, nomeUsuario: identidades.nomeUsuario },
+      cliente: {
+        identidadeId: identidades.id,
+        tipo: identidades.tipo,
+        nomeExibicao: identidades.nomeExibicao,
+        nomeUsuario: identidades.nomeUsuario,
+      },
       destino: {
         enderecoId: destinosPedido.enderecoId,
         cep: destinosPedido.cep,
@@ -74,12 +108,18 @@ async function listarParadas(banco: Banco, saidaId: string): Promise<ParadaRegis
     })
     .from(paradasSaida)
     .innerJoin(pedidos, eq(pedidos.id, paradasSaida.pedidoId))
-    .innerJoin(destinosPedido, eq(destinosPedido.pedidoId, paradasSaida.pedidoId))
+    .innerJoin(
+      destinosPedido,
+      eq(destinosPedido.pedidoId, paradasSaida.pedidoId),
+    )
     .innerJoin(identidades, eq(identidades.id, pedidos.clienteIdentidadeId))
     .where(eq(paradasSaida.saidaId, saidaId))
     .orderBy(asc(paradasSaida.posicao), asc(paradasSaida.id));
 
-  return linhas.map((linha) => ({ ...linha, destino: { ...linha.destino, uf: linha.destino.uf as Uf } }));
+  return linhas.map((linha) => ({
+    ...linha,
+    destino: { ...linha.destino, uf: linha.destino.uf as Uf },
+  }));
 }
 
 /**
@@ -90,83 +130,163 @@ async function zonasDaSaida(
   banco: Banco,
   saida: SaidaRegistro,
   paradas: ParadaRegistro[],
-): Promise<{ zonaPrincipal: { id: string; nome: string } | null; zonasCombinadas: Array<{ id: string; nome: string }> }> {
+): Promise<{
+  zonaPrincipal: { id: string; nome: string } | null;
+  zonasCombinadas: Array<{ id: string; nome: string }>;
+}> {
   const linhas = await banco
-    .select({ id: zonasEntrega.id, nome: zonasEntrega.nome, vertices: zonasEntrega.vertices, ativa: zonasEntrega.ativa })
+    .select({
+      id: zonasEntrega.id,
+      nome: zonasEntrega.nome,
+      vertices: zonasEntrega.vertices,
+      ativa: zonasEntrega.ativa,
+    })
     .from(zonasEntrega)
     .where(eq(zonasEntrega.empresaId, saida.empresaId));
   if (linhas.length === 0) return { zonaPrincipal: null, zonasCombinadas: [] };
 
-  const zonas = linhas.map((linha) => ({ ...linha, vertices: poligonoZonaSchema.parse(linha.vertices) }));
-  const principal = zonas.find((zona) => zona.id === saida.zonaPrincipalId) ?? null;
+  const zonas = linhas.map((linha) => ({
+    ...linha,
+    vertices: poligonoZonaSchema.parse(linha.vertices),
+  }));
+  const principal =
+    zonas.find((zona) => zona.id === saida.zonaPrincipalId) ?? null;
 
   const combinadas = new Map<string, { id: string; nome: string }>();
   for (const parada of paradas) {
     if (parada.encerradaEm !== null) continue;
-    const zonaId = classificarPonto(zonas, { latitude: parada.destino.latitude, longitude: parada.destino.longitude });
+    const zonaId = classificarPonto(zonas, {
+      latitude: parada.destino.latitude,
+      longitude: parada.destino.longitude,
+    });
     if (!zonaId || zonaId === saida.zonaPrincipalId) continue;
     const zona = zonas.find((item) => item.id === zonaId);
     if (zona) combinadas.set(zona.id, { id: zona.id, nome: zona.nome });
   }
   return {
-    zonaPrincipal: principal ? { id: principal.id, nome: principal.nome } : null,
-    zonasCombinadas: [...combinadas.values()].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+    zonaPrincipal: principal
+      ? { id: principal.id, nome: principal.nome }
+      : null,
+    zonasCombinadas: [...combinadas.values()].sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR"),
+    ),
   };
 }
 
-async function montarSaida(banco: Banco, saida: SaidaRegistro | undefined): Promise<SaidaComParadasRegistro | null> {
+async function montarSaida(
+  banco: Banco,
+  saida: SaidaRegistro | undefined,
+): Promise<SaidaComParadasRegistro | null> {
   if (!saida) return null;
   const paradas = await listarParadas(banco, saida.id);
   const zonas = await zonasDaSaida(banco, saida, paradas);
-  if (!saida.entregadorId) return { saida, entregador: null, paradas, ...zonas };
+  if (!saida.entregadorId)
+    return { saida, entregador: null, paradas, ...zonas };
 
   const [entregador] = await banco
-    .select({ identidadeId: identidades.id, tipo: identidades.tipo, nomeExibicao: identidades.nomeExibicao, nomeUsuario: identidades.nomeUsuario })
+    .select({
+      identidadeId: identidades.id,
+      tipo: identidades.tipo,
+      nomeExibicao: identidades.nomeExibicao,
+      nomeUsuario: identidades.nomeUsuario,
+    })
     .from(entregadoresEmpresa)
-    .innerJoin(identidades, and(eq(identidades.usuarioId, entregadoresEmpresa.usuarioId), eq(identidades.tipo, "pessoal")))
+    .innerJoin(
+      identidades,
+      and(
+        eq(identidades.usuarioId, entregadoresEmpresa.usuarioId),
+        eq(identidades.tipo, "pessoal"),
+      ),
+    )
     .where(eq(entregadoresEmpresa.id, saida.entregadorId))
     .limit(1);
   if (!entregador) throw new Error("Saída sem identidade de entregador.");
   return { saida, entregador, paradas, ...zonas };
 }
 
-export async function buscarSaida(banco: Banco, saidaId: string): Promise<SaidaComParadasRegistro | null> {
-  const [saida] = await banco.select().from(saidasEntrega).where(eq(saidasEntrega.id, saidaId)).limit(1);
-  return montarSaida(banco, saida);
-}
-
-// Saída de UMA empresa: o escopo faz parte da consulta (id sozinho nunca dá acesso).
-export async function buscarSaidaDaEmpresa(banco: Banco, empresaId: string, saidaId: string): Promise<SaidaComParadasRegistro | null> {
+export async function buscarSaida(
+  banco: Banco,
+  saidaId: string,
+): Promise<SaidaComParadasRegistro | null> {
   const [saida] = await banco
     .select()
     .from(saidasEntrega)
-    .where(and(eq(saidasEntrega.id, saidaId), eq(saidasEntrega.empresaId, empresaId)))
+    .where(eq(saidasEntrega.id, saidaId))
     .limit(1);
   return montarSaida(banco, saida);
 }
 
-export async function listarSaidasDaEmpresa(banco: Banco, empresaId: string, apenasAtivas: boolean): Promise<SaidaComParadasRegistro[]> {
+// Saída de UMA empresa: o escopo faz parte da consulta (id sozinho nunca dá acesso).
+export async function buscarSaidaDaEmpresa(
+  banco: Banco,
+  empresaId: string,
+  saidaId: string,
+): Promise<SaidaComParadasRegistro | null> {
+  const [saida] = await banco
+    .select()
+    .from(saidasEntrega)
+    .where(
+      and(
+        eq(saidasEntrega.id, saidaId),
+        eq(saidasEntrega.empresaId, empresaId),
+      ),
+    )
+    .limit(1);
+  return montarSaida(banco, saida);
+}
+
+export async function listarSaidasDaEmpresa(
+  banco: Banco,
+  empresaId: string,
+  apenasAtivas: boolean,
+): Promise<SaidaComParadasRegistro[]> {
   const filtros = [eq(saidasEntrega.empresaId, empresaId)];
   if (apenasAtivas) filtros.push(ne(saidasEntrega.status, "concluida"));
-  const linhas = await banco.select().from(saidasEntrega).where(and(...filtros)).orderBy(desc(saidasEntrega.id)).limit(50);
-  return (await Promise.all(linhas.map((saida) => montarSaida(banco, saida)))).filter((saida): saida is SaidaComParadasRegistro => saida !== null);
+  const linhas = await banco
+    .select()
+    .from(saidasEntrega)
+    .where(and(...filtros))
+    .orderBy(desc(saidasEntrega.id))
+    .limit(50);
+  return (
+    await Promise.all(linhas.map((saida) => montarSaida(banco, saida)))
+  ).filter((saida): saida is SaidaComParadasRegistro => saida !== null);
 }
 
 // Saídas dos vínculos da pessoa (a área do entregador). Vazio quando ela não tem vínculo ativo.
-export async function listarSaidasDosVinculos(banco: Banco, entregadorIds: string[], apenasAtivas: boolean): Promise<SaidaComParadasRegistro[]> {
+export async function listarSaidasDosVinculos(
+  banco: Banco,
+  entregadorIds: string[],
+  apenasAtivas: boolean,
+): Promise<SaidaComParadasRegistro[]> {
   if (entregadorIds.length === 0) return [];
   const filtros = [inArray(saidasEntrega.entregadorId, entregadorIds)];
   if (apenasAtivas) filtros.push(ne(saidasEntrega.status, "concluida"));
-  const linhas = await banco.select().from(saidasEntrega).where(and(...filtros)).orderBy(desc(saidasEntrega.id)).limit(50);
-  return (await Promise.all(linhas.map((saida) => montarSaida(banco, saida)))).filter((saida): saida is SaidaComParadasRegistro => saida !== null);
+  const linhas = await banco
+    .select()
+    .from(saidasEntrega)
+    .where(and(...filtros))
+    .orderBy(desc(saidasEntrega.id))
+    .limit(50);
+  return (
+    await Promise.all(linhas.map((saida) => montarSaida(banco, saida)))
+  ).filter((saida): saida is SaidaComParadasRegistro => saida !== null);
 }
 
 // Saída ATIVA que contém este pedido (a parada ainda conta na sequência).
-export async function buscarSaidaAtivaDoPedido(banco: Banco, pedidoId: string): Promise<{ saidaId: string; posicao: number } | null> {
+export async function buscarSaidaAtivaDoPedido(
+  banco: Banco,
+  pedidoId: string,
+): Promise<{ saidaId: string; posicao: number } | null> {
   const [parada] = await banco
     .select({ saidaId: paradasSaida.saidaId, posicao: paradasSaida.posicao })
     .from(paradasSaida)
-    .where(and(eq(paradasSaida.pedidoId, pedidoId), isNull(paradasSaida.encerradaEm)))
+    .where(
+      and(
+        eq(paradasSaida.pedidoId, pedidoId),
+        isNull(paradasSaida.encerradaEm),
+      ),
+    )
     .limit(1);
   return parada ?? null;
 }
@@ -181,10 +301,18 @@ export interface PedidoElegivelRegistro {
  * Pedidos que podem entrar numa saída nova: desta empresa, PRONTOS, com destino confirmado e fora de
  * qualquer saída ativa. A checagem definitiva acontece de novo dentro da transação de criação.
  */
-export function listarPedidosElegiveis(banco: Banco, empresaId: string, pedidoIds: string[]): Promise<PedidoElegivelRegistro[]> {
+export function listarPedidosElegiveis(
+  banco: Banco,
+  empresaId: string,
+  pedidoIds: string[],
+): Promise<PedidoElegivelRegistro[]> {
   if (pedidoIds.length === 0) return Promise.resolve([]);
   return banco
-    .select({ pedidoId: pedidos.id, latitude: destinosPedido.latitude, longitude: destinosPedido.longitude })
+    .select({
+      pedidoId: pedidos.id,
+      latitude: destinosPedido.latitude,
+      longitude: destinosPedido.longitude,
+    })
     .from(pedidos)
     .innerJoin(destinosPedido, eq(destinosPedido.pedidoId, pedidos.id))
     .where(
@@ -205,7 +333,10 @@ export class ErroSaidaConcorrente extends Error {
 }
 
 function ehViolacaoParadaAtiva(erro: unknown): boolean {
-  for (const candidato of [erro, erro instanceof Error ? erro.cause : undefined]) {
+  for (const candidato of [
+    erro,
+    erro instanceof Error ? erro.cause : undefined,
+  ]) {
     if (
       typeof candidato === "object" &&
       candidato !== null &&
@@ -228,7 +359,12 @@ function ehViolacaoParadaAtiva(erro: unknown): boolean {
  */
 export async function inserirSaidaComParadas(
   banco: Banco,
-  dados: { empresaId: string; entregadorId: string; criadaPorUsuarioId: string; ordem: string[] },
+  dados: {
+    empresaId: string;
+    entregadorId: string;
+    criadaPorUsuarioId: string;
+    ordem: string[];
+  },
 ): Promise<{ saidaId: string } | { tipo: "conflito" }> {
   try {
     return await banco.transaction(async (transacao) => {
@@ -246,16 +382,31 @@ export async function inserirSaidaComParadas(
         .returning({ id: saidasEntrega.id });
       if (!saida) throw new Error("Inserção de saída não retornou registro.");
 
-      await transacao.insert(paradasSaida).values(
-        dados.ordem.map((pedidoId, indice) => ({ saidaId: saida.id, pedidoId, empresaId: dados.empresaId, posicao: indice + 1 })),
-      );
+      await transacao
+        .insert(paradasSaida)
+        .values(
+          dados.ordem.map((pedidoId, indice) => ({
+            saidaId: saida.id,
+            pedidoId,
+            empresaId: dados.empresaId,
+            posicao: indice + 1,
+          })),
+        );
 
       for (const pedidoId of dados.ordem) {
         // Encerra atribuição anterior (se houver) e abre a desta saída: um entregador atual por pedido.
         await transacao
           .update(atribuicoesEntrega)
-          .set({ encerradoEm: new Date(), motivoEncerramento: "Reatribuído pela saída de entrega" })
-          .where(and(eq(atribuicoesEntrega.pedidoId, pedidoId), isNull(atribuicoesEntrega.encerradoEm)));
+          .set({
+            encerradoEm: new Date(),
+            motivoEncerramento: "Reatribuído pela saída de entrega",
+          })
+          .where(
+            and(
+              eq(atribuicoesEntrega.pedidoId, pedidoId),
+              isNull(atribuicoesEntrega.encerradoEm),
+            ),
+          );
         await transacao.insert(atribuicoesEntrega).values({
           pedidoId,
           entregadorId: dados.entregadorId,
@@ -278,7 +429,11 @@ export async function inserirSaidaComParadas(
  */
 export async function reordenarParadas(
   banco: Banco,
-  { saidaId, versaoEsperada, ordem }: { saidaId: string; versaoEsperada: number; ordem: string[] },
+  {
+    saidaId,
+    versaoEsperada,
+    ordem,
+  }: { saidaId: string; versaoEsperada: number; ordem: string[] },
 ): Promise<"reordenada" | "versao-desatualizada"> {
   return banco.transaction(async (transacao) => {
     const [saida] = await transacao
@@ -287,14 +442,20 @@ export async function reordenarParadas(
       .where(eq(saidasEntrega.id, saidaId))
       .for("update")
       .limit(1);
-    if (!saida || saida.versaoSequencia !== versaoEsperada) return "versao-desatualizada";
+    if (!saida || saida.versaoSequencia !== versaoEsperada)
+      return "versao-desatualizada";
 
     // Posições das encerradas ficam depois das ativas (o histórico não some, só sai da fila).
     for (const [indice, pedidoId] of ordem.entries()) {
       await transacao
         .update(paradasSaida)
         .set({ posicao: indice + 1 })
-        .where(and(eq(paradasSaida.saidaId, saidaId), eq(paradasSaida.pedidoId, pedidoId)));
+        .where(
+          and(
+            eq(paradasSaida.saidaId, saidaId),
+            eq(paradasSaida.pedidoId, pedidoId),
+          ),
+        );
     }
     await transacao
       .update(saidasEntrega)
@@ -304,37 +465,125 @@ export async function reordenarParadas(
   });
 }
 
-export async function marcarSaidaIniciada(banco: Banco, saidaId: string): Promise<SaidaRegistro | null> {
+export async function marcarSaidaIniciada(
+  banco: Banco,
+  saidaId: string,
+): Promise<SaidaRegistro | null> {
   const [saida] = await banco
     .update(saidasEntrega)
     .set({ status: "em_andamento", iniciadaEm: new Date() })
-    .where(and(eq(saidasEntrega.id, saidaId), eq(saidasEntrega.status, "liberada_retirada")))
+    .where(
+      and(
+        eq(saidasEntrega.id, saidaId),
+        eq(saidasEntrega.status, "liberada_retirada"),
+      ),
+    )
     .returning();
   return saida ?? null;
+}
+
+/**
+ * Recusa atomicamente uma saída liberada: preserva rota/paradas/liberação, registra quem recusou e
+ * encerra apenas as atribuições atuais daqueles pedidos. A condição protege a corrida com "iniciar".
+ */
+export async function recusarSaidaLiberada(
+  banco: Banco,
+  dados: {
+    saidaId: string;
+    empresaId: string;
+    entregadorId: string;
+    agora: Date;
+  },
+): Promise<boolean> {
+  return banco.transaction(async (transacao) => {
+    const [recusada] = await transacao
+      .update(saidasEntrega)
+      .set({
+        status: "aguardando_entregador",
+        entregadorId: null,
+        atribuidaEm: null,
+      })
+      .where(
+        and(
+          eq(saidasEntrega.id, dados.saidaId),
+          eq(saidasEntrega.empresaId, dados.empresaId),
+          eq(saidasEntrega.entregadorId, dados.entregadorId),
+          eq(saidasEntrega.status, "liberada_retirada"),
+        ),
+      )
+      .returning({ id: saidasEntrega.id });
+    if (!recusada) return false;
+
+    await transacao
+      .insert(recusasSaida)
+      .values({
+        saidaId: dados.saidaId,
+        empresaId: dados.empresaId,
+        entregadorId: dados.entregadorId,
+        recusadaEm: dados.agora,
+      })
+      .onConflictDoNothing({
+        target: [recusasSaida.saidaId, recusasSaida.entregadorId],
+      });
+
+    await transacao
+      .update(atribuicoesEntrega)
+      .set({
+        encerradoEm: dados.agora,
+        motivoEncerramento: "Rota recusada pelo entregador",
+      })
+      .where(
+        and(
+          eq(atribuicoesEntrega.entregadorId, dados.entregadorId),
+          isNull(atribuicoesEntrega.encerradoEm),
+          sql`${atribuicoesEntrega.pedidoId} in (select ${paradasSaida.pedidoId} from ${paradasSaida} where ${paradasSaida.saidaId} = ${dados.saidaId} and ${paradasSaida.encerradaEm} is null)`,
+        ),
+      );
+    return true;
+  });
 }
 
 /**
  * Libera uma rota já congelada e planejada. Sem entregador ela continua aguardando, mas guarda a
  * decisão; quando o primeiro da fila for atribuído, nasce diretamente liberada para retirada.
  */
-export async function marcarSaidaLiberada(banco: Banco, saidaId: string, agora: Date): Promise<SaidaRegistro | null> {
+export async function marcarSaidaLiberada(
+  banco: Banco,
+  saidaId: string,
+  agora: Date,
+): Promise<SaidaRegistro | null> {
   const [saida] = await banco
     .update(saidasEntrega)
     .set({
       liberadaEm: agora,
       status: sql`case when ${saidasEntrega.status} = 'preparada' then 'liberada_retirada'::status_saida_entrega else ${saidasEntrega.status} end`,
     })
-    .where(and(eq(saidasEntrega.id, saidaId), inArray(saidasEntrega.status, ["aguardando_entregador", "preparada"]), isNull(saidasEntrega.liberadaEm)))
+    .where(
+      and(
+        eq(saidasEntrega.id, saidaId),
+        inArray(saidasEntrega.status, ["aguardando_entregador", "preparada"]),
+        isNull(saidasEntrega.liberadaEm),
+      ),
+    )
     .returning();
   return saida ?? null;
 }
 
 // Parada sai da sequência ativa quando o pedido termina (entregue ou cancelado). Nada é apagado.
-export async function encerrarParadaDoPedido(banco: Banco, pedidoId: string, motivo: string): Promise<{ saidaId: string } | null> {
+export async function encerrarParadaDoPedido(
+  banco: Banco,
+  pedidoId: string,
+  motivo: string,
+): Promise<{ saidaId: string } | null> {
   const [parada] = await banco
     .update(paradasSaida)
     .set({ encerradaEm: new Date(), motivoEncerramento: motivo })
-    .where(and(eq(paradasSaida.pedidoId, pedidoId), isNull(paradasSaida.encerradaEm)))
+    .where(
+      and(
+        eq(paradasSaida.pedidoId, pedidoId),
+        isNull(paradasSaida.encerradaEm),
+      ),
+    )
     .returning({ saidaId: paradasSaida.saidaId });
   return parada ?? null;
 }
@@ -343,25 +592,37 @@ export async function encerrarParadaDoPedido(banco: Banco, pedidoId: string, mot
  * Saída sem parada ativa está terminada: fecha sozinha (com data), sem depender de alguém lembrar.
  * Saída "preparada" que perdeu todas as paradas também é encerrada — não há mais o que levar.
  */
-export async function concluirSaidaSeTerminou(banco: Banco, saidaId: string): Promise<boolean> {
+export async function concluirSaidaSeTerminou(
+  banco: Banco,
+  saidaId: string,
+): Promise<boolean> {
   const [restante] = await banco
     .select({ id: paradasSaida.id })
     .from(paradasSaida)
-    .where(and(eq(paradasSaida.saidaId, saidaId), isNull(paradasSaida.encerradaEm)))
+    .where(
+      and(eq(paradasSaida.saidaId, saidaId), isNull(paradasSaida.encerradaEm)),
+    )
     .limit(1);
   if (restante) return false;
 
   // Saída em FORMAÇÃO que perdeu o último pedido também encerra — e encerrar é fechar para novos.
   const concluidas = await banco
     .update(saidasEntrega)
-    .set({ status: "concluida", concluidaEm: new Date(), fechadaEm: sql`coalesce(${saidasEntrega.fechadaEm}, now())` })
-    .where(and(eq(saidasEntrega.id, saidaId), ne(saidasEntrega.status, "concluida")))
+    .set({
+      status: "concluida",
+      concluidaEm: new Date(),
+      fechadaEm: sql`coalesce(${saidasEntrega.fechadaEm}, now())`,
+    })
+    .where(
+      and(eq(saidasEntrega.id, saidaId), ne(saidasEntrega.status, "concluida")),
+    )
     .returning({ id: saidasEntrega.id });
   /*
    * Terminou a operação, o rastreamento acaba: a última posição é apagada junto. O Jaa não guarda
    * onde a pessoa estava depois que a saída acabou.
    */
-  if (concluidas.length > 0) await banco.delete(posicoesSaida).where(eq(posicoesSaida.saidaId, saidaId));
+  if (concluidas.length > 0)
+    await banco.delete(posicoesSaida).where(eq(posicoesSaida.saidaId, saidaId));
   return concluidas.length > 0;
 }
 

@@ -18,7 +18,21 @@ export function resumoPedidoSql(tabelaMensagens = "mensagens"): SQL<ResumoPedido
       'trocoParaCentavos', pedido.troco_para_centavos,
       'totalCentavos', pedido.total_centavos,
       'itens', coalesce((
-        select json_agg(json_build_object('nomeProduto', item.nome_produto, 'quantidade', item.quantidade, 'subtotalCentavos', item.subtotal_centavos) order by item.nome_produto, item.id)
+        select json_agg(
+          json_build_object(
+            'nomeProduto', item.nome_produto,
+            'quantidade', item.quantidade,
+            'subtotalCentavos', item.subtotal_centavos,
+            'observacao', item.observacao,
+            -- Só os nomes das opções: o card mostra a montagem em uma linha ("Grande · Bife bovino").
+            'escolhas', coalesce((
+              select json_agg(escolha.opcao_nome order by escolha.posicao, escolha.id)
+              from escolhas_item_pedido escolha
+              where escolha.item_pedido_id = item.id
+            ), '[]'::json)
+          )
+          order by item.nome_produto, item.id
+        )
         from itens_pedido item
         where item.pedido_id = pedido.id
       ), '[]'::json)

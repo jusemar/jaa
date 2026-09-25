@@ -1,9 +1,38 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, foreignKey, index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { conversas } from "../conversas/conversas.js";
 import { participantesConversa } from "../conversas/participantes-conversa.js";
 import { empresas } from "../empresas/empresas.js";
 import { identidades } from "../identidades/identidades.js";
+import { users } from "../autenticacao/better-auth.js";
+import { zonasEntrega } from "../entregas/zonas-entrega.js";
+
+export const tipoBeneficioCupom = pgEnum("tipo_beneficio_cupom", ["frete_gratis"]);
+
+export const gestoresPlataforma = pgTable("gestores_plataforma", {
+  usuarioId: text("usuario_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  criadoEm: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+export const cuponsPlataforma = pgTable(
+  "cupons_plataforma",
+  {
+    id: uuid().primaryKey().default(sql`uuidv7()`),
+    codigo: text().notNull(),
+    tipoBeneficio: tipoBeneficioCupom("tipo_beneficio").notNull().default("frete_gratis"),
+    ativo: boolean().notNull().default(true),
+    validoDe: timestamp("valido_de", { withTimezone: true }),
+    validoAte: timestamp("valido_ate", { withTimezone: true }),
+    criadoPorUsuarioId: text("criado_por_usuario_id").notNull().references(() => gestoresPlataforma.usuarioId, { onDelete: "restrict" }),
+    criadoEm: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    atualizadoEm: timestamp({ withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (tabela) => [
+    uniqueIndex("cupons_plataforma_codigo_unico").on(sql`upper(${tabela.codigo})`),
+    check("cupons_plataforma_codigo_valido", sql`${tabela.codigo} ~ '^[A-Z0-9_-]{3,30}$'`),
+    check("cupons_plataforma_validade_valida", sql`${tabela.validoAte} is null or ${tabela.validoDe} is null or ${tabela.validoAte} > ${tabela.validoDe}`),
+  ],
+);
 
 // Fluxo operacional: um passo por vez (validado pela máquina de estados), com dois terminais —
 // "entregue" (fim normal) e "cancelado" (a empresa não vai atender, com motivo).
@@ -53,6 +82,14 @@ export const pedidos = pgTable(
     // de troco (por isso > total; igual ao total é normalizado para null).
     trocoParaCentavos: integer(),
     totalCentavos: integer().notNull(),
+    subtotalCentavos: integer("subtotal_centavos").notNull(),
+    freteOriginalCentavos: integer("frete_original_centavos").notNull().default(0),
+    descontoFreteCentavos: integer("desconto_frete_centavos").notNull().default(0),
+    freteFinalCentavos: integer("frete_final_centavos").notNull().default(0),
+    zonaEntregaId: uuid("zona_entrega_id").references(() => zonasEntrega.id, { onDelete: "set null" }),
+    zonaEntregaNome: text("zona_entrega_nome"),
+    cupomFreteId: uuid("cupom_frete_id").references(() => cuponsPlataforma.id, { onDelete: "set null" }),
+    cupomFreteCodigo: text("cupom_frete_codigo"),
     // Chave de idempotência da TENTATIVA do cliente: tocar "Confirmar" duas vezes não cria dois pedidos.
     idCliente: uuid().notNull(),
     /*
@@ -84,6 +121,7 @@ export const pedidos = pgTable(
       foreignColumns: [participantesConversa.conversaId, participantesConversa.identidadeId],
     }).onDelete("restrict"),
     check("pedidos_total_valido", sql`${tabela.totalCentavos} between 1 and 999999999`),
+    check("pedidos_valores_entrega_validos", sql`${tabela.subtotalCentavos} between 1 and 999999999 and ${tabela.freteOriginalCentavos} >= 0 and ${tabela.descontoFreteCentavos} between 0 and ${tabela.freteOriginalCentavos} and ${tabela.freteFinalCentavos} = ${tabela.freteOriginalCentavos} - ${tabela.descontoFreteCentavos} and ${tabela.totalCentavos} = ${tabela.subtotalCentavos} + ${tabela.freteFinalCentavos}`),
     // Cartão nunca tem troco; dinheiro com troco exige valor MAIOR que o total (igual = sem troco).
     check(
       "pedidos_troco_por_forma",

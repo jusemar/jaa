@@ -1,5 +1,12 @@
 import type { Banco } from "@jaa/banco";
-import { atribuicoesEntrega, entregadoresEmpresa, paradasSaida, pedidos, saidasEntrega } from "@jaa/banco/schema";
+import {
+  atribuicoesEntrega,
+  entregadoresEmpresa,
+  paradasSaida,
+  pedidos,
+  recusasSaida,
+  saidasEntrega,
+} from "@jaa/banco/schema";
 import { and, asc, eq, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 
 /*
@@ -11,7 +18,12 @@ import { and, asc, eq, inArray, isNull, lte, ne, sql } from "drizzle-orm";
  * bloquear as outras empresas e sem exigir infraestrutura nova.
  */
 
-const travarEmpresa = (transacao: { execute: (consulta: ReturnType<typeof sql>) => Promise<unknown> }, empresaId: string) =>
+const travarEmpresa = (
+  transacao: {
+    execute: (consulta: ReturnType<typeof sql>) => Promise<unknown>;
+  },
+  empresaId: string,
+) =>
   transacao.execute(sql`select pg_advisory_xact_lock(hashtext(${empresaId}))`);
 
 export interface ResultadoEncaixe {
@@ -29,7 +41,14 @@ export interface ResultadoEncaixe {
  */
 export async function encaixarPedidoEmFormacao(
   banco: Banco,
-  dados: { empresaId: string; zonaId: string; pedidoId: string; maxPedidos: number; tempoFormacaoMinutos: number; agora: Date },
+  dados: {
+    empresaId: string;
+    zonaId: string;
+    pedidoId: string;
+    maxPedidos: number;
+    tempoFormacaoMinutos: number;
+    agora: Date;
+  },
 ): Promise<ResultadoEncaixe | { tipo: "pedido-ja-em-saida" }> {
   return banco.transaction(async (transacao) => {
     await travarEmpresa(transacao, dados.empresaId);
@@ -37,21 +56,34 @@ export async function encaixarPedidoEmFormacao(
     const [jaEstá] = await transacao
       .select({ id: paradasSaida.id })
       .from(paradasSaida)
-      .where(and(eq(paradasSaida.pedidoId, dados.pedidoId), isNull(paradasSaida.encerradaEm)))
+      .where(
+        and(
+          eq(paradasSaida.pedidoId, dados.pedidoId),
+          isNull(paradasSaida.encerradaEm),
+        ),
+      )
       .limit(1);
     if (jaEstá) return { tipo: "pedido-ja-em-saida" as const };
 
     const [emFormacao] = await transacao
       .select({ id: saidasEntrega.id })
       .from(saidasEntrega)
-      .where(and(eq(saidasEntrega.empresaId, dados.empresaId), eq(saidasEntrega.zonaPrincipalId, dados.zonaId), eq(saidasEntrega.status, "em_formacao")))
+      .where(
+        and(
+          eq(saidasEntrega.empresaId, dados.empresaId),
+          eq(saidasEntrega.zonaPrincipalId, dados.zonaId),
+          eq(saidasEntrega.status, "em_formacao"),
+        ),
+      )
       .for("update")
       .limit(1);
 
     let saidaId = emFormacao?.id ?? null;
     let criouSaida = false;
     if (!saidaId) {
-      const prazo = new Date(dados.agora.getTime() + dados.tempoFormacaoMinutos * 60_000);
+      const prazo = new Date(
+        dados.agora.getTime() + dados.tempoFormacaoMinutos * 60_000,
+      );
       const [criada] = await transacao
         .insert(saidasEntrega)
         .values({
@@ -63,7 +95,8 @@ export async function encaixarPedidoEmFormacao(
           prazoFormacaoEm: prazo,
         })
         .returning({ id: saidasEntrega.id });
-      if (!criada) throw new Error("Criação da saída em formação não retornou registro.");
+      if (!criada)
+        throw new Error("Criação da saída em formação não retornou registro.");
       saidaId = criada.id;
       criouSaida = true;
     }
@@ -71,9 +104,21 @@ export async function encaixarPedidoEmFormacao(
     const ativas = await transacao
       .select({ id: paradasSaida.id })
       .from(paradasSaida)
-      .where(and(eq(paradasSaida.saidaId, saidaId), isNull(paradasSaida.encerradaEm)));
+      .where(
+        and(
+          eq(paradasSaida.saidaId, saidaId),
+          isNull(paradasSaida.encerradaEm),
+        ),
+      );
 
-    await transacao.insert(paradasSaida).values({ saidaId, pedidoId: dados.pedidoId, empresaId: dados.empresaId, posicao: ativas.length + 1 });
+    await transacao
+      .insert(paradasSaida)
+      .values({
+        saidaId,
+        pedidoId: dados.pedidoId,
+        empresaId: dados.empresaId,
+        posicao: ativas.length + 1,
+      });
     const quantidade = ativas.length + 1;
 
     // Quantidade máxima atingida: fecha JÁ, para não passar do limite nem esperar o tempo à toa.
@@ -90,18 +135,34 @@ export async function encaixarPedidoEmFormacao(
 }
 
 // Fecha por tempo ou por decisão do gestor: congela a saída para novos pedidos.
-export async function fecharFormacao(banco: Banco, saidaId: string, agora: Date): Promise<boolean> {
+export async function fecharFormacao(
+  banco: Banco,
+  saidaId: string,
+  agora: Date,
+): Promise<boolean> {
   const fechadas = await banco
     .update(saidasEntrega)
     .set({ status: "aguardando_entregador", fechadaEm: agora })
-    .where(and(eq(saidasEntrega.id, saidaId), eq(saidasEntrega.status, "em_formacao")))
+    .where(
+      and(
+        eq(saidasEntrega.id, saidaId),
+        eq(saidasEntrega.status, "em_formacao"),
+      ),
+    )
     .returning({ id: saidasEntrega.id });
   return fechadas.length > 0;
 }
 
 // Saídas cujo prazo de formação já passou (o vencimento vive no BANCO, não num timer em memória).
-export function listarFormacoesVencidas(banco: Banco, referencia: Date, empresaId?: string): Promise<Array<{ id: string; empresaId: string }>> {
-  const filtros = [eq(saidasEntrega.status, "em_formacao"), lte(saidasEntrega.prazoFormacaoEm, referencia)];
+export function listarFormacoesVencidas(
+  banco: Banco,
+  referencia: Date,
+  empresaId?: string,
+): Promise<Array<{ id: string; empresaId: string }>> {
+  const filtros = [
+    eq(saidasEntrega.status, "em_formacao"),
+    lte(saidasEntrega.prazoFormacaoEm, referencia),
+  ];
   if (empresaId) filtros.push(eq(saidasEntrega.empresaId, empresaId));
   return banco
     .select({ id: saidasEntrega.id, empresaId: saidasEntrega.empresaId })
@@ -120,7 +181,11 @@ export interface FormacaoRegistro {
   esperaDesde: Date;
 }
 
-async function listarPorStatus(banco: Banco, empresaId: string, status: "em_formacao" | "aguardando_entregador"): Promise<FormacaoRegistro[]> {
+async function listarPorStatus(
+  banco: Banco,
+  empresaId: string,
+  status: "em_formacao" | "aguardando_entregador",
+): Promise<FormacaoRegistro[]> {
   const linhas = await banco
     .select({
       id: saidasEntrega.id,
@@ -133,7 +198,12 @@ async function listarPorStatus(banco: Banco, empresaId: string, status: "em_form
       esperaDesde: sql<Date>`coalesce((select min(${paradasSaida.criadoEm}) from ${paradasSaida} where ${paradasSaida.saidaId} = ${saidasEntrega.id} and ${paradasSaida.encerradaEm} is null), ${saidasEntrega.criadoEm})`,
     })
     .from(saidasEntrega)
-    .where(and(eq(saidasEntrega.empresaId, empresaId), eq(saidasEntrega.status, status)))
+    .where(
+      and(
+        eq(saidasEntrega.empresaId, empresaId),
+        eq(saidasEntrega.status, status),
+      ),
+    )
     .orderBy(asc(saidasEntrega.criadoEm), asc(saidasEntrega.id));
 
   return linhas.map((linha) => ({
@@ -145,7 +215,10 @@ async function listarPorStatus(banco: Banco, empresaId: string, status: "em_form
   }));
 }
 
-export function listarFormacoesDaEmpresa(banco: Banco, empresaId: string): Promise<FormacaoRegistro[]> {
+export function listarFormacoesDaEmpresa(
+  banco: Banco,
+  empresaId: string,
+): Promise<FormacaoRegistro[]> {
   return listarPorStatus(banco, empresaId, "em_formacao");
 }
 
@@ -153,13 +226,26 @@ export function listarFormacoesDaEmpresa(banco: Banco, empresaId: string): Promi
  * Saídas fechadas esperando alguém elegível. Ordem = pedido mais antigo primeiro, para nenhuma zona
  * ficar eternamente atrás de outra (desempate estável pelo id da saída).
  */
-export async function listarAguardandoEntregador(banco: Banco, empresaId: string): Promise<FormacaoRegistro[]> {
-  const linhas = await listarPorStatus(banco, empresaId, "aguardando_entregador");
-  return linhas.sort((a, b) => a.esperaDesde.getTime() - b.esperaDesde.getTime() || a.id.localeCompare(b.id));
+export async function listarAguardandoEntregador(
+  banco: Banco,
+  empresaId: string,
+): Promise<FormacaoRegistro[]> {
+  const linhas = await listarPorStatus(
+    banco,
+    empresaId,
+    "aguardando_entregador",
+  );
+  return linhas.sort(
+    (a, b) =>
+      a.esperaDesde.getTime() - b.esperaDesde.getTime() ||
+      a.id.localeCompare(b.id),
+  );
 }
 
 // Empresas com alguma saída fechada esperando entregador (usado pela reconciliação periódica).
-export async function listarEmpresasComSaidaPendente(banco: Banco): Promise<string[]> {
+export async function listarEmpresasComSaidaPendente(
+  banco: Banco,
+): Promise<string[]> {
   const linhas = await banco
     .selectDistinct({ empresaId: saidasEntrega.empresaId })
     .from(saidasEntrega)
@@ -173,11 +259,19 @@ export interface ParadaMovivel {
   criadoEm: Date;
 }
 
-export async function listarParadasAtivas(banco: Banco, saidaId: string): Promise<ParadaMovivel[]> {
+export async function listarParadasAtivas(
+  banco: Banco,
+  saidaId: string,
+): Promise<ParadaMovivel[]> {
   return banco
-    .select({ pedidoId: paradasSaida.pedidoId, criadoEm: paradasSaida.criadoEm })
+    .select({
+      pedidoId: paradasSaida.pedidoId,
+      criadoEm: paradasSaida.criadoEm,
+    })
     .from(paradasSaida)
-    .where(and(eq(paradasSaida.saidaId, saidaId), isNull(paradasSaida.encerradaEm)))
+    .where(
+      and(eq(paradasSaida.saidaId, saidaId), isNull(paradasSaida.encerradaEm)),
+    )
     .orderBy(asc(paradasSaida.criadoEm), asc(paradasSaida.id));
 }
 
@@ -188,7 +282,12 @@ export async function listarParadasAtivas(banco: Banco, saidaId: string): Promis
  */
 export async function moverParadas(
   banco: Banco,
-  dados: { origemId: string; destinoId: string; pedidoIds: string[]; agora: Date },
+  dados: {
+    origemId: string;
+    destinoId: string;
+    pedidoIds: string[];
+    agora: Date;
+  },
 ): Promise<number> {
   if (dados.pedidoIds.length === 0) return 0;
   return banco.transaction(async (transacao) => {
@@ -208,7 +307,9 @@ export async function moverParadas(
     if (!destino || !origem || origem.status !== "em_formacao") return 0;
 
     const [{ maior = 0 } = { maior: 0 }] = await transacao
-      .select({ maior: sql<number>`coalesce(max(${paradasSaida.posicao}), 0)::int` })
+      .select({
+        maior: sql<number>`coalesce(max(${paradasSaida.posicao}), 0)::int`,
+      })
       .from(paradasSaida)
       .where(eq(paradasSaida.saidaId, dados.destinoId));
 
@@ -218,17 +319,32 @@ export async function moverParadas(
       await transacao
         .update(paradasSaida)
         .set({ saidaId: dados.destinoId, posicao })
-        .where(and(eq(paradasSaida.saidaId, dados.origemId), eq(paradasSaida.pedidoId, pedidoId), isNull(paradasSaida.encerradaEm)));
+        .where(
+          and(
+            eq(paradasSaida.saidaId, dados.origemId),
+            eq(paradasSaida.pedidoId, pedidoId),
+            isNull(paradasSaida.encerradaEm),
+          ),
+        );
     }
 
     const restantes = await transacao
       .select({ id: paradasSaida.id })
       .from(paradasSaida)
-      .where(and(eq(paradasSaida.saidaId, dados.origemId), isNull(paradasSaida.encerradaEm)));
+      .where(
+        and(
+          eq(paradasSaida.saidaId, dados.origemId),
+          isNull(paradasSaida.encerradaEm),
+        ),
+      );
     if (restantes.length === 0) {
       await transacao
         .update(saidasEntrega)
-        .set({ status: "concluida", fechadaEm: dados.agora, concluidaEm: dados.agora })
+        .set({
+          status: "concluida",
+          fechadaEm: dados.agora,
+          concluidaEm: dados.agora,
+        })
         .where(eq(saidasEntrega.id, dados.origemId));
     }
     return dados.pedidoIds.length;
@@ -256,9 +372,19 @@ export async function atribuirSaidaAoPrimeiroDaFila(
     await travarEmpresa(transacao, dados.empresaId);
 
     const [saida] = await transacao
-      .select({ id: saidasEntrega.id, status: saidasEntrega.status, liberadaEm: saidasEntrega.liberadaEm })
+      .select({
+        id: saidasEntrega.id,
+        status: saidasEntrega.status,
+        liberadaEm: saidasEntrega.liberadaEm,
+      })
       .from(saidasEntrega)
-      .where(and(eq(saidasEntrega.id, dados.saidaId), eq(saidasEntrega.empresaId, dados.empresaId), eq(saidasEntrega.status, "aguardando_entregador")))
+      .where(
+        and(
+          eq(saidasEntrega.id, dados.saidaId),
+          eq(saidasEntrega.empresaId, dados.empresaId),
+          eq(saidasEntrega.status, "aguardando_entregador"),
+        ),
+      )
       .for("update")
       .limit(1);
     if (!saida) return { tipo: "nao-aplicavel" as const };
@@ -266,10 +392,18 @@ export async function atribuirSaidaAoPrimeiroDaFila(
     const paradas = await transacao
       .select({ pedidoId: paradasSaida.pedidoId })
       .from(paradasSaida)
-      .where(and(eq(paradasSaida.saidaId, dados.saidaId), isNull(paradasSaida.encerradaEm)));
+      .where(
+        and(
+          eq(paradasSaida.saidaId, dados.saidaId),
+          isNull(paradasSaida.encerradaEm),
+        ),
+      );
     // Saída que ficou sem pedido (todos cancelados) não consome entregador: encerra e sai.
     if (paradas.length === 0) {
-      await transacao.update(saidasEntrega).set({ status: "concluida", concluidaEm: dados.agora }).where(eq(saidasEntrega.id, dados.saidaId));
+      await transacao
+        .update(saidasEntrega)
+        .set({ status: "concluida", concluidaEm: dados.agora })
+        .where(eq(saidasEntrega.id, dados.saidaId));
       return { tipo: "nao-aplicavel" as const };
     }
 
@@ -285,9 +419,14 @@ export async function atribuirSaidaAoPrimeiroDaFila(
           eq(entregadoresEmpresa.aptoParaSaida, true),
           sql`${entregadoresEmpresa.filaEntrouEm} is not null`,
           sql`not exists (select 1 from ${saidasEntrega} where ${saidasEntrega.entregadorId} = ${entregadoresEmpresa.id} and ${saidasEntrega.status} <> 'concluida')`,
+          // Recusar não muda a disponibilidade, mas esta mesma saída não volta para a pessoa.
+          sql`not exists (select 1 from ${recusasSaida} where ${recusasSaida.saidaId} = ${dados.saidaId} and ${recusasSaida.entregadorId} = ${entregadoresEmpresa.id})`,
         ),
       )
-      .orderBy(asc(entregadoresEmpresa.filaEntrouEm), asc(entregadoresEmpresa.id))
+      .orderBy(
+        asc(entregadoresEmpresa.filaEntrouEm),
+        asc(entregadoresEmpresa.id),
+      )
       .for("update")
       .limit(1);
     if (!entregador) return { tipo: "sem-entregador" as const };
@@ -306,9 +445,23 @@ export async function atribuirSaidaAoPrimeiroDaFila(
       // A atribuição continua sendo a fonte única de "quem está com este pedido".
       await transacao
         .update(atribuicoesEntrega)
-        .set({ encerradoEm: dados.agora, motivoEncerramento: "Reatribuído pela saída de entrega" })
-        .where(and(eq(atribuicoesEntrega.pedidoId, parada.pedidoId), isNull(atribuicoesEntrega.encerradoEm)));
-      await transacao.insert(atribuicoesEntrega).values({ pedidoId: parada.pedidoId, entregadorId: entregador.id, empresaId: dados.empresaId });
+        .set({
+          encerradoEm: dados.agora,
+          motivoEncerramento: "Reatribuído pela saída de entrega",
+        })
+        .where(
+          and(
+            eq(atribuicoesEntrega.pedidoId, parada.pedidoId),
+            isNull(atribuicoesEntrega.encerradoEm),
+          ),
+        );
+      await transacao
+        .insert(atribuicoesEntrega)
+        .values({
+          pedidoId: parada.pedidoId,
+          entregadorId: entregador.id,
+          empresaId: dados.empresaId,
+        });
     }
 
     return { tipo: "atribuida" as const, entregadorId: entregador.id };
@@ -319,7 +472,10 @@ export async function atribuirSaidaAoPrimeiroDaFila(
  * Pedidos PRONTOS da empresa que ainda não estão em saída nenhuma — a base da automação e, para os
  * que ficam fora das zonas, a lista de pendências que o gestor resolve à mão.
  */
-export function listarPedidosProntosSemSaida(banco: Banco, empresaId: string): Promise<Array<{ pedidoId: string; latitude: number; longitude: number }>> {
+export function listarPedidosProntosSemSaida(
+  banco: Banco,
+  empresaId: string,
+): Promise<Array<{ pedidoId: string; latitude: number; longitude: number }>> {
   return banco
     .select({
       pedidoId: pedidos.id,
@@ -339,21 +495,35 @@ export function listarPedidosProntosSemSaida(banco: Banco, empresaId: string): P
 }
 
 // Ponto SNAPSHOT do pedido: é ele (e não o endereço atual do cliente) que classifica o pedido.
-export async function buscarPontoDoPedido(banco: Banco, pedidoId: string): Promise<{ latitude: number; longitude: number } | null> {
+export async function buscarPontoDoPedido(
+  banco: Banco,
+  pedidoId: string,
+): Promise<{ latitude: number; longitude: number } | null> {
   const [linha] = await banco
     .select({
-      latitude: sql<number | null>`(select latitude from destinos_pedido where destinos_pedido.pedido_id = ${pedidos.id})`,
-      longitude: sql<number | null>`(select longitude from destinos_pedido where destinos_pedido.pedido_id = ${pedidos.id})`,
+      latitude: sql<
+        number | null
+      >`(select latitude from destinos_pedido where destinos_pedido.pedido_id = ${pedidos.id})`,
+      longitude: sql<
+        number | null
+      >`(select longitude from destinos_pedido where destinos_pedido.pedido_id = ${pedidos.id})`,
     })
     .from(pedidos)
     .where(eq(pedidos.id, pedidoId))
     .limit(1);
-  if (!linha || linha.latitude === null || linha.longitude === null) return null;
-  return { latitude: Number(linha.latitude), longitude: Number(linha.longitude) };
+  if (!linha || linha.latitude === null || linha.longitude === null)
+    return null;
+  return {
+    latitude: Number(linha.latitude),
+    longitude: Number(linha.longitude),
+  };
 }
 
 // Zonas presentes nas paradas ativas de uma saída (a principal + as que entraram por combinação).
-export async function listarZonasDosPedidos(banco: Banco, pedidoIds: string[]): Promise<Array<{ pedidoId: string; latitude: number; longitude: number }>> {
+export async function listarZonasDosPedidos(
+  banco: Banco,
+  pedidoIds: string[],
+): Promise<Array<{ pedidoId: string; latitude: number; longitude: number }>> {
   if (pedidoIds.length === 0) return [];
   return banco
     .select({
@@ -362,15 +532,28 @@ export async function listarZonasDosPedidos(banco: Banco, pedidoIds: string[]): 
       longitude: sql<number>`(select longitude from destinos_pedido where destinos_pedido.pedido_id = ${pedidos.id})`,
     })
     .from(pedidos)
-    .where(and(inArray(pedidos.id, pedidoIds), sql`exists (select 1 from destinos_pedido where destinos_pedido.pedido_id = ${pedidos.id})`));
+    .where(
+      and(
+        inArray(pedidos.id, pedidoIds),
+        sql`exists (select 1 from destinos_pedido where destinos_pedido.pedido_id = ${pedidos.id})`,
+      ),
+    );
 }
 
 // Saída ativa (não concluída) de um entregador — usado para conferir elegibilidade fora da transação.
-export async function entregadorTemSaidaAtiva(banco: Banco, entregadorId: string): Promise<boolean> {
+export async function entregadorTemSaidaAtiva(
+  banco: Banco,
+  entregadorId: string,
+): Promise<boolean> {
   const [linha] = await banco
     .select({ id: saidasEntrega.id })
     .from(saidasEntrega)
-    .where(and(eq(saidasEntrega.entregadorId, entregadorId), ne(saidasEntrega.status, "concluida")))
+    .where(
+      and(
+        eq(saidasEntrega.entregadorId, entregadorId),
+        ne(saidasEntrega.status, "concluida"),
+      ),
+    )
     .limit(1);
   return linha !== undefined;
 }

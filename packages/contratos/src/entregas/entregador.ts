@@ -69,6 +69,17 @@ export const listaEntregadoresSchema = z.object({ entregadores: z.array(entregad
 
 export type ListaEntregadores = z.infer<typeof listaEntregadoresSchema>;
 
+export const candidatoEntregadorSchema = z.object({
+  pessoa: participanteConversaSchema,
+  situacao: z.enum(["novo", "inativo"]),
+});
+
+export type CandidatoEntregador = z.infer<typeof candidatoEntregadorSchema>;
+
+export const listaCandidatosEntregadorSchema = z.object({ candidatos: z.array(candidatoEntregadorSchema).max(5) });
+
+export type ListaCandidatosEntregador = z.infer<typeof listaCandidatosEntregadorSchema>;
+
 // Convite pelo @usuario público: a empresa não procura ninguém por telefone nem por dado privado.
 export const convidarEntregadorEntradaSchema = z.object({ nomeUsuario: nomeUsuarioSchema });
 

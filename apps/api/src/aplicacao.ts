@@ -11,16 +11,32 @@ import { registrarRotasCatalogoPublico } from "./features/catalogo/rotas/rotas-c
 import { registrarRotasContatos } from "./features/contatos/rotas/rotas-contatos.js";
 import { registrarRotasConversas } from "./features/conversas/rotas/rotas-conversas.js";
 import { registrarRotasEmpresas } from "./features/empresas/rotas/rotas-empresas.js";
-import { geocodificadorIndisponivel, type GeocodificadorEndereco } from "./features/enderecos/lib/geocodificador.js";
-import { criarCanalEventosEntregas, type CanalEventosEntregas } from "./features/entregas/lib/eventos-entregas.js";
-import { criarMotorDeRotas, type MotorDeRotas } from "./features/entregas/lib/motor-rotas.js";
+import {
+  geocodificadorIndisponivel,
+  type GeocodificadorEndereco,
+} from "./features/enderecos/lib/geocodificador.js";
+import {
+  criarCanalEventosEntregas,
+  type CanalEventosEntregas,
+} from "./features/entregas/lib/eventos-entregas.js";
+import {
+  criarMotorDeRotas,
+  type MotorDeRotas,
+} from "./features/entregas/lib/motor-rotas.js";
 import { registrarRotasEntregas } from "./features/entregas/rotas/rotas-entregas.js";
-import { alterarStatusPedidoAutorizado, executarAlteracaoStatusPedido } from "./features/pedidos/casos-de-uso/gerir-pedidos-empresa.js";
+import {
+  alterarStatusPedidoAutorizado,
+  executarAlteracaoStatusPedido,
+} from "./features/pedidos/casos-de-uso/gerir-pedidos-empresa.js";
 import { registrarRotasEnderecos } from "./features/enderecos/rotas/rotas-enderecos.js";
-import { criarCanalEventosPedidos, type CanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
+import {
+  criarCanalEventosPedidos,
+  type CanalEventosPedidos,
+} from "./features/pedidos/lib/eventos-pedidos.js";
 import { registrarRotasPedidos } from "./features/pedidos/rotas/rotas-pedidos.js";
 import { registrarRotasPedidosEmpresa } from "./features/pedidos/rotas/rotas-pedidos-empresa.js";
 import { registrarRotasCategorias } from "./features/produtos/rotas/rotas-categorias.js";
+import { registrarRotasPersonalizacao } from "./features/produtos/rotas/rotas-personalizacao.js";
 import { registrarRotasProdutosAdministracao } from "./features/produtos/rotas/rotas-produtos-administracao.js";
 import { registrarRotasPerfil } from "./features/perfil/rotas/rotas-perfil.js";
 import { registrarRotasIdentidades } from "./features/identidades/rotas/rotas-identidades.js";
@@ -28,7 +44,10 @@ import type { CanalEventosMensagens } from "./features/mensagens/lib/eventos-men
 import { registrarRotasMensagens } from "./features/mensagens/rotas/rotas-mensagens.js";
 import { registrarRotasUsuarios } from "./features/usuarios/rotas/rotas-usuarios.js";
 import type { Ambiente } from "./lib/ambiente.js";
-import { armazenamentoIndisponivel, type ArmazenamentoDeArquivos } from "./lib/armazenamento/armazenamento-arquivos.js";
+import {
+  armazenamentoIndisponivel,
+  type ArmazenamentoDeArquivos,
+} from "./lib/armazenamento/armazenamento-arquivos.js";
 
 interface DependenciasAplicacao {
   ambiente: Ambiente;
@@ -71,7 +90,9 @@ export async function criarAplicacao({
 
   // Upload de imagens (foto de perfil, logo, imagem de produto). O limite de bytes é a primeira
   // barreira: o corpo nem é lido inteiro quando passa do teto.
-  await servidor.register(multipart, { limits: { fileSize: TAMANHO_MAXIMO_IMAGEM_BYTES, files: 1 } });
+  await servidor.register(multipart, {
+    limits: { fileSize: TAMANHO_MAXIMO_IMAGEM_BYTES, files: 1 },
+  });
 
   servidor.decorateRequest("sessao", null);
   servidor.decorateRequest("identidadeAutenticada", null);
@@ -84,18 +105,37 @@ export async function criarAplicacao({
   });
 
   registrarRotasBetterAuth(servidor, autenticacao, ambiente.BETTER_AUTH_URL);
-  registrarRotasCredenciais(servidor, { banco, autenticacao, urlBase: ambiente.BETTER_AUTH_URL });
+  registrarRotasCredenciais(servidor, {
+    banco,
+    autenticacao,
+    urlBase: ambiente.BETTER_AUTH_URL,
+  });
   registrarRotaTesteProtegido(servidor, autenticacao);
   registrarRotasUsuarios(servidor, { banco, autenticacao });
   registrarRotasIdentidades(servidor, { banco, autenticacao });
   registrarRotasEmpresas(servidor, { banco, autenticacao });
-  registrarRotasProdutosAdministracao(servidor, { banco, autenticacao, armazenamento });
+  registrarRotasProdutosAdministracao(servidor, {
+    banco,
+    autenticacao,
+    armazenamento,
+  });
   registrarRotasCategorias(servidor, { banco, autenticacao });
+  registrarRotasPersonalizacao(servidor, { banco, autenticacao });
   registrarRotasPerfil(servidor, { banco, autenticacao, armazenamento });
-  registrarRotasCatalogoPublico(servidor, { banco, autenticacao });
+  registrarRotasCatalogoPublico(servidor, { banco, autenticacao, armazenamento });
   registrarRotasEnderecos(servidor, { banco, autenticacao, geocodificador });
-  registrarRotasPedidos(servidor, { banco, autenticacao, eventosMensagens, eventosEntregas });
-  registrarRotasPedidosEmpresa(servidor, { banco, autenticacao, eventosPedidos, eventosEntregas });
+  registrarRotasPedidos(servidor, {
+    banco,
+    autenticacao,
+    eventosMensagens,
+    eventosEntregas,
+  });
+  registrarRotasPedidosEmpresa(servidor, {
+    banco,
+    autenticacao,
+    eventosPedidos,
+    eventosEntregas,
+  });
   registrarRotasEntregas(servidor, {
     banco,
     autenticacao,
@@ -105,11 +145,39 @@ export async function criarAplicacao({
     // Iniciar a saída avança cada pedido pronto pela MESMA máquina de estados da empresa (com
     // histórico, realtime e as validações de sempre) — nunca por atalho.
     avancarPedidoParaEntrega: async (usuarioId, empresaId, pedidoId) => {
-      await alterarStatusPedidoAutorizado({ banco, eventosPedidos, eventosEntregas }, usuarioId, empresaId, pedidoId, { tipo: "avancar", statusAtual: "pronto" });
+      await alterarStatusPedidoAutorizado(
+        { banco, eventosPedidos, eventosEntregas },
+        usuarioId,
+        empresaId,
+        pedidoId,
+        { tipo: "avancar", statusAtual: "pronto" },
+      );
     },
     // Início pelo entregador: a saída já foi autorizada para ele; o pedido passa pela mesma máquina.
     avancarPedidoPeloEntregador: async (usuarioId, empresaId, pedidoId) => {
-      await executarAlteracaoStatusPedido({ banco, eventosPedidos, eventosEntregas }, usuarioId, empresaId, pedidoId, { tipo: "avancar", statusAtual: "pronto" });
+      await executarAlteracaoStatusPedido(
+        { banco, eventosPedidos, eventosEntregas },
+        usuarioId,
+        empresaId,
+        pedidoId,
+        { tipo: "avancar", statusAtual: "pronto" },
+      );
+    },
+    // Conclusão pelo entregador reutiliza integralmente a máquina de estados e seus efeitos.
+    concluirPedidoPeloEntregador: async (
+      usuarioId,
+      empresaId,
+      pedidoId,
+      statusAtual,
+    ) => {
+      const resultado = await executarAlteracaoStatusPedido(
+        { banco, eventosPedidos, eventosEntregas },
+        usuarioId,
+        empresaId,
+        pedidoId,
+        { tipo: "avancar", statusAtual },
+      );
+      return resultado.tipo === "alterado";
     },
   });
   registrarRotasContatos(servidor, { banco, autenticacao });

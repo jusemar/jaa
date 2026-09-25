@@ -60,8 +60,8 @@ export function SeletorIdentidade({
         onClick={() => setAberto((valor) => !valor)}
         className={
           compacto
-            ? "grid h-11 w-11 place-items-center rounded-full hover:bg-superficie-suave"
-            : "flex min-h-11 w-full items-center gap-2 rounded-full border border-borda bg-superficie px-2 text-left hover:bg-superficie-suave"
+            ? "grid h-11 w-11 place-items-center rounded-jaa-compacto hover:bg-realce"
+            : "flex min-h-11 w-full items-center gap-2 rounded-jaa-compacto border border-borda bg-superficie px-2 text-left hover:bg-realce"
         }
       >
         {ativa && <AvatarIdentidade identidade={{ identidadeId: ativa.identidadeId, nomeExibicao: ativa.nomeExibicao, tipo: ativa.tipo }} tamanho="pequeno" />}

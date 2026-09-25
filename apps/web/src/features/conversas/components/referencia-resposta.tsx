@@ -24,10 +24,15 @@ export function ReferenciaResposta({
     <div
       data-referencia-resposta
       className={`min-w-0 rounded-[0.2rem] border-l-2 px-2 py-1 text-left ${
-        emBalaoProprio ? "border-marca-conteudo/70 bg-marca-conteudo/15" : "border-marca bg-marca/[0.07]"
+        emBalaoProprio
+          ? "border-marca-conteudo/70 bg-marca-conteudo/15"
+          : "border-marca bg-marca/[0.07]"
       }`}
     >
-      <p data-autor-referencia className={`truncate text-xs font-semibold ${emBalaoProprio ? "text-marca-conteudo" : "text-marca"}`}>
+      <p
+        data-autor-referencia
+        className={`truncate text-xs font-semibold ${emBalaoProprio ? "text-marca-conteudo" : "text-marca"}`}
+      >
         {nomeAutor}
       </p>
       <p
@@ -35,7 +40,9 @@ export function ReferenciaResposta({
         data-excluida={excluida || undefined}
         className={`line-clamp-2 whitespace-pre-wrap text-xs [overflow-wrap:anywhere] ${emBalaoProprio ? "text-marca-conteudo/85" : "text-conteudo-suave"} ${excluida ? "italic" : ""}`}
       >
-        {excluida ? "Mensagem excluída" : textoDaPrevia({ previaConteudo, conteudoTruncado })}
+        {excluida
+          ? "Mensagem excluída"
+          : textoDaPrevia({ previaConteudo, conteudoTruncado })}
       </p>
     </div>
   );
