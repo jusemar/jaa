@@ -91,11 +91,14 @@ export function AreaSaidasEmpresa({
   nomeEmpresa,
   saidasIniciais = [],
   rotasAbertasIniciais = [],
+  aoAbrirConversa,
 }: {
   empresaId: string;
   nomeEmpresa: string;
   saidasIniciais?: SaidaEntrega[];
   rotasAbertasIniciais?: string[];
+  // Contato com entregador/cliente pela conversa DIRETA de sempre (agindo como a empresa).
+  aoAbrirConversa?: ((nomeUsuario: string) => void) | undefined;
 }) {
   const [saidas, setSaidas] = useState<SaidaEntrega[]>(() => saidasIniciais);
   const [prontos, setProntos] = useState<PedidoDaEmpresa[]>([]);
@@ -348,7 +351,18 @@ export function AreaSaidasEmpresa({
                           LIBERAR P/ RETIRADA
                         </button>
                       )}
-                      <SequenciaDaSaida saida={saida} />
+                      {/* Contato pela conversa DIRETA de sempre, agindo como a empresa. */}
+                      {aoAbrirConversa && saida.entregador ? (
+                        <button
+                          type="button"
+                          data-conversar-entregador={saida.entregador.nomeUsuario}
+                          onClick={() => saida.entregador && aoAbrirConversa(saida.entregador.nomeUsuario)}
+                          className="self-start rounded-full border border-borda px-3 py-1 text-xs font-medium text-marca"
+                        >
+                          Conversar com {saida.entregador.nomeExibicao}
+                        </button>
+                      ) : null}
+                      <SequenciaDaSaida saida={saida} {...(aoAbrirConversa ? { aoConversar: aoAbrirConversa } : {})} />
                       {saida.status === "em_andamento" && (
                         <p data-posicao-saida={saida.id} className="text-xs text-conteudo-suave">
                           {rotuloUltimaPosicao(posicoes.find((posicao) => posicao.saidaId === saida.id) ?? null)}

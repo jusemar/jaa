@@ -1,3 +1,4 @@
+import { SimboloBloqueio } from "./bloqueio-conversa";
 import type { ParticipanteConversa } from "@jaa/contratos";
 import type { ReactNode } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
@@ -20,8 +21,11 @@ export function CabecalhoConversa({
   digitando,
   acoes,
   aoVoltar,
+  bloqueada = false,
 }: {
   outraIdentidade: ParticipanteConversa;
+  // Comunicação bloqueada (qualquer sentido): 🚫 discreto junto ao nome, sem aviso textual.
+  bloqueada?: boolean;
   presenca: "online" | "offline" | null;
   digitando: boolean;
   acoes?: ReactNode;
@@ -77,6 +81,7 @@ export function CabecalhoConversa({
             <span className="fonte-display truncate text-sm font-bold sm:text-base">
               {outraIdentidade.nomeExibicao}
             </span>
+            {bloqueada && <SimboloBloqueio />}
             {outraIdentidade.tipo === "empresarial" && (
               <span
                 data-tipo-participante="empresarial"

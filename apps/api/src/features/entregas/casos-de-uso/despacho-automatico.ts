@@ -151,6 +151,7 @@ export async function encaixarPedidoPronto(
     maxPedidos: configuracao.maxPedidosPorSaida,
     tempoFormacaoMinutos: configuracao.tempoFormacaoMinutos,
     agora: relogio(dependencias),
+    exigeRetornoBase: configuracao.saidasExigemRetornoBase,
   });
   if ("tipo" in resultado) return { tipo: "ja-em-saida" };
 

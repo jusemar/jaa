@@ -18,6 +18,8 @@ const rota = (dados: Partial<RotaDaSaida> = {}): RotaDaSaida => ({
   motivoFallback: null,
   provedor: "mapbox",
   origem: { latitude: -19.9191, longitude: -43.9386 },
+  inicio: { latitude: -19.9191, longitude: -43.9386 },
+  comRetorno: false,
   sequenciaDoProvedor: true,
   geometria: [
     { latitude: -19.9191, longitude: -43.9386 },
@@ -51,6 +53,7 @@ const saida = (dados: Partial<SaidaEntrega> = {}): SaidaEntrega => ({
   zonaPrincipal: null,
   zonasCombinadas: [],
   automatica: true,
+  exigeRetornoBase: false,
   criadoEm: "2026-09-16T12:00:00.000Z",
   formacaoIniciadaEm: null,
   prazoFormacaoEm: null,
@@ -66,6 +69,11 @@ const render = (dados: Partial<SaidaEntrega> = {}) =>
   renderToStaticMarkup(createElement(ResumoPercurso, { saida: saida(dados) }));
 
 describe("resumo do percurso", () => {
+  it("rota que exige retorno diz que o trajeto inclui a volta à base", () => {
+    assert.ok(texto(render({ rota: rota({ comRetorno: true }) })).includes("(com retorno à base)"));
+    assert.equal(texto(render()).includes("retorno"), false);
+  });
+
   it("com percurso real mostra distância e tempo de TRAJETO, nunca previsão de entrega", () => {
     const conteudo = texto(render());
     assert.ok(conteudo.includes("aprox. 14 min de trajeto"));

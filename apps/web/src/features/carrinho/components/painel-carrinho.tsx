@@ -33,6 +33,7 @@ import {
   type Carrinho,
   type ItemCarrinho,
 } from "../lib/carrinho";
+import { rotuloTaxaEntrega, type FreteEntrega } from "../lib/frete-entrega";
 
 /*
  * "SEU PEDIDO": a coluna que acompanha a conversa, no formato da referência de UI/UX aprovada —
@@ -129,7 +130,7 @@ export function PainelPedidoVazio({ aoFechar }: { aoFechar: () => void }) {
 export function PainelCarrinho({
   carrinho,
   endereco,
-  coberturaAprovada,
+  frete,
   enviando,
   erro,
   aoAlterarQuantidade,
@@ -142,7 +143,7 @@ export function PainelCarrinho({
   carrinho: Carrinho;
   // Destino já escolhido e com ponto confirmado; sem ele não há como confirmar o pedido.
   endereco: EnderecoCliente | null;
-  coberturaAprovada: boolean;
+  frete: FreteEntrega;
   enviando: boolean;
   erro: string | null;
   // Quantidade e remoção agem sobre a LINHA do carrinho: o mesmo produto pode estar em duas montagens.
@@ -164,14 +165,16 @@ export function PainelCarrinho({
   const [precisaTroco, setPrecisaTroco] = useState(false);
   const [trocoDigitado, setTrocoDigitado] = useState("");
   const [erroTroco, setErroTroco] = useState<string | null>(null);
-  const total = totalCentavos(carrinho);
+  // Subtotal = soma dos itens; total = subtotal + taxa informada pelo servidor (só existe com ela).
+  const subtotal = totalCentavos(carrinho);
+  const total = frete.estado === "atendido" ? subtotal + frete.freteCentavos : null;
   const itens = quantidadeTotal(carrinho);
   const podeConfirmar =
     !enviando &&
     carrinho.itens.length > 0 &&
     endereco !== null &&
     enderecoTemLocalizacaoConfirmada(endereco) &&
-    coberturaAprovada;
+    total !== null;
 
   function confirmar() {
     // Cartão nunca leva troco; dinheiro só leva quando o cliente diz que precisa.
@@ -180,6 +183,8 @@ export function PainelCarrinho({
       aoConfirmar({ forma, trocoParaCentavos: null });
       return;
     }
+    if (total === null) return;
+    // O troco cobre o TOTAL com a taxa de entrega (o servidor confere de novo).
     const trocoParaCentavos = interpretarPrecoDigitado(trocoDigitado);
     if (trocoParaCentavos === null || trocoParaCentavos < total) {
       setErroTroco(
@@ -271,7 +276,7 @@ export function PainelCarrinho({
               <IconeLocal className="mt-0.5 h-4 w-4 shrink-0 text-marca" />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold [overflow-wrap:anywhere]">
-                  {endereco.apelido} · {formatarEnderecoResumido(endereco)}
+                  {endereco.apelido ? `${endereco.apelido} · ` : ""}{formatarEnderecoResumido(endereco)}
                 </p>
                 <p className="mt-0.5 text-[11px] text-conteudo-suave [overflow-wrap:anywhere]">
                   {endereco.bairro} · {endereco.cidade}/{endereco.uf}
@@ -285,6 +290,11 @@ export function PainelCarrinho({
           ) : (
             <p className="mt-3 rounded-jaa-compacto bg-aviso/10 p-3 text-xs text-aviso">
               Escolha o endereço de entrega.
+            </p>
+          )}
+          {(frete.estado === "fora-da-area" || frete.estado === "erro") && (
+            <p role="alert" data-frete-indisponivel className="mt-2 text-xs text-perigo">
+              {frete.estado === "erro" ? frete.mensagem : "Esta empresa ainda não realiza entregas neste endereço."}
             </p>
           )}
         </section>
@@ -448,9 +458,8 @@ export function PainelCarrinho({
        * Cada aba fecha com o passo dela: em "Itens" o subtotal e o caminho para a entrega; em
        * "Entrega e pagamento" o total e a confirmação. A ação principal nunca fica fora da vista.
        *
-       * O SUBTOTAL é a soma dos itens — a única conta que o carrinho conhece. A linha de taxa de
-       * entrega NÃO é montada aqui: frete (cálculo, cobertura e snapshot) é do domínio de entrega e
-       * entra entre o subtotal e o total quando aquela etapa a fornecer.
+       * O SUBTOTAL é a soma dos itens — a única conta que o carrinho faz. A TAXA DE ENTREGA vem do
+       * servidor (frete fixo da zona do endereço) e o total só é mostrado quando ela é conhecida.
        */}
       <div className="shrink-0 border-t border-borda p-4">
         <div className={aba === "itens" ? "" : "hidden"}>
@@ -460,7 +469,7 @@ export function PainelCarrinho({
           >
             <span className="text-sm font-bold">Subtotal</span>
             <span className="fonte-display text-base font-bold">
-              {formatarPrecoCentavos(total)}
+              {formatarPrecoCentavos(subtotal)}
             </span>
           </p>
           <button
@@ -477,7 +486,16 @@ export function PainelCarrinho({
         <div className={aba === "entrega-pagamento" ? "" : "hidden"}>
           <p className="flex items-baseline justify-between text-xs text-conteudo-suave">
             <span>Subtotal</span>
-            <span>{formatarPrecoCentavos(total)}</span>
+            <span>{formatarPrecoCentavos(subtotal)}</span>
+          </p>
+          <p
+            data-taxa-entrega={frete.estado === "atendido" ? frete.freteCentavos : ""}
+            className="mt-1 flex items-baseline justify-between text-xs text-conteudo-suave"
+          >
+            <span>Taxa de entrega</span>
+            <span className={frete.estado === "atendido" && frete.freteCentavos === 0 ? "font-medium text-marca" : ""}>
+              {rotuloTaxaEntrega(frete)}
+            </span>
           </p>
           <p
             data-total-carrinho
@@ -485,7 +503,7 @@ export function PainelCarrinho({
           >
             <span className="fonte-display font-bold">Total</span>
             <span className="fonte-display text-xl font-bold text-marca">
-              {formatarPrecoCentavos(total)}
+              {total === null ? "—" : formatarPrecoCentavos(total)}
             </span>
           </p>
 

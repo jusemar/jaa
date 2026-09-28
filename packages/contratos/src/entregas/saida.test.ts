@@ -55,6 +55,7 @@ const saida = (paradas: ParadaSaida[]) => ({
   zonaPrincipal: null,
   zonasCombinadas: [],
   automatica: false,
+  exigeRetornoBase: false,
   criadoEm: "2026-09-16T12:00:00.000Z",
   formacaoIniciadaEm: null,
   prazoFormacaoEm: null,
@@ -126,9 +127,10 @@ describe("sequência ativa", () => {
 
 describe("fila do cliente", () => {
   it("traduz a posição derivada, sem citar ninguém", () => {
-    assert.equal(rotuloFila({ pedidoId: uuid(9), situacao: "indo_ate_voce", entregasAntes: 0 }), "Indo até você");
-    assert.equal(rotuloFila({ pedidoId: uuid(9), situacao: "na_fila", entregasAntes: 3 }), "3 entregas antes da sua");
-    assert.equal(rotuloFila({ pedidoId: uuid(9), situacao: "na_fila", entregasAntes: 1 }), "1 entrega antes da sua");
+    assert.equal(rotuloFila({ pedidoId: uuid(9), situacao: "indo_ate_voce", entregasAntes: 0 }), "🔔 Sua entrega é a próxima");
+    // Posição = entregas ativas antes + 1 (derivada, nunca congelada).
+    assert.equal(rotuloFila({ pedidoId: uuid(9), situacao: "na_fila", entregasAntes: 3 }), "Você é o 4º na fila de entregas.");
+    assert.equal(rotuloFila({ pedidoId: uuid(9), situacao: "na_fila", entregasAntes: 1 }), "Você é o 2º na fila de entregas.");
     assert.equal(rotuloFila({ pedidoId: uuid(9), situacao: "aguardando_saida", entregasAntes: 2 }), "Seu pedido está separado para a entrega");
     assert.equal(rotuloFila({ pedidoId: uuid(9), situacao: "sem_saida", entregasAntes: null }), "Ainda não saiu para entrega");
   });

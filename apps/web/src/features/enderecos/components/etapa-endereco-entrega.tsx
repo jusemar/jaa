@@ -4,6 +4,7 @@ import {
   enderecoTemLocalizacaoConfirmada,
   type Coordenadas,
   type EnderecoCliente,
+  rotuloEndereco,
 } from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -189,7 +190,7 @@ export function EtapaEnderecoEntrega({
   async function remover(endereco: EnderecoCliente) {
     if (
       !window.confirm(
-        `Remover o endereço "${endereco.apelido}"? Pedidos antigos continuam com o endereço usado na época.`,
+        `Remover o endereço "${rotuloEndereco(endereco)}"? Pedidos antigos continuam com o endereço usado na época.`,
       )
     )
       return;
@@ -207,6 +208,7 @@ export function EtapaEnderecoEntrega({
         empresaIdentidadeId={empresaIdentidadeId}
         endereco={{
           ...etapa.dados,
+          apelido: etapa.dados.apelido ?? null,
           complemento: etapa.dados.complemento ?? null,
           pontoReferencia: etapa.dados.pontoReferencia ?? null,
         }}

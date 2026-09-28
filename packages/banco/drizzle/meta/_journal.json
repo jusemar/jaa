@@ -211,6 +211,97 @@
       "when": 1790245811289,
       "tag": "0029_observacao_do_item",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790308931042,
+      "tag": "0030_frete_por_zona",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790514481790,
+      "tag": "0031_extensoes_geoespaciais_e_busca",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790520940976,
+      "tag": "0032_motor_profissional_fundacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790523578184,
+      "tag": "0033_horarios_de_atendimento",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790523587898,
+      "tag": "0034_permite_agendamento",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790527122385,
+      "tag": "0035_catalogo_inicial_profissional",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790545357909,
+      "tag": "0036_termo_compacto_busca",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790559723763,
+      "tag": "0037_aviso_proxima_entrega",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790561366290,
+      "tag": "0038_bloqueios_identidade",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790562981583,
+      "tag": "0039_conversa_limpa_e_apagada",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790564649520,
+      "tag": "0040_leitura_sem_aviso_sob_bloqueio",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790566392165,
+      "tag": "0041_rota_com_retorno_e_origem_do_calculo",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790586160745,
+      "tag": "0042_apelido_endereco_opcional",
+      "breakpoints": true
     }
   ]
 }

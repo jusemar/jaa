@@ -38,10 +38,16 @@ export function ehViolacaoReferenciaResposta(erro: unknown): boolean {
 
 // Mensagem não excluída "para mim" pela identidade (usa a PK de mensagens_excluidas_para_identidade).
 export function visivelPara(identidadeId: string): SQL {
+  // Também some o que a identidade LIMPOU ("Limpar/Apagar conversa"): id <= limpa_ate dela, pela PK.
   return sql`not exists (
     select 1 from ${mensagensExcluidasParaIdentidade}
     where ${mensagensExcluidasParaIdentidade.mensagemId} = ${mensagens.id}
       and ${mensagensExcluidasParaIdentidade.identidadeId} = ${identidadeId}
+  ) and not exists (
+    select 1 from participantes_conversa limpeza
+    where limpeza.conversa_id = ${mensagens.conversaId}
+      and limpeza.identidade_id = ${identidadeId}
+      and limpeza.limpa_ate_mensagem_id >= ${mensagens.id}
   )`;
 }
 
@@ -63,7 +69,7 @@ export async function buscarReferenciaNaConversa(
  * Recém-persistida = "enviada": nenhuma confirmação pode existir antes do commit.
  */
 export async function inserirMensagemTexto(
-  banco: Banco,
+  banco: Banco | Parameters<Parameters<Banco["transaction"]>[0]>[0],
   dados: {
     conversaId: string;
     remetenteIdentidadeId: string;

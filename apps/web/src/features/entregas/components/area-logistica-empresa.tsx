@@ -14,7 +14,7 @@ const ABAS = [
 
 type AbaLogistica = (typeof ABAS)[number]["id"];
 
-export function AreaLogisticaEmpresa({ empresaId, nomeEmpresa }: { empresaId: string; nomeEmpresa: string }) {
+export function AreaLogisticaEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: { empresaId: string; nomeEmpresa: string; aoAbrirConversa?: (nomeUsuario: string) => void }) {
   const [aba, setAba] = useState<AbaLogistica>("operacao");
 
   return (
@@ -37,7 +37,7 @@ export function AreaLogisticaEmpresa({ empresaId, nomeEmpresa }: { empresaId: st
       </div>
 
       <div role="tabpanel" id={`painel-logistica-${aba}`} aria-labelledby={`aba-logistica-${aba}`}>
-        {aba === "operacao" && <AreaSaidasEmpresa empresaId={empresaId} nomeEmpresa={nomeEmpresa} />}
+        {aba === "operacao" && <AreaSaidasEmpresa empresaId={empresaId} nomeEmpresa={nomeEmpresa} {...(aoAbrirConversa ? { aoAbrirConversa } : {})} />}
         {aba === "entregadores" && (
           <div className="flex flex-col gap-6">
             <QuadroEntregadores empresaId={empresaId} nomeEmpresa={nomeEmpresa} />

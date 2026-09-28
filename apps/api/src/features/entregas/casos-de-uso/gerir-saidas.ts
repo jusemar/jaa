@@ -1,3 +1,5 @@
+import { STATUS_SAIDA_RECALCULAVEL } from "@jaa/contratos";
+import { buscarConfiguracaoDespacho } from "../repositorios/repositorio-zonas.js";
 import type { Banco } from "@jaa/banco";
 import {
   entregadorPodeReceberAtribuicao,
@@ -12,6 +14,7 @@ import { planejadorAproximadoLocal } from "../lib/planejador-rota.js";
 import type { MotorDeRotas } from "../lib/motor-rotas.js";
 import {
   planejarRotaDaSaida,
+  recalcularMelhorRota,
   recalcularPercursoDaSaida,
 } from "./planejar-rota.js";
 import {
@@ -58,7 +61,7 @@ export async function criarSaidaAutorizada(
   dependencias: Dependencias,
   usuarioId: string,
   empresaId: string,
-  entrada: { entregadorId: string; pedidoIds: string[] },
+  entrada: { entregadorId: string; pedidoIds: string[]; exigeRetornoBase?: boolean | undefined },
 ): Promise<ResultadoCriarSaida> {
   const { banco } = dependencias;
   const acesso = await autorizarEmpresa(
@@ -101,6 +104,8 @@ export async function criarSaidaAutorizada(
     entregadorId: entrada.entregadorId,
     criadaPorUsuarioId: usuarioId,
     ordem: plano.ordem,
+    // Escolha explícita do gestor; sem ela, o padrão da empresa.
+    exigeRetornoBase: entrada.exigeRetornoBase ?? (await buscarConfiguracaoDespacho(banco, empresaId)).saidasExigemRetornoBase,
   });
   if ("tipo" in criada) return { tipo: "conflito" };
 
@@ -340,6 +345,44 @@ export async function concluirProximaParadaMinhaSaida(
   const saida = await buscarSaida(banco, saidaId);
   if (!saida) throw new Error("Saída após conclusão não encontrada.");
   return { tipo: "concluida", saida };
+}
+
+export type ResultadoRecalcularMinhaRota =
+  | { tipo: "recalculada"; saida: SaidaComParadasRegistro }
+  | SemSaida
+  | { tipo: "nao-recalculavel" }
+  | { tipo: "em-andamento" }
+  | { tipo: "versao-desatualizada" };
+
+// Um recálculo por saída de cada vez: toque repetido não vira duas chamadas pagas ao provedor.
+const recalculosEmCurso = new Set<string>();
+
+/**
+ * "Recalcular melhor rota", pedido pelo ENTREGADOR ATUAL da saída (quem mais tentar: não encontrada).
+ * Só com a saída ainda na operação e duas ou mais entregas pendentes. Custo sob controle: só por ação
+ * explícita, nunca por GPS, e nunca dois ao mesmo tempo para a mesma saída.
+ */
+export async function recalcularRotaDaMinhaSaida(
+  dependencias: Dependencias,
+  usuarioId: string,
+  saidaId: string,
+  versaoSequencia: number,
+): Promise<ResultadoRecalcularMinhaRota> {
+  const saida = await saidaDoEntregador(dependencias.banco, usuarioId, saidaId);
+  if (!saida) return { tipo: "saida-nao-encontrada" };
+  const ativas = saida.paradas.filter((parada) => parada.encerradaEm === null).length;
+  if (!(STATUS_SAIDA_RECALCULAVEL as readonly string[]).includes(saida.saida.status) || ativas < 2) return { tipo: "nao-recalculavel" };
+  if (recalculosEmCurso.has(saidaId)) return { tipo: "em-andamento" };
+  recalculosEmCurso.add(saidaId);
+  try {
+    const resultado = await recalcularMelhorRota(dependencias, saida, versaoSequencia);
+    if (resultado.tipo === "versao-desatualizada") return resultado;
+  } finally {
+    recalculosEmCurso.delete(saidaId);
+  }
+  const atualizada = await buscarSaida(dependencias.banco, saidaId);
+  if (!atualizada) throw new Error("Saída recalculada não encontrada.");
+  return { tipo: "recalculada", saida: atualizada };
 }
 
 export type ResultadoReordenar =

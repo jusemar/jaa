@@ -40,6 +40,7 @@ export * from "./tabelas/pedidos/relacoes.js";
 export * from "./tabelas/identidades/identidades.js";
 export * from "./tabelas/identidades/preferencias-identidade.js";
 export * from "./tabelas/identidades/excecoes-privacidade.js";
+export * from "./tabelas/identidades/bloqueios-identidade.js";
 export * from "./tabelas/contatos/contatos.js";
 export * from "./tabelas/contatos/relacoes.js";
 export * from "./tabelas/identidades/relacoes.js";
@@ -52,3 +53,9 @@ export * from "./tabelas/mensagens/mensagens.js";
 export * from "./tabelas/mensagens/recebimentos-mensagem.js";
 export * from "./tabelas/mensagens/mensagens-excluidas-para-identidade.js";
 export * from "./tabelas/mensagens/relacoes.js";
+
+// Motor Profissional (Camada 1): território, taxonomia, perfil profissional e áreas de atuação.
+export * from "./tabelas/territorio/municipios.js";
+export * from "./tabelas/profissionais/taxonomia.js";
+export * from "./tabelas/profissionais/perfis-profissionais.js";
+export * from "./tabelas/profissionais/areas-atuacao.js";

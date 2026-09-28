@@ -70,8 +70,8 @@ describe("excluir para mim", () => {
     assert.equal(linha?.conteudo, "Some só para A");
 
     // Lista: para A a última é a anterior; para B continua a excluída-para-A.
-    assert.equal((await ctx.lista(A)).conversas.find((c) => c.id === conversaAB)?.ultimaMensagem.id, antes.id);
-    assert.equal((await ctx.lista(B)).conversas.find((c) => c.id === conversaAB)?.ultimaMensagem.id, alvo.id);
+    assert.equal((await ctx.lista(A)).conversas.find((c) => c.id === conversaAB)?.ultimaMensagem?.id, antes.id);
+    assert.equal((await ctx.lista(B)).conversas.find((c) => c.id === conversaAB)?.ultimaMensagem?.id, alvo.id);
     a2.disconnect();
     b1.disconnect();
   });
@@ -209,14 +209,14 @@ describe("excluir para todos", () => {
     assert.equal((await excluir(A, conversaAB, ultima.id, "todos")).statusCode, 200);
     for (const pessoa of [A, B]) {
       const item = (await ctx.lista(pessoa)).conversas.find((c) => c.id === conversaAB);
-      assert.equal(item?.ultimaMensagem.id, ultima.id);
-      assert.equal(item?.ultimaMensagem.conteudo, "");
-      assert.ok(item?.ultimaMensagem.excluidaEm);
+      assert.equal(item?.ultimaMensagem?.id, ultima.id);
+      assert.equal(item?.ultimaMensagem?.conteudo, "");
+      assert.ok(item?.ultimaMensagem?.excluidaEm);
     }
     const oculta = await excluir(B, conversaAB, ultima.id, "mim");
     assert.equal(oculta.statusCode, 200);
     assert.equal(oculta.json().ultimaMensagem.id, anterior.id);
-    assert.equal((await ctx.lista(B)).conversas.find((c) => c.id === conversaAB)?.ultimaMensagem.id, anterior.id);
+    assert.equal((await ctx.lista(B)).conversas.find((c) => c.id === conversaAB)?.ultimaMensagem?.id, anterior.id);
   });
 });
 

@@ -2,7 +2,8 @@
 
 import { EVENTO_SAIDA_ATUALIZADA, entregadorPodeReceberAtribuicao, eventoSaidaAtualizadaSchema, type EntregaDoPedido, type EntregadorDaEmpresa, type FiltroPedidosEmpresa, type Pedido, type PedidoDaEmpresa, type SaidaEntrega } from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
-import { EntregaDoPedidoEmpresa } from "@/features/entregas/components/entrega-do-pedido";
+import { avisar } from "@/components/ui/avisos";
+import { ConfirmarTransferencia, EntregaDoPedidoEmpresa } from "@/features/entregas/components/entrega-do-pedido";
 import { atribuirEntrega, listarEntregadores, listarSaidasDaEmpresa, obterEntregaDoPedido } from "@/features/entregas/lib/api-entregas";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { useStatusPedido } from "../hooks/use-status-pedido";
@@ -25,6 +26,8 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
   const [entrega, setEntrega] = useState<EntregaDoPedido | null>(null);
   const [entregadores, setEntregadores] = useState<EntregadorDaEmpresa[]>([]);
   const [saidas, setSaidas] = useState<SaidaEntrega[]>([]);
+  // Atribuição pedindo confirmação: o pedido está numa saída que ainda não saiu.
+  const [transferencia, setTransferencia] = useState<{ pedidoId: string; entregadorId: string } | null>(null);
 
   const carregar = useCallback(
     async (filtroAtual: FiltroPedidosEmpresa) => {
@@ -98,18 +101,30 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
     setEntregadores(quadro.ok ? quadro.dados.entregadores.filter(entregadorPodeReceberAtribuicao) : []);
   }
 
-  async function atribuir(pedidoId: string, entregadorId: string) {
+  async function atribuir(pedidoId: string, entregadorId: string, transferirDaSaida = false) {
     setOcupado(true);
     try {
-      const resultado = await atribuirEntrega(empresaId, pedidoId, entregadorId, entrega?.entregadorAtual?.id ?? null);
+      const resultado = await atribuirEntrega(empresaId, pedidoId, entregadorId, entrega?.entregadorAtual?.id ?? null, transferirDaSaida);
       if (!resultado.ok) {
-        setErro(resultado.mensagem);
-        // Atribuição concorrente (ou status mudado): relê para mostrar a situação real.
+        // A saída do pedido ainda não saiu: a MESMA ação continua, depois de o gerente confirmar.
+        if (resultado.codigo === "PEDIDO_EM_SAIDA_TRANSFERIVEL") {
+          setErro(null);
+          setTransferencia({ pedidoId, entregadorId });
+          return;
+        }
+        // Atribuição concorrente (ou status mudado): relê para mostrar a situação real. O aviso vem
+        // DEPOIS da releitura — `abrir` limpa o erro, e a recusa sumia como se tivesse dado certo.
         await abrir(pedidoId);
+        setErro(resultado.mensagem);
         return;
       }
       setErro(null);
+      setTransferencia(null);
       setEntrega(resultado.dados);
+      const nome = resultado.dados.entregadorAtual?.pessoa.nomeExibicao;
+      avisar.sucesso(nome ? `Pedido atribuído a ${nome}.` : "Pedido atribuído.");
+      // Saídas e lista mudam (o pedido pode ter saído de uma formação): relê sem F5.
+      await carregar(filtro);
     } finally {
       setOcupado(false);
     }
@@ -121,9 +136,10 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
       const resultado = await executar();
       if (!resultado.ok) {
         // Inclui o caso de outro operador ter mudado o pedido: recarrega para mostrar a situação real.
-        setErro(resultado.mensagem);
+        // O aviso vem por último: `abrir` limpa o erro.
         if (aberto) await abrir(aberto.id);
         await carregar(filtro);
+        setErro(resultado.mensagem);
         return;
       }
       setErro(null);
@@ -160,6 +176,14 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
                 ocupado={ocupado}
                 aoAtribuir={(entregadorId) => void atribuir(aberto.id, entregadorId)}
               />
+              {transferencia?.pedidoId === aberto.id && (
+                <ConfirmarTransferencia
+                  nomeEntregador={entregadores.find((item) => item.id === transferencia.entregadorId)?.pessoa.nomeExibicao ?? null}
+                  ocupado={ocupado}
+                  aoConfirmar={() => void atribuir(transferencia.pedidoId, transferencia.entregadorId, true)}
+                  aoCancelar={() => setTransferencia(null)}
+                />
+              )}
               <AcoesPedidoEmpresa
                 pedido={aberto}
                 ocupado={ocupado}

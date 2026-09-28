@@ -48,6 +48,8 @@ export async function encaixarPedidoEmFormacao(
     maxPedidos: number;
     tempoFormacaoMinutos: number;
     agora: Date;
+    // Padrão da empresa: a saída nova já nasce sabendo se o entregador volta à base.
+    exigeRetornoBase?: boolean | undefined;
   },
 ): Promise<ResultadoEncaixe | { tipo: "pedido-ja-em-saida" }> {
   return banco.transaction(async (transacao) => {
@@ -91,6 +93,7 @@ export async function encaixarPedidoEmFormacao(
           zonaPrincipalId: dados.zonaId,
           status: "em_formacao",
           automatica: true,
+          exigeRetornoBase: dados.exigeRetornoBase ?? false,
           formacaoIniciadaEm: dados.agora,
           prazoFormacaoEm: prazo,
         })

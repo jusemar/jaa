@@ -11,12 +11,13 @@ import {
   type ZonaEntrega,
 } from "@jaa/contratos";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ATRIBUICAO_TILES, URL_TILES_MAPA } from "@/features/enderecos/mapa/configuracao-mapa";
 import { CENTRO_PADRAO } from "@/features/enderecos/mapa/provedor-mapa";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
-import { criarMapaZonaLeaflet } from "../mapa/mapa-zona-leaflet";
+import { criarMapaZonaPreferido } from "../mapa/mapa-zona-mapbox";
 import type { MapaZona } from "../mapa/provedor-mapa-zona";
+import { centavosParaCampo } from "@/features/produtos/lib/precos";
 import { atualizarZona, criarZona, definirCompatibilidades, obterBase, obterPainelDespacho, salvarConfiguracaoDespacho } from "../lib/api-entregas";
+import { interpretarFreteDigitado, rotuloFreteZona } from "../lib/frete";
 import { ConfiguracaoAutomacao, PendenciasForaDeZona } from "./painel-despacho";
 
 /**
@@ -90,11 +91,11 @@ export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string
     }
   }
 
-  async function salvarZona(nome: string, vertices: PoligonoZona, ativa: boolean) {
+  async function salvarZona(nome: string, vertices: PoligonoZona, freteCentavos: number, ativa: boolean) {
     setOcupado(true);
     try {
-      const resultado =
-        editando && editando !== "nova" ? await atualizarZona(empresaId, editando.id, { nome, vertices, ativa }) : await criarZona(empresaId, { nome, vertices, ativa });
+      const entrada = { nome, vertices, freteCentavos, ativa };
+      const resultado = editando && editando !== "nova" ? await atualizarZona(empresaId, editando.id, entrada) : await criarZona(empresaId, entrada);
       if (!resultado.ok) {
         setErro(resultado.mensagem);
         return;
@@ -140,7 +141,10 @@ export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string
           <li key={zona.id} data-zona={zona.id} className="flex flex-col gap-1 px-3 py-2">
             <span className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium">
-                {zona.nome} <span data-zona-ativa={zona.ativa} className={zona.ativa ? "text-marca" : "text-conteudo-suave"}>{zona.ativa ? "ativa" : "desativada"}</span>
+                {zona.nome} <span data-zona-ativa={zona.ativa} className={zona.ativa ? "text-marca" : "text-conteudo-suave"}>{zona.ativa ? "ativa" : "desativada"}</span>{" "}
+                <span data-frete-zona={zona.freteCentavos} className="font-normal text-conteudo-suave">
+                  · {rotuloFreteZona(zona.freteCentavos)}
+                </span>
               </span>
               <span className="flex gap-2">
                 <button
@@ -237,7 +241,7 @@ export function AreaZonasEmpresa({ empresaId, nomeEmpresa }: { empresaId: string
           centroDaEmpresa={centroDaEmpresa}
           outras={zonas.filter((zona) => editando === "nova" || zona.id !== editando.id)}
           ocupado={ocupado}
-          aoSalvar={(nome, vertices) => void salvarZona(nome, vertices, editando === "nova" ? true : editando.ativa)}
+          aoSalvar={(nome, vertices, freteCentavos) => void salvarZona(nome, vertices, freteCentavos, editando === "nova" ? true : editando.ativa)}
           aoCancelar={() => {
             setEditando(null);
             setAbrirMapaInicial(false);
@@ -288,13 +292,16 @@ export function EditorDeZona({
   centroDaEmpresa: Coordenadas | null;
   outras: ZonaEntrega[];
   ocupado: boolean;
-  aoSalvar: (nome: string, vertices: PoligonoZona) => void;
+  aoSalvar: (nome: string, vertices: PoligonoZona, freteCentavos: number) => void;
   aoCancelar: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<MapaZona | null>(null);
   const [vertices, setVertices] = useState<PoligonoZona>(zona?.vertices ?? []);
   const [nome, setNome] = useState(zona?.nome ?? "");
+  // Taxa em reais no campo; o que vai para a API são centavos inteiros (0 = frete grátis).
+  const [freteDigitado, setFreteDigitado] = useState(centavosParaCampo(zona?.freteCentavos ?? 0));
+  const freteCentavos = interpretarFreteDigitado(freteDigitado);
   const [mapaAberto, setMapaAberto] = useState(abrirMapaInicial);
   const [verticesAntesDoMapa, setVerticesAntesDoMapa] = useState<PoligonoZona>(zona?.vertices ?? []);
   const [podeDesfazer, setPodeDesfazer] = useState(false);
@@ -302,6 +309,7 @@ export function EditorDeZona({
 
   const pendencias = [
     nome.trim() === "" ? "dê um nome à zona" : null,
+    freteCentavos === null ? "informe a taxa de entrega (0,00 = frete grátis)" : null,
     vertices.length < MINIMO_VERTICES_ZONA ? `marque ao menos ${MINIMO_VERTICES_ZONA} pontos no mapa` : null,
   ].filter((pendencia): pendencia is string => pendencia !== null);
   const faltaParaSalvar = pendencias.join(" e ");
@@ -312,7 +320,7 @@ export function EditorDeZona({
     if (!elemento) return;
     let ativo = true;
 
-    void criarMapaZonaLeaflet({
+    void criarMapaZonaPreferido({
       elemento,
       // Editando: o primeiro vértice. Nova: a base da empresa. Sem base confirmada: o padrão.
       centro: zona?.vertices[0] ?? centroDaEmpresa ?? CENTRO_PADRAO,
@@ -325,8 +333,6 @@ export function EditorDeZona({
       aoMudarPodeDesfazer: setPodeDesfazer,
       aoBloquearExclusao: () => setAvisoMapa("A área precisa manter pelo menos 3 pontos."),
       outrasZonas: outras.map((item) => ({ nome: item.nome, vertices: item.vertices })),
-      urlTiles: URL_TILES_MAPA,
-      atribuicao: ATRIBUICAO_TILES,
     }).then((mapa) => {
       if (!ativo) {
         mapa.destruir();
@@ -378,6 +384,31 @@ export function EditorDeZona({
         Nome da zona
         <input name="nomeZona" value={nome} maxLength={60} onChange={(evento) => setNome(evento.target.value)} className="rounded-jaa border border-borda px-2 py-1" />
       </label>
+      <label className="flex flex-col gap-1 text-xs">
+        Taxa de entrega
+        <span className="flex items-center gap-2">
+          <span className="flex items-center rounded-jaa border border-borda px-2">
+            <span aria-hidden className="text-conteudo-suave">R$</span>
+            <input
+              name="freteZona"
+              value={freteDigitado}
+              inputMode="decimal"
+              placeholder="0,00"
+              aria-describedby="frete-zona-ajuda"
+              onChange={(evento) => setFreteDigitado(evento.target.value)}
+              className="w-24 bg-transparent px-1 py-1"
+            />
+          </span>
+          {freteCentavos === 0 && (
+            <span data-frete-gratis className="font-medium text-marca">
+              Frete grátis
+            </span>
+          )}
+        </span>
+        <span id="frete-zona-ajuda" className="text-conteudo-suave">
+          Valor fixo cobrado de quem recebe nesta área. 0,00 = frete grátis.
+        </span>
+      </label>
       <p data-vertices-zona={vertices.length} className="text-xs text-conteudo-suave">
         {vertices.length} {vertices.length === 1 ? "ponto marcado" : "pontos marcados"}
         {vertices.length < MINIMO_VERTICES_ZONA ? ` · marque ao menos ${MINIMO_VERTICES_ZONA}` : ""}
@@ -399,7 +430,9 @@ export function EditorDeZona({
           type="button"
           data-salvar-zona
           disabled={ocupado || pendencias.length > 0}
-          onClick={() => aoSalvar(nome.trim(), vertices)}
+          onClick={() => {
+            if (freteCentavos !== null) aoSalvar(nome.trim(), vertices, freteCentavos);
+          }}
           className="rounded bg-marca px-3 py-2 text-xs text-white disabled:opacity-50"
         >
           Salvar zona

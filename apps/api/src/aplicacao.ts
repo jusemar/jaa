@@ -8,6 +8,7 @@ import { registrarRotasBetterAuth } from "./features/autenticacao/rotas/rotas-be
 import { registrarRotasCredenciais } from "./features/autenticacao/rotas/rotas-credenciais.js";
 import { registrarRotaTesteProtegido } from "./features/autenticacao/rotas/rotas-teste-protegido.js";
 import { registrarRotasCatalogoPublico } from "./features/catalogo/rotas/rotas-catalogo-publico.js";
+import { registrarRotasBloqueios } from "./features/bloqueios/rotas/rotas-bloqueios.js";
 import { registrarRotasContatos } from "./features/contatos/rotas/rotas-contatos.js";
 import { registrarRotasConversas } from "./features/conversas/rotas/rotas-conversas.js";
 import { registrarRotasEmpresas } from "./features/empresas/rotas/rotas-empresas.js";
@@ -39,6 +40,8 @@ import { registrarRotasCategorias } from "./features/produtos/rotas/rotas-catego
 import { registrarRotasPersonalizacao } from "./features/produtos/rotas/rotas-personalizacao.js";
 import { registrarRotasProdutosAdministracao } from "./features/produtos/rotas/rotas-produtos-administracao.js";
 import { registrarRotasPerfil } from "./features/perfil/rotas/rotas-perfil.js";
+import { registrarRotasBuscaProfissionais } from "./features/profissionais/rotas/rotas-busca-profissionais.js";
+import { registrarRotasPerfilProfissional } from "./features/profissionais/rotas/rotas-perfil-profissional.js";
 import { registrarRotasIdentidades } from "./features/identidades/rotas/rotas-identidades.js";
 import type { CanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
 import { registrarRotasMensagens } from "./features/mensagens/rotas/rotas-mensagens.js";
@@ -85,7 +88,9 @@ export async function criarAplicacao({
   await servidor.register(cors, {
     origin: ambiente.ORIGENS_WEB_PERMITIDAS,
     credentials: true,
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    // PUT é usado por rotas de substituição completa (base, ponto e horários do perfil profissional,
+    // exceções de privacidade). Fora desta lista, o preflight do navegador bloqueia a chamada.
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
 
   // Upload de imagens (foto de perfil, logo, imagem de produto). O limite de bytes é a primeira
@@ -124,6 +129,8 @@ export async function criarAplicacao({
   registrarRotasPerfil(servidor, { banco, autenticacao, armazenamento });
   registrarRotasCatalogoPublico(servidor, { banco, autenticacao, armazenamento });
   registrarRotasEnderecos(servidor, { banco, autenticacao, geocodificador });
+  registrarRotasPerfilProfissional(servidor, { banco, autenticacao, geocodificador });
+  registrarRotasBuscaProfissionais(servidor, { banco, autenticacao, geocodificador });
   registrarRotasPedidos(servidor, {
     banco,
     autenticacao,
@@ -181,8 +188,9 @@ export async function criarAplicacao({
     },
   });
   registrarRotasContatos(servidor, { banco, autenticacao });
-  registrarRotasConversas(servidor, { banco, autenticacao });
+  registrarRotasConversas(servidor, { banco, autenticacao, eventosMensagens });
   registrarRotasMensagens(servidor, { banco, autenticacao, eventosMensagens });
+  registrarRotasBloqueios(servidor, { banco, autenticacao, eventosMensagens });
 
   return servidor;
 }

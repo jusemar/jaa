@@ -20,6 +20,12 @@ export function naoLidasSql(conversaId: SQL, lidaAteMensagemId: SQL, identidadeI
           select 1 from mensagens_excluidas_para_identidade oculta
           where oculta.mensagem_id = nao_lida.id and oculta.identidade_id = ${identidadeId}
         )
+        -- O que ela LIMPOU não conta como não lida.
+        and not exists (
+          select 1 from participantes_conversa limpeza
+          where limpeza.conversa_id = ${conversaId} and limpeza.identidade_id = ${identidadeId}
+            and (limpeza.limpa_ate_mensagem_id >= nao_lida.id or limpeza.lida_sem_aviso_ate_mensagem_id >= nao_lida.id)
+        )
       limit ${sql.raw(String(LIMITE_CONTAGEM_NAO_LIDAS))}
     ) contagem
   )`;

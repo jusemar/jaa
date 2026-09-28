@@ -1,3 +1,4 @@
+import { existeBloqueioCom } from "../../bloqueios/repositorios/repositorio-bloqueios.js";
 import type { Banco } from "@jaa/banco";
 import { podeVer } from "@jaa/contratos";
 import { buscarExcecao, buscarPerfil, ehContatoDe } from "../repositorios/repositorio-perfil.js";
@@ -29,6 +30,12 @@ export async function presencaVisivelPara(banco: Banco, donoId: string, observad
 
 /** Filtra, de uma vez, quem o observador pode ver. Conversa direta tem um participante só. */
 export async function presencasVisiveis(banco: Banco, donosIds: string[], observadorId: string): Promise<string[]> {
-  const decisoes = await Promise.all(donosIds.map(async (id) => ({ id, visivel: await presencaVisivelPara(banco, id, observadorId) })));
+  /*
+   * Online/offline também é sinal social: entre pessoas com bloqueio (qualquer sentido), nenhuma vê a
+   * presença da outra. Só presença — pedido e entrega não passam por aqui.
+   */
+  const decisoes = await Promise.all(
+    donosIds.map(async (id) => ({ id, visivel: !(await existeBloqueioCom(banco, observadorId, [id])) && (await presencaVisivelPara(banco, id, observadorId)) })),
+  );
   return decisoes.filter((decisao) => decisao.visivel).map((decisao) => decisao.id);
 }

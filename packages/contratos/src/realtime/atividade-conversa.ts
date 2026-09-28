@@ -23,7 +23,8 @@ export const PAUSA_PARA_PARAR_DIGITANDO_MS = 3000;
 // Quem recebe descarta "digitando" não renovado neste prazo, mesmo sem o aviso de parada.
 export const VALIDADE_DIGITANDO_MS = 8000;
 
-export const codigoErroEventoRealtimeSchema = z.enum(["DADOS_INVALIDOS", "CONVERSA_NAO_ENCONTRADA", "LIMITE_OBSERVACOES"]);
+// COMUNICACAO_BLOQUEADA: "digitando" entre pessoas com bloqueio (qualquer sentido) não é retransmitido.
+export const codigoErroEventoRealtimeSchema = z.enum(["DADOS_INVALIDOS", "CONVERSA_NAO_ENCONTRADA", "LIMITE_OBSERVACOES", "COMUNICACAO_BLOQUEADA"]);
 
 export type CodigoErroEventoRealtime = z.infer<typeof codigoErroEventoRealtimeSchema>;
 

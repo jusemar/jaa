@@ -137,6 +137,12 @@ export const atribuirEntregaEntradaSchema = z.object({
   entregadorId: z.uuid(),
   // Entregador que a empresa via na tela (null = nenhum): protege contra atribuição concorrente.
   entregadorAtualId: z.uuid().nullable().optional(),
+  /*
+   * O gerente CONFIRMOU tirar o pedido da saída em que ele está (formação automática, aguardando,
+   * preparada ou liberada — nunca em andamento). Sem a confirmação, a API responde
+   * `PEDIDO_EM_SAIDA_TRANSFERIVEL` e a tela pergunta antes.
+   */
+  transferirDaSaida: z.boolean().optional(),
 });
 
 export type AtribuirEntregaEntrada = z.input<typeof atribuirEntregaEntradaSchema>;

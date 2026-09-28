@@ -20,6 +20,7 @@ import {
   listarZonas,
   listarZonasAtivas,
   salvarConfiguracaoDespacho,
+  type DadosZona,
   type ZonaRegistro,
 } from "../repositorios/repositorio-zonas.js";
 
@@ -49,6 +50,7 @@ export async function serializarZona(
     nome: zona.nome,
     vertices: zona.vertices,
     ativa: zona.ativa,
+    freteCentavos: zona.freteCentavos,
     compativeisCom: compatibilidades
       .filter(
         (par) => par.zonaMenorId === zona.id || par.zonaMaiorId === zona.id,
@@ -99,7 +101,7 @@ export async function listarZonasAutorizado(
 async function validarEGravar(
   banco: Banco,
   empresaId: string,
-  dados: { nome: string; vertices: PoligonoZona; ativa: boolean },
+  dados: DadosZona,
   zonaId: string | null,
 ): Promise<ResultadoSalvarZona> {
   if (!zonaTemGeometriaValida(dados.vertices))
@@ -134,7 +136,7 @@ export async function criarZonaAutorizada(
   banco: Banco,
   usuarioId: string,
   empresaId: string,
-  dados: { nome: string; vertices: PoligonoZona; ativa: boolean },
+  dados: DadosZona,
 ): Promise<ResultadoSalvarZona> {
   const acesso = await autorizarEmpresa(
     banco,
@@ -151,7 +153,7 @@ export async function atualizarZonaAutorizada(
   usuarioId: string,
   empresaId: string,
   zonaId: string,
-  dados: { nome: string; vertices: PoligonoZona; ativa: boolean },
+  dados: DadosZona,
 ): Promise<ResultadoSalvarZona> {
   const acesso = await autorizarEmpresa(
     banco,
@@ -262,16 +264,35 @@ export async function zonaDoPonto(
   return classificarPonto(await listarZonasAtivas(banco, empresaId), ponto);
 }
 
+/**
+ * ZONA DE ENTREGA de um ponto, com o que o pedido precisa dela (id, nome e frete). Mesma
+ * classificação da logística (`classificarPonto`): cobertura, frete e despacho nunca discordam sobre
+ * "em que zona fica este ponto". `zona: null` = fora de todas as zonas ativas (ou nenhuma configurada).
+ */
+export async function resolverZonaDeEntrega(
+  banco: Banco,
+  empresaId: string,
+  ponto: { latitude: number; longitude: number },
+): Promise<{ zonasConfiguradas: boolean; zona: Pick<ZonaRegistro, "id" | "nome" | "freteCentavos"> | null }> {
+  const zonas = await listarZonasAtivas(banco, empresaId);
+  const zonaId = classificarPonto(zonas, ponto);
+  const zona = zonas.find((candidata) => candidata.id === zonaId);
+  return {
+    zonasConfiguradas: zonas.length > 0,
+    zona: zona ? { id: zona.id, nome: zona.nome, freteCentavos: zona.freteCentavos } : null,
+  };
+}
+
 /** Mesma classificação da logística, exposta para endereço e pedido sem duplicar geometria. */
 export async function avaliarCoberturaDoPonto(
   banco: Banco,
   empresaId: string,
   ponto: { latitude: number; longitude: number },
 ): Promise<{ atendida: boolean; zonasConfiguradas: boolean }> {
-  const zonas = await listarZonasAtivas(banco, empresaId);
+  const { zonasConfiguradas, zona } = await resolverZonaDeEntrega(banco, empresaId, ponto);
   return {
-    zonasConfiguradas: zonas.length > 0,
+    zonasConfiguradas,
     // Sem zona configurada, preserva o fluxo manual legado da empresa.
-    atendida: zonas.length === 0 || classificarPonto(zonas, ponto) !== null,
+    atendida: !zonasConfiguradas || zona !== null,
   };
 }

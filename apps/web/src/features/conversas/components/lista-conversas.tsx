@@ -1,8 +1,11 @@
 "use client";
 
 import type { ItemListaConversas } from "@jaa/contratos";
+import { useState } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
 import { rotuloNaoLidas } from "../lib/lista-conversas";
+import { AcoesDaConversa, type AcaoConversa, type AlvoAcaoConversa } from "./acoes-conversa";
+import { SimboloBloqueio } from "./bloqueio-conversa";
 
 /*
  * LISTA DE CONVERSAS no padrão da referência de UI/UX aprovada: grade de três colunas — avatar,
@@ -54,7 +57,13 @@ export function ListaConversas(props: {
   conversaEmLeituraId?: string | null;
   aoAbrir: (item: ItemListaConversas) => void;
   aoCarregarMais: () => void;
+  // Executa limpar/apagar/bloquear/desbloquear no servidor; devolve a mensagem de erro, ou null.
+  aoAcaoConversa?: ((acao: AcaoConversa, alvo: AlvoAcaoConversa) => Promise<string | null>) | undefined;
 }) {
+  // Qual menu está aberto: o "⋯" e o botão direito abrem o MESMO (um por conversa).
+  const [menuAberto, setMenuAberto] = useState<string | null>(null);
+  const aoAcaoConversa = props.aoAcaoConversa;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {props.carregando && (
@@ -84,27 +93,42 @@ export function ListaConversas(props: {
             const { outraIdentidade, ultimaMensagem } = item;
             const aberta = item.id === props.conversaAbertaId;
             const autor =
-              ultimaMensagem.remetenteIdentidadeId === props.identidadeId
+              ultimaMensagem?.remetenteIdentidadeId === props.identidadeId
                 ? "Você: "
                 : "";
             const mostrarNaoLidas =
               item.naoLidas > 0 && item.id !== props.conversaEmLeituraId;
 
             return (
-              <li key={item.id} data-conversa-id={item.id}>
+              <li
+                key={item.id}
+                data-conversa-id={item.id}
+                data-nao-lida={mostrarNaoLidas ? "" : undefined}
+                // Botão direito (desktop) abre o MESMO menu do "⋯", no lugar do menu do navegador.
+                onContextMenu={
+                  props.aoAcaoConversa
+                    ? (evento) => {
+                        evento.preventDefault();
+                        setMenuAberto(item.id);
+                      }
+                    : undefined
+                }
+                className="group relative flex items-center"
+              >
                 <button
                   type="button"
                   aria-current={aberta ? "true" : undefined}
                   onClick={() => props.aoAbrir(item)}
-                  className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)_auto] gap-3 px-4 py-3 text-left transition-colors ${
+                  className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)_auto] gap-3 py-3 pl-4 text-left transition-colors ${props.aoAcaoConversa ? "pr-11" : "pr-4"} ${
                     aberta ? "bg-superficie-suave" : "hover:bg-superficie-suave"
                   }`}
                 >
                   <AvatarIdentidade identidade={outraIdentidade} />
 
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-bold">
-                      {outraIdentidade.nomeExibicao}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-sm font-bold">{outraIdentidade.nomeExibicao}</span>
+                      {item.comunicacaoBloqueada && <SimboloBloqueio />}
                     </span>
                     {/*
                       Linha de TIPO, como na referência (ali: "Restaurante", "Farmácia"). O Jaa não
@@ -120,11 +144,15 @@ export function ListaConversas(props: {
                         Empresa
                       </span>
                     )}
+                    {/* Não lida: a prévia sai do tom suave e ganha peso — além do número, não só a cor. */}
                     <span
                       data-previa
-                      className="mt-1 block truncate text-xs text-conteudo-suave"
+                      className={`mt-1 block truncate text-xs ${mostrarNaoLidas ? "font-semibold text-conteudo" : "text-conteudo-suave"}`}
                     >
-                      {ultimaMensagem.excluidaEm ? (
+                      {!ultimaMensagem ? (
+                        // Conversa LIMPA por você e sem nada novo: continua aqui, sem prévia.
+                        <span className="italic">Sem mensagens</span>
+                      ) : ultimaMensagem.excluidaEm ? (
                         <span className="italic">Mensagem excluída</span>
                       ) : ultimaMensagem.tipo === "pedido" ? (
                         <>
@@ -141,9 +169,11 @@ export function ListaConversas(props: {
                   </span>
 
                   <span className="flex flex-col items-end gap-2 text-[11px] text-conteudo-suave">
-                    <time dateTime={ultimaMensagem.criadoEm}>
-                      {formatarHorarioDaLista(ultimaMensagem.criadoEm)}
-                    </time>
+                    {ultimaMensagem && (
+                      <time dateTime={ultimaMensagem.criadoEm} className={mostrarNaoLidas ? "font-bold text-marca" : undefined}>
+                        {formatarHorarioDaLista(ultimaMensagem.criadoEm)}
+                      </time>
+                    )}
                     {mostrarNaoLidas && (
                       <span
                         data-nao-lidas={item.naoLidas}
@@ -155,6 +185,17 @@ export function ListaConversas(props: {
                     )}
                   </span>
                 </button>
+                {aoAcaoConversa && (
+                  // Irmão do botão da linha (nunca dentro dele): um botão não pode conter outro.
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <AcoesDaConversa
+                      alvo={item}
+                      aoExecutar={aoAcaoConversa}
+                      aberto={menuAberto === item.id}
+                      aoMudarAberto={(aberto) => setMenuAberto(aberto ? item.id : null)}
+                    />
+                  </span>
+                )}
               </li>
             );
           })}
@@ -181,6 +222,7 @@ export function ListaConversas(props: {
           {props.erro}
         </p>
       )}
+
     </div>
   );
 }

@@ -208,6 +208,8 @@ describe("mensagem de pedido no balão", () => {
       status: "recebido",
       formaPagamentoNaEntrega: "dinheiro",
       trocoParaCentavos: null,
+      subtotalCentavos: 9180,
+      freteFinalCentavos: 0,
       totalCentavos: 9180,
       itens: [{ nomeProduto: "Pizza Calabresa", quantidade: 2, subtotalCentavos: 7980, escolhas: [], observacao: null }, { nomeProduto: "Refrigerante 2L", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null }],
     },
@@ -295,7 +297,7 @@ describe("ListaConversas", () => {
       conteudo: "Sim, pela manhã.",
       mensagemRespondida: { id: mensagem(1, EU, ha(9)).id, remetente: { identidadeId: EU, nomeExibicao: "Ana" }, tipo: "texto", previaConteudo: "Você vai trabalhar amanhã?", conteudoTruncado: false, excluida: false },
     };
-    const item: ItemListaConversas = { id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, naoLidas: 0 };
+    const item: ItemListaConversas = { id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, atividadeId: ultima.id, naoLidas: 0, comunicacaoBloqueada: false };
     const marcacao = html(
       createElement(ListaConversas, { identidadeId: EU, itens: [item], carregando: false, erro: null, temMais: false, carregandoMais: false, conversaAbertaId: null, aoAbrir: () => {}, aoCarregarMais: () => {} }),
     );
@@ -306,7 +308,7 @@ describe("ListaConversas", () => {
 
   it("última mensagem excluída para todos aparece como 'Mensagem excluída' na lista", () => {
     const ultima: Mensagem = { ...mensagem(7, OUTRA.identidadeId, ha(1)), conteudo: "", excluidaEm: ha(0) };
-    const item: ItemListaConversas = { id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, naoLidas: 0 };
+    const item: ItemListaConversas = { id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, atividadeId: ultima.id, naoLidas: 0, comunicacaoBloqueada: false };
     const marcacao = html(
       createElement(ListaConversas, { identidadeId: EU, itens: [item], carregando: false, erro: null, temMais: false, carregandoMais: false, conversaAbertaId: null, aoAbrir: () => {}, aoCarregarMais: () => {} }),
     );
@@ -319,7 +321,7 @@ describe("ListaConversas", () => {
       html(
         createElement(ListaConversas, {
           identidadeId: EU,
-          itens: [{ id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, naoLidas }],
+          itens: [{ id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, atividadeId: ultima.id, naoLidas, comunicacaoBloqueada: false }],
           carregando: false,
           erro: null,
           temMais: false,
@@ -340,7 +342,7 @@ describe("ListaConversas", () => {
 
   it("mostra nome, prévia e horário — e NÃO o @usuario, que sobrecarregava a linha", () => {
     const ultima = mensagem(5, OUTRA.identidadeId, ha(2));
-    const item: ItemListaConversas = { id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, naoLidas: 0 };
+    const item: ItemListaConversas = { id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, atividadeId: ultima.id, naoLidas: 0, comunicacaoBloqueada: false };
     const marcacao = html(
       createElement(ListaConversas, {
         identidadeId: EU,
@@ -412,5 +414,32 @@ describe("AvisosNotificacao", () => {
     assert.ok(texto(marcacao).includes("Mateus FilhoVocê vai trabalhar amanhã?…"));
     assert.ok(marcacao.includes('aria-label="Dispensar notificação"'));
     assert.equal(html(createElement(AvisosNotificacao, { avisos: [], aoAbrir: () => {}, aoDispensar: () => {} })).includes("data-notificacao"), false);
+  });
+});
+
+describe("conversa com mensagem não lida em destaque", () => {
+  it("não lida: linha marcada, prévia em destaque e horário na cor da marca; lida: aparência normal", () => {
+    const ultima = mensagem(9, OUTRA.identidadeId, ha(1));
+    const renderizar = (naoLidas: number) =>
+      html(
+        createElement(ListaConversas, {
+          identidadeId: EU,
+          itens: [{ id: ultima.conversaId, tipo: "direta", outraIdentidade: OUTRA, ultimaMensagem: ultima, atividadeId: ultima.id, naoLidas, comunicacaoBloqueada: false }],
+          carregando: false,
+          erro: null,
+          temMais: false,
+          carregandoMais: false,
+          conversaAbertaId: null,
+          aoAbrir: () => {},
+          aoCarregarMais: () => {},
+        }),
+      );
+    const naoLida = renderizar(2);
+    assert.ok(naoLida.includes("data-nao-lida"));
+    assert.match(naoLida, /data-previa="true" class="[^"]*font-semibold/);
+    assert.ok(naoLida.includes('aria-label="2 mensagens não lidas"'));
+    const lida = renderizar(0);
+    assert.ok(!lida.includes("data-nao-lida"));
+    assert.doesNotMatch(lida, /data-previa="true" class="[^"]*font-semibold/);
   });
 });

@@ -1,3 +1,4 @@
+import "./apoio/exigir-banco-de-teste.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
@@ -275,9 +276,9 @@ describe("responder uma mensagem", () => {
     const listaB: PaginaConversas = (await api(B, "GET", "/conversas")).json();
     const item = listaB.conversas.find((c) => c.id === conversaAB);
     assert.equal(listaB.conversas[0]?.id, conversaAB, "conversa com a resposta sobe ao topo");
-    assert.equal(item?.ultimaMensagem.id, resposta.id);
-    assert.equal(item?.ultimaMensagem.conteudo, "Cheguei sim.");
-    assert.deepEqual(item?.ultimaMensagem.mensagemRespondida, referenciaEsperada(original, B));
+    assert.equal(item?.ultimaMensagem?.id, resposta.id);
+    assert.equal(item?.ultimaMensagem?.conteudo, "Cheguei sim.");
+    assert.deepEqual(item?.ultimaMensagem?.mensagemRespondida, referenciaEsperada(original, B));
 
     assert.equal((await api(B, "POST", "/mensagens/recebimentos", { mensagemIds: [resposta.id] })).statusCode, 200);
     await aguardarAte(() => entregues.length === 1);

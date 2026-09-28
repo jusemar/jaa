@@ -25,6 +25,13 @@ export function lerRotaDaSaida(saida: SaidaRegistro): RotaDaSaida | null {
     motivoFallback: (saida.rotaMotivoFallback as RotaDaSaida["motivoFallback"]) ?? null,
     provedor: saida.rotaProvedor,
     origem: saida.origemLatitude !== null && saida.origemLongitude !== null ? { latitude: saida.origemLatitude, longitude: saida.origemLongitude } : null,
+    inicio:
+      saida.rotaOrigemLatitude !== null && saida.rotaOrigemLongitude !== null
+        ? { latitude: saida.rotaOrigemLatitude, longitude: saida.rotaOrigemLongitude }
+        : saida.origemLatitude !== null && saida.origemLongitude !== null
+          ? { latitude: saida.origemLatitude, longitude: saida.origemLongitude }
+          : null,
+    comRetorno: saida.rotaComRetorno,
     sequenciaDoProvedor: saida.rotaSequenciaDoProvedor,
     geometria: geometria?.success ? geometria.data : null,
     distanciaMetros: saida.rotaDistanciaMetros,
@@ -56,8 +63,19 @@ export async function gravarRota(banco: Banco, saidaId: string, rota: RotaCalcul
   await banco
     .update(saidasEntrega)
     .set({
-      // Snapshot da origem: gravado junto do primeiro cálculo e mantido daí em diante.
-      ...(rota.origem ? { origemLatitude: rota.origem.latitude, origemLongitude: rota.origem.longitude } : {}),
+      /*
+       * Snapshot da BASE: gravado no primeiro cálculo e NUNCA sobrescrito depois (um recálculo feito na
+       * rua parte da posição do entregador, que não é a base). A origem de cada cálculo vai à parte.
+       */
+      ...(rota.origem
+        ? {
+            origemLatitude: sql`coalesce(${saidasEntrega.origemLatitude}, ${rota.origem.latitude})`,
+            origemLongitude: sql`coalesce(${saidasEntrega.origemLongitude}, ${rota.origem.longitude})`,
+            rotaOrigemLatitude: rota.origem.latitude,
+            rotaOrigemLongitude: rota.origem.longitude,
+          }
+        : { rotaOrigemLatitude: null, rotaOrigemLongitude: null }),
+      rotaComRetorno: rota.comRetorno,
       rotaEstado: rota.estado,
       rotaMotivoFallback: rota.motivoFallback,
       rotaProvedor: rota.provedor,

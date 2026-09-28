@@ -1,0 +1,1 @@
+ALTER TABLE "participantes_conversa" ADD COLUMN "lida_sem_aviso_ate_mensagem_id" uuid;

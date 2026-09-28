@@ -1,5 +1,5 @@
 import type { Banco } from "@jaa/banco";
-import { entregaEstaAtiva, entregadorPodeOperar, entregadorPodeReceberAtribuicao, type EntregaAtribuida } from "@jaa/contratos";
+import { entregaEstaAtiva, entregadorPodeOperar, entregadorPodeReceberAtribuicao, saidaPermiteTransferencia, type EntregaAtribuida } from "@jaa/contratos";
 import { buscarEmpresaPublicaPorId } from "../../catalogo/repositorios/repositorio-empresas-publicas.js";
 import { autorizarEmpresa } from "../../empresas/lib/autorizacao-empresas.js";
 import { buscarPedidoDaEmpresa } from "../../pedidos/repositorios/repositorio-pedidos.js";
@@ -12,7 +12,13 @@ import {
   listarAtribuicoesAtuaisDosVinculos,
 } from "../repositorios/repositorio-atribuicoes.js";
 import { buscarEntregadorDaEmpresa, listarVinculosAtivosDaPessoa } from "../repositorios/repositorio-entregadores.js";
-import { buscarSaidaAtivaDoPedido } from "../repositorios/repositorio-saidas.js";
+import { buscarSaidaAtivaDoPedido, transferirPedidoParaSaidaManual } from "../repositorios/repositorio-saidas.js";
+import { buscarConfiguracaoDespacho } from "../repositorios/repositorio-zonas.js";
+import { publicarOperacao } from "../lib/publicar-operacao.js";
+import { publicarSaidaPorId } from "../lib/publicar-saida.js";
+import { publicarDespacho, type DependenciasDespacho } from "./despacho-automatico.js";
+import { planejarRotaDaSaida, recalcularPercursoDaSaida } from "./planejar-rota.js";
+import { reavaliarFila } from "./presenca-e-fila.js";
 
 /*
  * ATRIBUIÇÃO da entrega. Quem atribui é a EMPRESA (permissão `gerenciar-entregadores`); quem executa
@@ -34,15 +40,18 @@ type ResultadoAtribuir =
   | { tipo: "status-invalido" }
   // O pedido pertence a uma saída ativa: trocar só ele deixaria saída e pedido contando histórias diferentes.
   | { tipo: "pedido-em-saida" }
+  // Está numa saída que ainda não saiu: dá para transferir, mas o gerente precisa confirmar.
+  | { tipo: "confirmar-transferencia" }
   | { tipo: "conflito" };
 
 export async function atribuirEntregaAutorizada(
-  { banco, eventosEntregas }: { banco: Banco; eventosEntregas: CanalEventosEntregas },
+  dependencias: DependenciasDespacho,
   usuarioId: string,
   empresaId: string,
   pedidoId: string,
-  entrada: { entregadorId: string; entregadorAtualId?: string | null | undefined },
+  entrada: { entregadorId: string; entregadorAtualId?: string | null | undefined; transferirDaSaida?: boolean | undefined },
 ): Promise<ResultadoAtribuir> {
+  const { banco, eventosEntregas } = dependencias;
   const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "gerenciar-entregadores");
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
 
@@ -58,10 +67,17 @@ export async function atribuirEntregaAutorizada(
   if (!entregadorPodeReceberAtribuicao(entregador)) return { tipo: "entregador-indisponivel" };
 
   /*
-   * Pedido dentro de uma saída ativa não é reatribuído individualmente: a saída inteira é a operação.
-   * Transferir uma saída para outro entregador é uma operação própria, ainda não implementada.
+   * Pedido dentro de uma saída ativa. Enquanto ela NÃO foi para a rua (formação automática, aguardando,
+   * preparada, liberada), a decisão do gerente prevalece: o pedido sai dela e vai numa saída manual do
+   * entregador escolhido — com confirmação explícita. Saída EM ANDAMENTO continua intocável: trocar
+   * entregador na rua é outra regra, ainda não implementada.
    */
-  if (await buscarSaidaAtivaDoPedido(banco, pedidoId)) return { tipo: "pedido-em-saida" };
+  const saidaAtual = await buscarSaidaAtivaDoPedido(banco, pedidoId);
+  if (saidaAtual) {
+    if (!saidaPermiteTransferencia(saidaAtual.status)) return { tipo: "pedido-em-saida" };
+    if (!entrada.transferirDaSaida) return { tipo: "confirmar-transferencia" };
+    return transferirDaSaida(dependencias, usuarioId, empresaId, pedidoId, entrada.entregadorId);
+  }
 
   const anterior = await buscarAtribuicaoAtual(banco, pedidoId);
   const resultado = await atribuirEntrega(banco, {
@@ -79,6 +95,67 @@ export async function atribuirEntregaAutorizada(
     eventosEntregas.publicar({ tipo: "entrega-atualizada", destinatariosIdentidadeIds: [anterior.pessoa.identidadeId], pedidoId, entrega: null });
   }
   await publicarEntrega({ banco, eventosEntregas }, pedidoId, entregador.pessoa.identidadeId);
+  return { tipo: "atribuido" };
+}
+
+async function transferirDaSaida(
+  dependencias: DependenciasDespacho,
+  usuarioId: string,
+  empresaId: string,
+  pedidoId: string,
+  entregadorId: string,
+): Promise<ResultadoAtribuir> {
+  const { banco, eventosEntregas } = dependencias;
+  const configuracao = await buscarConfiguracaoDespacho(banco, empresaId);
+  const resultado = await transferirPedidoParaSaidaManual(banco, {
+    empresaId,
+    pedidoId,
+    entregadorId,
+    usuarioId,
+    // A saída nova segue o padrão da empresa, como qualquer saída manual.
+    exigeRetornoBase: configuracao.saidasExigemRetornoBase,
+    podeTransferir: saidaPermiteTransferencia,
+    podeReceber: entregadorPodeReceberAtribuicao,
+  });
+
+  switch (resultado.tipo) {
+    case "mesmo-entregador":
+      return { tipo: "atribuido" };
+    case "saida-em-andamento":
+      return { tipo: "pedido-em-saida" };
+    case "entregador-indisponivel":
+      return { tipo: "entregador-indisponivel" };
+    // Mudou entre a tela e a gravação (formação concluída, pedido cancelado/avançou): o gerente relê.
+    case "sem-saida":
+    case "pedido-nao-pronto":
+      return { tipo: "conflito" };
+    case "transferido":
+      break;
+  }
+
+  // Depois do commit. Saída de ORIGEM: percurso já planejado perdeu uma parada → recalcula a ordem que ficou.
+  if (!resultado.saidaAnteriorConcluida && resultado.statusAnterior !== "em_formacao") {
+    await recalcularPercursoDaSaida(dependencias, resultado.saidaAnteriorId);
+  }
+  // Saída NOVA: planejamento normal (base da empresa, retorno à base conforme a saída).
+  await planejarRotaDaSaida(dependencias, resultado.saidaNovaId);
+
+  // Quem recebeu a saída sai da fila da base (está indo para a rua) — igual à saída manual.
+  const aposSaida = await reavaliarFila(banco, entregadorId, "Recebeu saída de entrega");
+  if (aposSaida) await publicarOperacao(dependencias, aposSaida.registro);
+
+  // Entregador anterior (se a saída já tinha um) perde a entrega na hora; o novo a recebe.
+  if (resultado.entregadorAnteriorId) {
+    const anterior = await buscarEntregadorDaEmpresa(banco, empresaId, resultado.entregadorAnteriorId);
+    if (anterior) eventosEntregas.publicar({ tipo: "entrega-atualizada", destinatariosIdentidadeIds: [anterior.pessoa.identidadeId], pedidoId, entrega: null });
+  }
+  await publicarEntrega(dependencias, pedidoId);
+
+  // Saídas: empresa + entregador de cada uma; cada cliente recebe a fila do PRÓPRIO pedido (o
+  // transferido já pela saída nova). Painel de despacho da empresa sem F5.
+  await publicarSaidaPorId(dependencias, resultado.saidaAnteriorId);
+  await publicarSaidaPorId(dependencias, resultado.saidaNovaId);
+  await publicarDespacho(dependencias, empresaId);
   return { tipo: "atribuido" };
 }
 

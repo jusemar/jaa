@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
-import { basesEmpresa, consumosRoteamento } from "@jaa/banco/schema";
+import { basesEmpresa, consumosRoteamento, paradasSaida } from "@jaa/banco/schema";
 import { rotaTemPercursoReal, type Coordenadas, type Empresa, type FilaDoPedido, type Pedido, type Produto, type SaidaEntrega } from "@jaa/contratos";
 import { eq } from "drizzle-orm";
 import { criarAmbienteIntegracao, type Pessoa } from "./apoio/integracao.js";
@@ -25,24 +25,31 @@ const provedorFake = {
   modo: "sucesso" as "sucesso" | "falha",
   chamadas: [] as string[],
   origensRecebidas: [] as Coordenadas[],
-  async otimizarSequencia(origem: Coordenadas, paradas: ParadaDeRota[]) {
+  retornosRecebidos: [] as Array<Coordenadas | null>,
+  // Atraso da otimização (ms): simula provedor lento para o teste de toque repetido.
+  atrasoMs: 0,
+  async otimizarSequencia(origem: Coordenadas, paradas: ParadaDeRota[], retorno?: Coordenadas | null) {
     this.chamadas.push("otimizacao");
     this.origensRecebidas.push(origem);
+    this.retornosRecebidos.push(retorno ?? null);
+    if (this.atrasoMs > 0) await new Promise((resolver) => setTimeout(resolver, this.atrasoMs));
     if (this.modo === "falha") throw new Error("provedor fora do ar");
     // Ordem "do provedor": o inverso da ordem recebida, para ficar evidente que veio dele.
     return { ordem: [...paradas].reverse().map((parada) => parada.pedidoId) };
   },
-  async calcularPercurso(origem: Coordenadas, paradas: ParadaDeRota[]): Promise<Percurso> {
-    this.chamadas.push(`percurso:${paradas.map((parada) => parada.pedidoId).join(",")}`);
+  async calcularPercurso(origem: Coordenadas, paradas: ParadaDeRota[], retorno?: Coordenadas | null): Promise<Percurso> {
+    this.chamadas.push(`percurso:${paradas.map((parada) => parada.pedidoId).join(",")}${retorno ? ":retorno" : ""}`);
     this.origensRecebidas.push(origem);
     if (this.modo === "falha") throw new Error("provedor fora do ar");
+    // Como o provedor real: com retorno, a volta é mais um trecho do percurso.
+    const trechos = paradas.length + (retorno ? 1 : 0);
     return {
-      geometria: [origem, ...paradas.map((parada) => parada.coordenadas)],
-      distanciaMetros: 1000 * paradas.length,
-      duracaoSegundos: 300 * paradas.length,
+      geometria: [origem, ...paradas.map((parada) => parada.coordenadas), ...(retorno ? [retorno] : [])],
+      distanciaMetros: 1000 * trechos,
+      duracaoSegundos: 300 * trechos,
     };
   },
-} satisfies ProvedorRoteamento & { modo: "sucesso" | "falha"; chamadas: string[]; origensRecebidas: Coordenadas[] };
+} satisfies ProvedorRoteamento & { modo: "sucesso" | "falha"; chamadas: string[]; origensRecebidas: Coordenadas[]; retornosRecebidos: Array<Coordenadas | null>; atrasoMs: number };
 
 const ctx = criarAmbienteIntegracao({
   telefones: ["+5531987654001", "+5531987654002", "+5531987654003", "+5531987654004", "+5531987654005"],
@@ -262,5 +269,157 @@ describe("quem pode ver a rota", () => {
     assert.ok(alguma);
     assert.equal((await ctx.api(D, "GET", `/empresas/${pizzaria.id}/saidas/${alguma.id}`)).statusCode, 404);
     assert.equal((await ctx.api(D, "GET", `/empresas/${padaria.id}/saidas/${alguma.id}`)).statusCode, 404);
+  });
+});
+
+describe("rota com retorno × aberta e 'Recalcular melhor rota'", () => {
+  const PONTOS = [
+    { latitude: -19.93, longitude: -43.93 },
+    { latitude: -19.94, longitude: -43.92 },
+    { latitude: -19.95, longitude: -43.91 },
+  ];
+  const zerarFake = () => {
+    provedorFake.modo = "sucesso";
+    provedorFake.chamadas = [];
+    provedorFake.origensRecebidas = [];
+    provedorFake.retornosRecebidos = [];
+    provedorFake.atrasoMs = 0;
+  };
+  async function saidaEmAndamento(exigeRetornoBase?: boolean): Promise<{ saida: SaidaEntrega; pedidos: Pedido[] }> {
+    const pedidos = [await pedidoProntoEm(B1, PONTOS[0]!), await pedidoProntoEm(B2, PONTOS[1]!), await pedidoProntoEm(B1, PONTOS[2]!)];
+    const criada = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas`, {
+      entregadorId: paulo,
+      pedidoIds: pedidos.map((pedido) => pedido.id),
+      ...(exigeRetornoBase === undefined ? {} : { exigeRetornoBase }),
+    });
+    assert.equal(criada.statusCode, 201, criada.body);
+    const saida: SaidaEntrega = criada.json();
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas/${saida.id}/liberar`)).statusCode, 200);
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/iniciar`)).statusCode, 200);
+    return { saida: await obterSaida(saida.id), pedidos };
+  }
+  const recalcular = (pessoa: Pessoa, saidaId: string, versaoSequencia: number) => ctx.api(pessoa, "POST", `/entregas/saidas/${saidaId}/recalcular-rota`, { versaoSequencia });
+
+  it("saída que EXIGE retorno: a otimização e o percurso terminam na base (a volta entra na distância)", async () => {
+    zerarFake();
+    const { saida } = await saidaEmAndamento(true);
+    assert.equal(saida.exigeRetornoBase, true);
+    assert.deepEqual(provedorFake.retornosRecebidos[0], BASE, "a ordem é escolhida sabendo que volta à base");
+    assert.equal(saida.rota?.comRetorno, true);
+    assert.deepEqual(saida.rota?.geometria?.at(-1), BASE, "o traçado termina na base");
+    assert.equal(saida.rota?.distanciaMetros, 4000, "3 entregas + a volta");
+  });
+
+  it("saída SEM retorno (padrão = comportamento anterior): percurso aberto, termina na última entrega", async () => {
+    zerarFake();
+    const { saida } = await saidaEmAndamento();
+    assert.equal(saida.exigeRetornoBase, false);
+    assert.equal(provedorFake.retornosRecebidos[0], null);
+    assert.equal(saida.rota?.comRetorno, false);
+    assert.equal(saida.rota?.distanciaMetros, 3000);
+  });
+
+  it("recalcular: só o entregador atual; versão velha = 409 sem chamar o provedor; concluída e cancelada ficam de fora", async () => {
+    zerarFake();
+    const { saida, pedidos } = await saidaEmAndamento();
+    assert.equal((await recalcular(A, saida.id, saida.versaoSequencia)).statusCode, 404, "a empresa não recalcula pelo entregador");
+    assert.equal((await recalcular(B1, saida.id, saida.versaoSequencia)).statusCode, 404);
+    const chamadasAntes = provedorFake.chamadas.length;
+    const velha = await recalcular(P, saida.id, saida.versaoSequencia - 1 || 99);
+    assert.deepEqual([velha.statusCode, velha.json().codigo], [409, "SEQUENCIA_DESATUALIZADA"]);
+    assert.equal(provedorFake.chamadas.length, chamadasAntes, "versão velha não gasta chamada paga");
+
+    // Primeira entregue e uma cancelada: sobra UMA — não há o que reorganizar.
+    const [primeira, segunda] = ordemAtiva(saida);
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/paradas/${primeira}/concluir`)).statusCode, 200);
+    assert.equal(
+      (await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${segunda}/cancelar`, { statusAtual: "saiu_para_entrega", motivo: "Cliente desistiu" })).statusCode,
+      200,
+    );
+    const atual = await obterSaida(saida.id);
+    assert.equal((await recalcular(P, saida.id, atual.versaoSequencia)).statusCode, 409);
+    assert.equal(pedidos.length, 3);
+  });
+
+  it("recalcular substitui a ordem MANUAL, só das pendentes, e depois 'Alterar ordem' continua funcionando; a fila acompanha", async () => {
+    zerarFake();
+    const { saida, pedidos } = await saidaEmAndamento();
+    const [primeira] = ordemAtiva(saida);
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/paradas/${primeira}/concluir`)).statusCode, 200);
+    // O entregador monta a ordem dele...
+    const aposConclusao = await obterSaida(saida.id);
+    const manual = ordemAtiva(aposConclusao);
+    const trocada = [manual[1]!, manual[0]!];
+    const reordenada = await ctx.api(P, "PATCH", `/entregas/saidas/${saida.id}/sequencia`, { versaoSequencia: aposConclusao.versaoSequencia, pedidoIds: trocada });
+    assert.equal(reordenada.statusCode, 200, reordenada.body);
+    const comManual: SaidaEntrega = reordenada.json();
+
+    // ...e pede ao Jaa para recalcular: a concluída NÃO entra; o fake inverte a ordem recebida.
+    provedorFake.chamadas = [];
+    const recalculada = await recalcular(P, saida.id, comManual.versaoSequencia);
+    assert.equal(recalculada.statusCode, 200, recalculada.body);
+    const nova: SaidaEntrega = recalculada.json();
+    assert.deepEqual(ordemAtiva(nova), [...trocada].reverse());
+    assert.equal(nova.versaoSequencia, comManual.versaoSequencia + 1);
+    assert.equal(provedorFake.chamadas.filter((chamada) => chamada === "otimizacao").length, 1);
+    assert.ok(nova.paradas.find((parada) => parada.pedidoId === primeira)?.encerradaEm, "a concluída segue no histórico");
+
+    // A fila de cada cliente acompanha a nova ordem.
+    const cliente = (pedidoId: string) => (pedidos.findIndex((pedido) => pedido.id === pedidoId) === 1 ? B2 : B1);
+    for (const [indice, pedidoId] of ordemAtiva(nova).entries()) {
+      const fila = (await ctx.api(cliente(pedidoId), "GET", `/pedidos/${pedidoId}/fila`)).json();
+      assert.equal(fila.entregasAntes, indice);
+    }
+
+    // "Alterar ordem" continua disponível depois do recálculo.
+    const deNovo = await ctx.api(P, "PATCH", `/entregas/saidas/${saida.id}/sequencia`, { versaoSequencia: nova.versaoSequencia, pedidoIds: [...ordemAtiva(nova)].reverse() });
+    assert.equal(deNovo.statusCode, 200);
+
+    // O aviso de "próxima" continua uma vez por parada (nada de repetir por causa do recálculo).
+    const avisos = await ctx.banco.select({ pedidoId: paradasSaida.pedidoId, aviso: paradasSaida.avisoProximaEm }).from(paradasSaida).where(eq(paradasSaida.saidaId, saida.id));
+    // A primeira (concluída) foi avisada ao virar a próxima; o aviso é um fato por parada (coluna única).
+    assert.ok(avisos.find((parada) => parada.pedidoId === primeira)?.aviso);
+  });
+
+  it("origem do recálculo: posição RECENTE e precisa do entregador; senão a base — e o snapshot da base não muda", async () => {
+    zerarFake();
+    const { saida } = await saidaEmAndamento(true);
+    const naRua = { latitude: -19.925, longitude: -43.935 };
+    const posicao = await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/posicao`, { ...naRua, precisaoMetros: 12, capturadaEm: new Date().toISOString() });
+    assert.ok(posicao.statusCode < 300, posicao.body);
+
+    provedorFake.origensRecebidas = [];
+    provedorFake.retornosRecebidos = [];
+    const recalculada: SaidaEntrega = (await recalcular(P, saida.id, saida.versaoSequencia)).json();
+    assert.deepEqual(provedorFake.origensRecebidas[0], naRua, "parte de onde o entregador está");
+    assert.deepEqual(provedorFake.retornosRecebidos[0], BASE, "e volta à BASE (não ao ponto de onde recalculou)");
+    assert.deepEqual(recalculada.rota?.origem, BASE, "o snapshot histórico da base não é sobrescrito");
+    assert.deepEqual(recalculada.rota?.inicio, naRua);
+
+    // Posição imprecisa (> 50 m) não serve de origem: volta para a base.
+    await ctx.api(P, "POST", `/entregas/saidas/${saida.id}/posicao`, { ...naRua, latitude: -19.926, precisaoMetros: 80, capturadaEm: new Date().toISOString() });
+    provedorFake.origensRecebidas = [];
+    await recalcular(P, saida.id, recalculada.versaoSequencia);
+    assert.deepEqual(provedorFake.origensRecebidas[0], BASE);
+  });
+
+  it("toque repetido não vira duas chamadas pagas; com o provedor fora do ar, a aproximação local segue", async () => {
+    zerarFake();
+    const { saida } = await saidaEmAndamento();
+    provedorFake.chamadas = [];
+    provedorFake.atrasoMs = 300;
+    const [um, dois] = await Promise.all([recalcular(P, saida.id, saida.versaoSequencia), recalcular(P, saida.id, saida.versaoSequencia)]);
+    assert.deepEqual([um.statusCode, dois.statusCode].sort(), [200, 409]);
+    assert.equal(provedorFake.chamadas.filter((chamada) => chamada === "otimizacao").length, 1);
+
+    provedorFake.atrasoMs = 0;
+    provedorFake.modo = "falha";
+    const atual = await obterSaida(saida.id);
+    const fallback = await recalcular(P, saida.id, atual.versaoSequencia);
+    assert.equal(fallback.statusCode, 200, fallback.body);
+    const comFallback: SaidaEntrega = fallback.json();
+    assert.equal(comFallback.rota?.estado, "aproximacao_local");
+    assert.equal(comFallback.rota?.geometria, null, "sem traçado inventado");
+    provedorFake.modo = "sucesso";
   });
 });

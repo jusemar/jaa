@@ -5,6 +5,8 @@ import { and, eq, exists, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 export interface MensagemRecebidaRegistro {
   mensagemId: string;
   conversaId: string;
+  // Quem enviou: decide se há bloqueio entre as duas pessoas (✓✓ não atravessa bloqueio).
+  remetenteIdentidadeId: string;
 }
 
 /**
@@ -17,7 +19,7 @@ export async function listarMensagensRecebidasPorIdentidade(
   mensagemIds: string[],
 ): Promise<MensagemRecebidaRegistro[]> {
   return banco
-    .select({ mensagemId: mensagens.id, conversaId: mensagens.conversaId })
+    .select({ mensagemId: mensagens.id, conversaId: mensagens.conversaId, remetenteIdentidadeId: mensagens.remetenteIdentidadeId })
     .from(mensagens)
     .innerJoin(
       participantesConversa,
@@ -42,7 +44,8 @@ export async function registrarRecebimentos(
     .insert(recebimentosMensagem)
     .values(recebidas.map(({ mensagemId, conversaId }) => ({ mensagemId, conversaId, destinatarioIdentidadeId })))
     .onConflictDoNothing({ target: [recebimentosMensagem.mensagemId, recebimentosMensagem.destinatarioIdentidadeId] })
-    .returning({ mensagemId: recebimentosMensagem.mensagemId, conversaId: recebimentosMensagem.conversaId });
+    .returning({ mensagemId: recebimentosMensagem.mensagemId, conversaId: recebimentosMensagem.conversaId })
+    .then((linhas) => linhas.map((linha) => ({ ...linha, remetenteIdentidadeId: recebidas.find((recebida) => recebida.mensagemId === linha.mensagemId)?.remetenteIdentidadeId ?? "" })));
 }
 
 export async function mensagemRecebidaNaConversa(
@@ -74,7 +77,10 @@ export async function avancarMarcadorLeitura(
   identidadeId: string,
   conversaId: string,
   ateMensagemId: string,
+  // "sem-aviso": leitura sob bloqueio — só para as não lidas de quem leu, nunca ✓✓ para o outro.
+  marcador: "compartilhado" | "sem-aviso" = "compartilhado",
 ): Promise<boolean> {
+  const coluna = marcador === "compartilhado" ? participantesConversa.lidaAteMensagemId : participantesConversa.lidaSemAvisoAteMensagemId;
   const mensagemValida = banco
     .select({ id: sql`1` })
     .from(mensagens)
@@ -84,12 +90,12 @@ export async function avancarMarcadorLeitura(
 
   const atualizadas = await banco
     .update(participantesConversa)
-    .set({ lidaAteMensagemId: ateMensagemId })
+    .set(marcador === "compartilhado" ? { lidaAteMensagemId: ateMensagemId } : { lidaSemAvisoAteMensagemId: ateMensagemId })
     .where(
       and(
         eq(participantesConversa.conversaId, conversaId),
         eq(participantesConversa.identidadeId, identidadeId),
-        or(isNull(participantesConversa.lidaAteMensagemId), lt(participantesConversa.lidaAteMensagemId, ateMensagemId)),
+        or(isNull(coluna), lt(coluna, ateMensagemId)),
         exists(mensagemValida),
       ),
     )

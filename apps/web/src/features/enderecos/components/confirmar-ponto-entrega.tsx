@@ -6,8 +6,7 @@ import {
   type EnderecoCliente,
 } from "@jaa/contratos";
 import { useEffect, useRef, useState } from "react";
-import { criarMapaLeaflet } from "../mapa/mapa-leaflet";
-import { ATRIBUICAO_TILES, URL_TILES_MAPA } from "../mapa/configuracao-mapa";
+import { criarMapaPontoPreferido } from "../mapa/mapa-mapbox";
 import { validarCoberturaEntrega } from "../lib/api-enderecos";
 import {
   CENTRO_PADRAO,
@@ -84,13 +83,11 @@ export function ConfirmarPontoEntrega({
     if (!elemento) return;
     let ativo = true;
 
-    void criarMapaLeaflet({
+    void criarMapaPontoPreferido({
       elemento,
       centro: centroInicial,
       pontoInicial: sugestao,
       aoMoverPonto: setPonto,
-      urlTiles: URL_TILES_MAPA,
-      atribuicao: ATRIBUICAO_TILES,
     }).then((mapa) => {
       if (!ativo) {
         mapa.destruir();
@@ -165,7 +162,7 @@ export function ConfirmarPontoEntrega({
     >
       <h3 className="font-semibold">Confirme onde devemos entregar</h3>
       <p data-endereco-confirmacao className="text-xs text-conteudo-suave">
-        {endereco.apelido} · {formatarEnderecoResumido(endereco)} —{" "}
+        {endereco.apelido ? `${endereco.apelido} · ` : ""}{formatarEnderecoResumido(endereco)} —{" "}
         {endereco.bairro}, {endereco.cidade}/{endereco.uf}
       </p>
       <p className="text-xs text-conteudo-suave">

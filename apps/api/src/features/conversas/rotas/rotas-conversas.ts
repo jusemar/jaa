@@ -1,5 +1,6 @@
 import type { Banco } from "@jaa/banco";
 import {
+  type ResumoNaoLidas,
   abrirConversaDiretaEntradaSchema,
   listarConversasConsultaSchema,
   type ConversaDireta,
@@ -15,12 +16,46 @@ import {
 import { abrirConversaDireta } from "../casos-de-uso/abrir-conversa-direta.js";
 import { listarConversas } from "../casos-de-uso/listar-conversas.js";
 import { serializarItemListaConversas } from "../lib/serializar-item-lista-conversas.js";
+import * as z from "zod";
+import type { CanalEventosMensagens } from "../../mensagens/lib/eventos-mensagens.js";
+import { limparConversaPara, listarNaoLidasPorConversa } from "../repositorios/repositorio-conversas.js";
 
 export function registrarRotasConversas(
   servidor: FastifyInstance,
-  dependencias: { banco: Banco; autenticacao: Autenticacao },
+  dependencias: { banco: Banco; autenticacao: Autenticacao; eventosMensagens?: CanalEventosMensagens },
 ) {
   const preHandler = exigirIdentidadeAtuante(dependencias);
+
+  /*
+   * LIMPAR / APAGAR conversa: estado SÓ da identidade atuante (a da sessão, nunca um id do corpo).
+   * Quem não participa recebe 404, sem revelar se a conversa existe. Nada é apagado para o outro.
+   */
+  const parametrosConversa = z.object({ conversaId: z.uuid() });
+  for (const [caminho, apagar] of [["limpar", false], ["apagar", true]] as const) {
+    servidor.post(`/conversas/:conversaId/${caminho}`, { preHandler }, async (requisicao, resposta) => {
+      const { identidadeId } = obterIdentidadeExigida(requisicao);
+      const parametros = parametrosConversa.safeParse(requisicao.params);
+      const participa = parametros.success && (await limparConversaPara(dependencias.banco, parametros.data.conversaId, identidadeId, apagar));
+      if (!parametros.success || !participa) {
+        const erro: ErroApi = { codigo: "CONVERSA_NAO_ENCONTRADA", mensagem: "Conversa não encontrada." };
+        return resposta.code(404).send(erro);
+      }
+      dependencias.eventosMensagens?.publicar({
+        tipo: "conversa-estado-pessoal",
+        destinatariosIdentidadeIds: [identidadeId],
+        conversaId: parametros.data.conversaId,
+        acao: apagar ? "apagada" : "limpa",
+      });
+      return resposta.code(204).send();
+    });
+  }
+
+  // Não lidas por conversa da identidade ATUANTE (indicador de Conversas fora da lista). Nada vem do cliente.
+  servidor.get("/conversas/nao-lidas", { preHandler }, async (requisicao) => {
+    const { identidadeId } = obterIdentidadeExigida(requisicao);
+    const resumo: ResumoNaoLidas = { conversas: await listarNaoLidasPorConversa(dependencias.banco, identidadeId) };
+    return resumo;
+  });
 
   // Lista de conversas da identidade ATUANTE autorizada (inbox pessoal OU da empresa operada). Query: antesDe, limite.
   servidor.get("/conversas", { preHandler }, async (requisicao, resposta) => {

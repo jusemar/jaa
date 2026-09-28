@@ -95,19 +95,26 @@ export function criarProvedorMapbox({ token, urlBase = MAPBOX_URL_PADRAO, buscar
      * Ou seja: o Mapbox ordena, o Jaa não finge que ele otimizou uma rota aberta — por isso a
      * interface continua dizendo "sequência sugerida", nunca "melhor rota" ou "rota mais rápida".
      */
-    async otimizarSequencia(origem: Coordenadas, paradas: ParadaDeRota[]): Promise<SequenciaOtimizada> {
-      const pontos = [origem, ...paradas.map((parada) => parada.coordenadas)].map(paraCoordenada).join(";");
-      const corpo = await pedir(`/optimized-trips/v1/mapbox/${perfil}/${pontos}`, {
-        source: "first",
-        destination: "any",
-        roundtrip: "true",
-        overview: "false",
-      });
+    async otimizarSequencia(origem: Coordenadas, paradas: ParadaDeRota[], retorno?: Coordenadas | null): Promise<SequenciaOtimizada> {
+      /*
+       * COM RETORNO saindo de outro ponto (ex.: o entregador na rua): a v1 SUPORTA rota não circular
+       * com destino FIXO — origem → paradas → base, com `roundtrip=false&destination=last`. Saindo da
+       * própria base, a viagem circular de sempre já é exatamente "volta à base".
+       * ABERTA: continua a viagem circular com a volta descartada (limitação documentada acima).
+       */
+      const destinoFixo = retorno && (retorno.latitude !== origem.latitude || retorno.longitude !== origem.longitude) ? retorno : null;
+      const pontos = [origem, ...paradas.map((parada) => parada.coordenadas), ...(destinoFixo ? [destinoFixo] : [])].map(paraCoordenada).join(";");
+      const corpo = await pedir(
+        `/optimized-trips/v1/mapbox/${perfil}/${pontos}`,
+        destinoFixo
+          ? { source: "first", destination: "last", roundtrip: "false", overview: "false" }
+          : { source: "first", destination: "any", roundtrip: "true", overview: "false" },
+      );
 
       const resultado = respostaOtimizacaoSchema.safeParse(corpo);
       if (!resultado.success || resultado.data.code !== "Ok") throw new ErroRespostaProvedor("Otimização do Mapbox inválida.");
       const { waypoints } = resultado.data;
-      if (waypoints.length !== paradas.length + 1) throw new ErroRespostaProvedor("Otimização do Mapbox não cobre todas as paradas.");
+      if (waypoints.length !== paradas.length + 1 + (destinoFixo ? 1 : 0)) throw new ErroRespostaProvedor("Otimização do Mapbox não cobre todas as paradas.");
 
       // `waypoint_index` é a posição de cada ponto ENVIADO dentro da viagem otimizada.
       const ordenadas = paradas
@@ -119,9 +126,12 @@ export function criarProvedorMapbox({ token, urlBase = MAPBOX_URL_PADRAO, buscar
       return { ordem: ordenadas };
     },
 
-    /** PERCURSO real da ordem informada (aberto: termina na última parada, sem retorno à empresa). */
-    async calcularPercurso(origem: Coordenadas, paradas: ParadaDeRota[]): Promise<Percurso> {
-      const pontos = [origem, ...paradas.map((parada) => parada.coordenadas)].map(paraCoordenada).join(";");
+    /**
+     * PERCURSO real da ordem informada. Aberta: termina na última parada. Com retorno: a volta à base
+     * é o último trecho — entra no traçado, na distância e na duração.
+     */
+    async calcularPercurso(origem: Coordenadas, paradas: ParadaDeRota[], retorno?: Coordenadas | null): Promise<Percurso> {
+      const pontos = [origem, ...paradas.map((parada) => parada.coordenadas), ...(retorno ? [retorno] : [])].map(paraCoordenada).join(";");
       const corpo = await pedir(`/directions/v5/mapbox/${perfil}/${pontos}`, {
         geometries: "geojson",
         overview: "full",

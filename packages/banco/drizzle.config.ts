@@ -21,6 +21,9 @@ export default defineConfig({
   out: "./drizzle",
   // Código em camelCase (criadoEm) e banco em snake_case (criado_em), conforme CLAUDE.md.
   casing: "snake_case",
+  // Tabelas/visões da própria extensão PostGIS (ex.: spatial_ref_sys) não são schema do Jaa: sem isto,
+  // introspecção (pull/push) as trataria como tabelas nossas.
+  extensionsFilters: ["postgis"],
   dbCredentials: { url },
   strict: true,
   verbose: true,

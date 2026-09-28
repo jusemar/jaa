@@ -33,9 +33,13 @@ export const itemListaConversasSchema = z.object({
   id: z.uuid(),
   tipo: z.literal("direta"),
   outraIdentidade: participanteConversaSchema,
-  // A atividade da conversa é a sua mensagem mais recente; o id (UUIDv7) define a ordem da lista.
-  ultimaMensagem: mensagemSchema,
+  // Mensagem mais recente que ESTA identidade vê. null = ela LIMPOU a conversa e nada novo chegou.
+  ultimaMensagem: mensagemSchema.nullable(),
+  // Ordem e cursor da lista (UUIDv7): a última mensagem visível ou, na conversa limpa, até onde limpou.
+  atividadeId: z.uuid(),
   naoLidas: contagemNaoLidasSchema,
+  // Há bloqueio de comunicação (qualquer sentido) com a outra PESSOA: a lista mostra 🚫.
+  comunicacaoBloqueada: z.boolean(),
 });
 
 export type ItemListaConversas = z.infer<typeof itemListaConversasSchema>;
@@ -48,3 +52,25 @@ export const paginaConversasSchema = z.object({
 });
 
 export type PaginaConversas = z.infer<typeof paginaConversasSchema>;
+
+/**
+ * RESUMO DE NÃO LIDAS da identidade ATUANTE (para o indicador de Conversas em qualquer área): só as
+ * conversas que têm não lidas, com a MESMA contagem derivada do marcador de leitura que a lista usa
+ * — não é um contador paralelo. O cliente combina com `conversa:nao-lidas` (valor absoluto).
+ */
+export const resumoNaoLidasSchema = z.object({
+  conversas: z.array(z.object({ conversaId: z.uuid(), naoLidas: contagemNaoLidasSchema })),
+});
+
+export type ResumoNaoLidas = z.infer<typeof resumoNaoLidasSchema>;
+
+/**
+ * A PRÓPRIA identidade limpou ou apagou a conversa (só para ela). Vai para todas as conexões dela, que
+ * esvaziam o histórico mostrado ("limpa") ou tiram a conversa da lista ("apagada"). O outro participante
+ * não recebe nada: para ele, nada mudou.
+ */
+export const EVENTO_CONVERSA_ESTADO_PESSOAL = "conversa:estado-pessoal";
+
+export const eventoConversaEstadoPessoalSchema = z.object({ conversaId: z.uuid(), acao: z.enum(["limpa", "apagada"]) });
+
+export type EventoConversaEstadoPessoal = z.infer<typeof eventoConversaEstadoPessoalSchema>;

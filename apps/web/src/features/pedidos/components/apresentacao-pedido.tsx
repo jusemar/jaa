@@ -34,6 +34,23 @@ function LinhaPagamento({ pedido }: { pedido: Pick<Pedido, "formaPagamentoNaEntr
   );
 }
 
+/**
+ * Subtotal e taxa de entrega do SNAPSHOT do pedido (o que valeu na compra). Nada é recalculado:
+ * mudar o frete da zona depois não altera o que um pedido antigo mostra.
+ */
+function ValoresPedido({ pedido }: { pedido: Pick<ResumoPedido, "subtotalCentavos" | "freteFinalCentavos"> }) {
+  return (
+    <dl data-valores-pedido className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 text-xs text-conteudo-suave">
+      <dt>Subtotal</dt>
+      <dd className="text-right">{formatarPrecoCentavos(pedido.subtotalCentavos)}</dd>
+      <dt>Taxa de entrega</dt>
+      <dd data-taxa-entrega-pedido={pedido.freteFinalCentavos} className="text-right">
+        {pedido.freteFinalCentavos === 0 ? "Grátis" : formatarPrecoCentavos(pedido.freteFinalCentavos)}
+      </dd>
+    </dl>
+  );
+}
+
 export function CardPedido({ pedido, aoAbrir, visaoCliente = false }: { pedido: ResumoPedido; aoAbrir: (pedidoId: string) => void; visaoCliente?: boolean }) {
   const rotulos = visaoCliente ? ROTULO_STATUS_PEDIDO_CLIENTE : ROTULO_STATUS_PEDIDO;
   return (
@@ -58,6 +75,7 @@ export function CardPedido({ pedido, aoAbrir, visaoCliente = false }: { pedido: 
           </li>
         ))}
       </ul>
+      <ValoresPedido pedido={pedido} />
       <p data-total-pedido className="fonte-display text-sm font-bold">
         Total: {formatarPrecoCentavos(pedido.totalCentavos)}
       </p>
@@ -186,6 +204,7 @@ export function DetalhePedido({
           </li>
         ))}
       </ol>
+      <ValoresPedido pedido={pedido} />
       <p data-total-pedido className="fonte-display text-base font-bold">
         Total: {formatarPrecoCentavos(pedido.totalCentavos)}
       </p>

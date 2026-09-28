@@ -104,6 +104,10 @@ export function registrarRotasMensagens(
         };
         return resposta.code(409).send(erro);
       }
+      case "comunicacao-bloqueada": {
+        const erro: ErroApi = { codigo: "COMUNICACAO_BLOQUEADA", mensagem: "Mensagens bloqueadas entre vocês." };
+        return resposta.code(403).send(erro);
+      }
       case "criada":
         return resposta.code(201).send(serializarMensagem(resultado.mensagem));
       case "ja-existente":
@@ -172,6 +176,10 @@ export function registrarRotasMensagens(
       case "excluida": {
         const erro: ErroApi = { codigo: "MENSAGEM_EXCLUIDA", mensagem: "Mensagem excluída não pode ser editada." };
         return resposta.code(409).send(erro);
+      }
+      case "comunicacao-bloqueada": {
+        const erro: ErroApi = { codigo: "COMUNICACAO_BLOQUEADA", mensagem: "Mensagens bloqueadas entre vocês." };
+        return resposta.code(403).send(erro);
       }
       case "editada":
       case "sem-alteracao":

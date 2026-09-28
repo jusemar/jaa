@@ -61,6 +61,20 @@ export interface MensagensLidas extends Destinatarios {
   ateMensagemId: string;
 }
 
+// Um bloqueio entre duas pessoas foi criado ou desfeito: cada uma relê a situação com a outra.
+export interface BloqueioAtualizado extends Destinatarios {
+  tipo: "bloqueio-atualizado";
+  // A OUTRA pessoa, do ponto de vista de quem recebe.
+  identidadeId: string;
+}
+
+// A identidade limpou/apagou a conversa só para ela: as conexões DELA atualizam lista e histórico.
+export interface ConversaEstadoPessoal extends Destinatarios {
+  tipo: "conversa-estado-pessoal";
+  conversaId: string;
+  acao: "limpa" | "apagada";
+}
+
 export type EventoDominioMensagens =
   | MensagemCriada
   | MensagemAtualizada
@@ -68,7 +82,9 @@ export type EventoDominioMensagens =
   | MensagensEntregues
   | MensagensLidas
   | NaoLidasAtualizadas
-  | NotificacaoNovaMensagem;
+  | NotificacaoNovaMensagem
+  | BloqueioAtualizado
+  | ConversaEstadoPessoal;
 
 type OuvinteEventosMensagens = (evento: EventoDominioMensagens) => void;
 

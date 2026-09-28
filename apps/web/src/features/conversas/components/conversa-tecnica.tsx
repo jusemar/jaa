@@ -71,6 +71,8 @@ import {
 } from "@/features/carrinho/components/painel-carrinho";
 import { EtapaEnderecoEntrega } from "@/features/enderecos/components/etapa-endereco-entrega";
 import { useCarrinho } from "@/features/carrinho/hooks/use-carrinho";
+import { useFreteEntrega } from "@/features/carrinho/hooks/use-frete-entrega";
+import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import {
   escolhasDaMontagem,
   itensParaPedido,
@@ -86,6 +88,8 @@ import { AcoesMidiaDesabilitadas } from "./acoes-midia-desabilitadas";
 import { BalaoMensagem } from "./balao-mensagem";
 import { BarraContextoCompositor } from "./barra-contexto-compositor";
 import { CabecalhoConversa } from "./cabecalho-conversa";
+import { useBloqueioConversa } from "../hooks/use-bloqueio-conversa";
+import { AcoesDaConversa, type AcaoConversa, type AlvoAcaoConversa } from "./acoes-conversa";
 import {
   PreviaRespostaCompositor,
   type RespostaEmComposicao,
@@ -176,6 +180,8 @@ export function ConversaTecnica({
   aoMensagemConfirmada,
   aoMensagemAtualizada,
   aoMensagemExcluidaParaMim,
+  aoConversarCom,
+  aoAcaoConversa,
 }: {
   identidadeId: string;
   // Só identidade PESSOAL compra; a empresa participa da conversa, não faz pedido de si mesma.
@@ -193,6 +199,10 @@ export function ConversaTecnica({
   // Idem para alterações (edição/exclusão) feitas por esta aba.
   aoMensagemAtualizada: (mensagem: Mensagem) => void;
   aoMensagemExcluidaParaMim: (exclusao: ExclusaoParaMim) => void;
+  // Abre OUTRA conversa direta (ex.: o cliente falando com o entregador a partir do pedido).
+  aoConversarCom?: ((nomeUsuario: string) => void) | undefined;
+  // O MESMO executor de ações do menu da lista (limpar, apagar, bloquear/desbloquear).
+  aoAcaoConversa?: ((acao: AcaoConversa, alvo: AlvoAcaoConversa) => Promise<string | null>) | undefined;
 }) {
   const [reconciliada, setReconciliada] = useState(conversaVazia);
   const mensagens = reconciliada.mensagens;
@@ -202,6 +212,9 @@ export function ConversaTecnica({
   const leituraConfirmadaRef = useRef<string | null>(null);
   const [proximoCursor, setProximoCursor] = useState<string | null>(null);
   const [texto, setTexto] = useState("");
+  // Bloqueio de mensagens com a outra PESSOA (servidor é a verdade). Bloquear/desbloquear fica no menu da lista.
+  const bloqueio = useBloqueioConversa(conversa.outraIdentidade.identidadeId);
+  const bloqueada = bloqueio.situacao !== null && (bloqueio.situacao.euBloqueei || bloqueio.situacao.fuiBloqueado);
   const [pendente, setPendente] = useState<TentativaEnvio | null>(null);
   const [respostaSelecionada, setRespondendo] =
     useState<RespostaEmComposicao | null>(null);
@@ -252,8 +265,9 @@ export function ConversaTecnica({
   // Destino escolhido para este pedido (com ponto já confirmado no mapa).
   const [enderecoEntrega, setEnderecoEntrega] =
     useState<EnderecoCliente | null>(null);
-  const [coberturaEnderecoEntrega, setCoberturaEnderecoEntrega] =
-    useState(false);
+  // Taxa de entrega do destino, informada pelo servidor a cada escolha/troca de endereço.
+  const { frete: freteEntrega, consultar: consultarFreteEntrega } =
+    useFreteEntrega(conversa.outraIdentidade.identidadeId);
   const [escolhendoEndereco, setEscolhendoEndereco] = useState(false);
   // Carrinho aberto de OUTRA empresa: pergunta antes de substituir; nunca troca em silêncio.
   const [trocaDeEmpresa, setTrocaDeEmpresa] = useState<{
@@ -463,6 +477,8 @@ export function ConversaTecnica({
       // A mensagem citada não vale nesta conversa: descarta a referência e mantém o texto para envio normal.
       if (resultado.codigo === "MENSAGEM_RESPONDIDA_NAO_ENCONTRADA")
         setRespondendo(null);
+      // O servidor recusou por bloqueio (ex.: a outra pessoa acabou de bloquear): mostra o estado real.
+      if (resultado.codigo === "COMUNICACAO_BLOQUEADA") void bloqueio.reler();
     } finally {
       setOcupado(false);
     }
@@ -638,7 +654,7 @@ export function ConversaTecnica({
       trocaDeEmpresa.observacao,
     );
     setEnderecoEntrega(null);
-    setCoberturaEnderecoEntrega(false);
+    void consultarFreteEntrega(null);
     setTrocaDeEmpresa(null);
     setPainelPedido("automatico");
   }
@@ -646,10 +662,12 @@ export function ConversaTecnica({
   async function confirmarPedido(confirmacao: ConfirmacaoPedido) {
     if (!carrinho) return;
     // Pedido de entrega não é criado sem destino; o servidor confere de novo.
-    if (!enderecoEntrega || !coberturaEnderecoEntrega) {
+    if (!enderecoEntrega) {
       setEscolhendoEndereco(true);
       return;
     }
+    // Sem taxa informada pelo servidor (consultando ou fora da área), não há o que confirmar.
+    if (freteEntrega.estado !== "atendido") return;
     const itens = itensParaPedido(carrinho);
     const assinatura = JSON.stringify({
       itens,
@@ -693,11 +711,14 @@ export function ConversaTecnica({
       }
       limpar();
       setEnderecoEntrega(null);
-      setCoberturaEnderecoEntrega(false);
+      void consultarFreteEntrega(null);
       setTentativaPedido(null);
       setPainelPedido("automatico");
       setEscolhendoEndereco(false);
-      setAvisoPedido("Pedido enviado para a empresa.");
+      // Valores OFICIAIS do pedido criado (o servidor recalculou itens e taxa de entrega).
+      setAvisoPedido(
+        `Pedido #${resultado.dados.numero} enviado para a empresa — total ${formatarPrecoCentavos(resultado.dados.totalCentavos)}.`,
+      );
     } finally {
       setEnviandoPedido(false);
     }
@@ -786,8 +807,10 @@ export function ConversaTecnica({
           presenca={atividade.presenca}
           digitando={atividade.outraDigitando}
           {...(aoVoltar ? { aoVoltar } : {})}
+          bloqueada={bloqueada}
           acoes={
-            outro.tipo === "empresarial" && (
+            <div className="flex items-center gap-1">
+            {outro.tipo === "empresarial" && (
               /*
                 CABEÇALHO SÓ COM ÍCONES: rótulo escrito virava três palavras competindo com o nome da
                 empresa em tela estreita. O significado vai em `aria-label` + `title` (dica ao passar o
@@ -849,7 +872,10 @@ export function ConversaTecnica({
                   </BotaoCabecalho>
                 )}
               </div>
-            )
+            )}
+            {/* O MESMO menu (e as mesmas ações) do "⋯" da lista: limpar, apagar, bloquear/desbloquear. */}
+            {aoAcaoConversa && <AcoesDaConversa alvo={{ id: conversa.id, outraIdentidade: outro }} aoExecutar={aoAcaoConversa} />}
+            </div>
           }
         />
       </div>
@@ -931,7 +957,8 @@ export function ConversaTecnica({
                 empresaIdentidadeId={conversa.outraIdentidade.identidadeId}
                 aoSelecionar={(endereco) => {
                   setEnderecoEntrega(endereco);
-                  setCoberturaEnderecoEntrega(true);
+                  // Trocar de endereço pode trocar de zona: a taxa é perguntada de novo ao servidor.
+                  void consultarFreteEntrega(endereco);
                   setEscolhendoEndereco(false);
                 }}
                 aoVoltar={() => setEscolhendoEndereco(false)}
@@ -946,7 +973,7 @@ export function ConversaTecnica({
               <PainelCarrinho
                 carrinho={carrinho}
                 endereco={enderecoEntrega}
-                coberturaAprovada={coberturaEnderecoEntrega}
+                frete={freteEntrega}
                 enviando={enviandoPedido}
                 erro={erroPedido}
                 aoAlterarQuantidade={alterarQuantidade}
@@ -958,7 +985,7 @@ export function ConversaTecnica({
                   if (window.confirm("Remover todos os itens do seu pedido?")) {
                     limpar();
                     setEnderecoEntrega(null);
-                    setCoberturaEnderecoEntrega(false);
+                    void consultarFreteEntrega(null);
                   }
                 }}
               />
@@ -973,6 +1000,7 @@ export function ConversaTecnica({
                 acoes={
                   <AcompanhamentoDoPedido
                     pedidoId={pedidoAberto.id}
+                    {...(aoConversarCom ? { aoConversarCom } : {})}
                     {...(pedidoAberto.destino
                       ? {
                           destino: {
@@ -1141,6 +1169,8 @@ export function ConversaTecnica({
 
             <form
               onSubmit={aoEnviar}
+              // Com bloqueio (qualquer sentido) não se digita nem envia; o 🚫 no cabeçalho explica.
+              data-compositor-bloqueado={bloqueada ? "" : undefined}
               /*
                 UMA PÍLULA: anexar, campo e enviar dentro do mesmo retângulo arredondado, em uma
                 linha só. Continua sendo <input> de uma linha, então Enter envia (um textarea
@@ -1162,7 +1192,8 @@ export function ConversaTecnica({
                 ref={campoMensagemRef}
                 name="mensagem"
                 value={texto}
-                placeholder="Digite uma mensagem…"
+                disabled={bloqueada}
+                placeholder={bloqueada ? "" : "Digite uma mensagem…"}
                 onChange={(evento) => {
                   setTexto(evento.target.value);
                   if (!editando) atividade.informarTexto(evento.target.value);
@@ -1182,7 +1213,7 @@ export function ConversaTecnica({
               */}
               <button
                 type="submit"
-                disabled={ocupado}
+                disabled={ocupado || bloqueada}
                 aria-label={rotuloEnvio}
                 className={`grid h-9 shrink-0 place-items-center rounded-full bg-marca text-marca-conteudo transition-colors hover:bg-marca/90 disabled:opacity-50 ${rotuloEnvio === "Enviar" ? "w-9" : "px-3.5 text-xs font-medium"}`}
               >

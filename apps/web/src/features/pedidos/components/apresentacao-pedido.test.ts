@@ -13,6 +13,8 @@ const resumo: ResumoPedido = {
   status: "recebido",
   formaPagamentoNaEntrega: "dinheiro",
   trocoParaCentavos: null,
+  subtotalCentavos: 9180,
+  freteFinalCentavos: 0,
   totalCentavos: 9180,
   itens: [
     { nomeProduto: "Pizza Calabresa", quantidade: 2, subtotalCentavos: 7980, escolhas: [], observacao: null },
@@ -35,6 +37,12 @@ const pedido: Pedido = {
   formaPagamentoNaEntrega: "dinheiro",
   trocoParaCentavos: null,
   totalCentavos: 9180,
+  subtotalCentavos: 9180,
+  freteOriginalCentavos: 0,
+  descontoFreteCentavos: 0,
+  freteFinalCentavos: 0,
+  zonaEntregaId: null,
+  zonaEntregaNome: null,
   destino: {
     enderecoId: "66666666-0000-4000-8000-000000000000",
     cep: "30123000",
@@ -101,6 +109,21 @@ describe("card e detalhe do Pedido Jaa (Web técnica)", () => {
     for (const esperado of ["Pedido #15 — Pizzaria BH", "Cliente: Junior Rocha", "2× Pizza Calabresa — R$ 39,90 cada = R$ 79,80", "1× Refrigerante 2L — R$ 12,00 cada = R$ 12,00", "Total: R$ 91,80", "Status: Pedido recebido"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
+  });
+
+  it("pedido histórico mostra subtotal, taxa e total do SNAPSHOT, sem recalcular", () => {
+    // Snapshot com R$ 5,00 de frete: é o que vale, mesmo que a zona hoje cobre outro valor.
+    const comFrete = { ...pedido, subtotalCentavos: 9180, freteOriginalCentavos: 500, freteFinalCentavos: 500, totalCentavos: 9680, zonaEntregaNome: "Bairro A" };
+    const detalhe = texto(renderToStaticMarkup(createElement(DetalhePedido, { pedido: comFrete, aoFechar: () => {} })));
+    for (const esperado of ["Subtotal", "R$ 91,80", "Taxa de entrega", "R$ 5,00", "Total: R$ 96,80"]) {
+      assert.ok(detalhe.includes(esperado), esperado);
+    }
+    const doCard = texto(card({ ...resumo, subtotalCentavos: 9180, freteFinalCentavos: 500, totalCentavos: 9680 }));
+    for (const esperado of ["Subtotal", "Taxa de entrega", "R$ 5,00", "Total: R$ 96,80"]) {
+      assert.ok(doCard.includes(esperado), esperado);
+    }
+    // Frete 0 no snapshot (zona grátis, empresa sem zonas ou pedido anterior ao frete): "Grátis".
+    assert.ok(texto(card(resumo)).includes("Taxa de entregaGrátis"));
   });
 
   it("nem card nem detalhe pedem ou exibem dados de cartão", () => {

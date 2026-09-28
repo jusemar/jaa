@@ -128,11 +128,27 @@ describe("lista de pedidos da empresa", () => {
     assert.equal(linha?.numero, recente.numero);
     assert.equal(linha?.quantidadeItens, 1);
     assert.equal(linha?.totalCentavos, 7980);
+    // Empresa sem zonas: sem frete e sem zona (o valor vem do snapshot do pedido).
+    assert.deepEqual([linha?.subtotalCentavos, linha?.freteFinalCentavos, linha?.zonaEntregaNome], [7980, 0, null]);
     assert.equal(linha?.formaPagamentoNaEntrega, "dinheiro");
     assert.equal(linha?.trocoParaCentavos, 10000);
     assert.equal(linha?.status, "recebido");
     // Nada de conta, operador ou empresaId interno na linha da lista.
-    assert.deepEqual(Object.keys(linha ?? {}).sort(), ["cliente", "conversaId", "criadoEm", "formaPagamentoNaEntrega", "id", "numero", "quantidadeItens", "status", "totalCentavos", "trocoParaCentavos"]);
+    assert.deepEqual(Object.keys(linha ?? {}).sort(), [
+      "cliente",
+      "conversaId",
+      "criadoEm",
+      "formaPagamentoNaEntrega",
+      "freteFinalCentavos",
+      "id",
+      "numero",
+      "quantidadeItens",
+      "status",
+      "subtotalCentavos",
+      "totalCentavos",
+      "trocoParaCentavos",
+      "zonaEntregaNome",
+    ]);
   });
 
   it("filtra por status e pagina com cursor determinístico", async () => {

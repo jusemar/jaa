@@ -10,6 +10,8 @@ export function montarResumoPedido({ pedido, itens }: PedidoComItensRegistro): R
     status: pedido.status,
     formaPagamentoNaEntrega: pedido.formaPagamentoNaEntrega,
     trocoParaCentavos: pedido.trocoParaCentavos,
+    subtotalCentavos: pedido.subtotalCentavos,
+    freteFinalCentavos: pedido.freteFinalCentavos,
     totalCentavos: pedido.totalCentavos,
     itens: itens.map((item) => ({
       nomeProduto: item.nomeProduto,

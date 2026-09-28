@@ -13,7 +13,9 @@ export function serializarItemListaConversas(item: ItemListaConversasRegistro): 
       nomeExibicao: item.outraIdentidade.nomeExibicao,
       nomeUsuario: item.outraIdentidade.nomeUsuario,
     },
-    ultimaMensagem: serializarMensagem(item.ultimaMensagem),
+    ultimaMensagem: item.ultimaMensagem ? serializarMensagem(item.ultimaMensagem) : null,
+    atividadeId: item.atividadeId,
     naoLidas: item.naoLidas,
+    comunicacaoBloqueada: item.comunicacaoBloqueada,
   };
 }

@@ -1,4 +1,5 @@
 import type { Banco } from "@jaa/banco";
+import { existeBloqueioCom, travarPar } from "../../bloqueios/repositorios/repositorio-bloqueios.js";
 import { listarIdsParticipantesDaConversa } from "../../conversas/repositorios/repositorio-conversas.js";
 import type { CanalEventosMensagens } from "../lib/eventos-mensagens.js";
 import {
@@ -13,7 +14,9 @@ type ResultadoEnviarMensagem =
   | { tipo: "criada" | "ja-existente"; mensagem: MensagemRegistro }
   | { tipo: "conversa-nao-encontrada" }
   | { tipo: "mensagem-respondida-nao-encontrada" }
-  | { tipo: "id-cliente-reutilizado" };
+  | { tipo: "id-cliente-reutilizado" }
+  // Há bloqueio (em qualquer sentido) entre as pessoas da conversa: nada é gravado nem publicado.
+  | { tipo: "comunicacao-bloqueada" };
 
 /**
  * Fluxo obrigatório: autoriza → persiste → só então publica o evento realtime.
@@ -45,16 +48,33 @@ export async function enviarMensagemTexto(
     return { tipo: "mensagem-respondida-nao-encontrada" };
   }
 
+  /*
+   * BLOQUEIO: conferido NA MESMA TRANSAÇÃO da gravação, com a trava do par (a mesma que o bloqueio
+   * usa). Ou a mensagem entra antes do bloqueio, ou o bloqueio já vale para ela — nunca as duas.
+   * Bloqueio só existe entre pessoas; conversa com empresa nunca encontra linha e segue igual.
+   */
+  const outras = participantes.filter((identidadeId) => identidadeId !== remetenteIdentidadeId);
   let criada: MensagemRegistro | null;
   try {
-    criada = await inserirMensagemTexto(banco, {
-      conversaId,
-      remetenteIdentidadeId,
-      idCliente: entrada.idCliente,
-      conteudo: entrada.conteudo,
-      mensagemRespondida,
-      operadorUsuarioId,
+    const resultado = await banco.transaction(async (transacao) => {
+      for (const outra of outras) await travarPar(transacao, remetenteIdentidadeId, outra);
+      if (await existeBloqueioCom(transacao, remetenteIdentidadeId, outras)) return "bloqueada" as const;
+      return inserirMensagemTexto(transacao, {
+        conversaId,
+        remetenteIdentidadeId,
+        idCliente: entrada.idCliente,
+        conteudo: entrada.conteudo,
+        mensagemRespondida,
+        operadorUsuarioId,
+      });
     });
+    if (resultado === "bloqueada") {
+      // Retry de uma mensagem gravada ANTES do bloqueio continua idempotente (devolve a existente).
+      const existente = await buscarMensagemPorIdCliente(banco, remetenteIdentidadeId, entrada.idCliente);
+      if (existente && existente.conversaId === conversaId) return { tipo: "ja-existente", mensagem: existente };
+      return { tipo: "comunicacao-bloqueada" };
+    }
+    criada = resultado;
   } catch (erro) {
     if (ehViolacaoReferenciaResposta(erro)) return { tipo: "mensagem-respondida-nao-encontrada" };
     throw erro;

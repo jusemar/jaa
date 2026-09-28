@@ -277,10 +277,11 @@ export async function listarSaidasDosVinculos(
 export async function buscarSaidaAtivaDoPedido(
   banco: Banco,
   pedidoId: string,
-): Promise<{ saidaId: string; posicao: number } | null> {
+): Promise<{ saidaId: string; posicao: number; status: StatusSaida } | null> {
   const [parada] = await banco
-    .select({ saidaId: paradasSaida.saidaId, posicao: paradasSaida.posicao })
+    .select({ saidaId: paradasSaida.saidaId, posicao: paradasSaida.posicao, status: saidasEntrega.status })
     .from(paradasSaida)
+    .innerJoin(saidasEntrega, eq(saidasEntrega.id, paradasSaida.saidaId))
     .where(
       and(
         eq(paradasSaida.pedidoId, pedidoId),
@@ -357,70 +358,199 @@ function ehViolacaoParadaAtiva(erro: unknown): boolean {
  * entregador. A atribuição continua sendo a ÚNICA fonte de verdade de "quem é o entregador atual" —
  * a saída só agrupa e ordena. Dois gestores disputando o mesmo pedido: um vence (índice único).
  */
+type Transacao = Parameters<Parameters<Banco["transaction"]>[0]>[0];
+
+interface DadosSaidaManual {
+  empresaId: string;
+  entregadorId: string;
+  criadaPorUsuarioId: string;
+  ordem: string[];
+  exigeRetornoBase?: boolean | undefined;
+}
+
+// Grava saída manual + paradas + atribuições DENTRO de uma transação já aberta (criação e transferência).
+async function gravarSaidaManual(transacao: Transacao, dados: DadosSaidaManual): Promise<{ saidaId: string }> {
+  // Saída manual nasce PREPARADA: já fechada (o gestor escolheu os pedidos) e já atribuída.
+  const agora = new Date();
+  const [saida] = await transacao
+    .insert(saidasEntrega)
+    .values({
+      empresaId: dados.empresaId,
+      entregadorId: dados.entregadorId,
+      criadaPorUsuarioId: dados.criadaPorUsuarioId,
+      exigeRetornoBase: dados.exigeRetornoBase ?? false,
+      fechadaEm: agora,
+      atribuidaEm: agora,
+    })
+    .returning({ id: saidasEntrega.id });
+  if (!saida) throw new Error("Inserção de saída não retornou registro.");
+
+  await transacao
+    .insert(paradasSaida)
+    .values(
+      dados.ordem.map((pedidoId, indice) => ({
+        saidaId: saida.id,
+        pedidoId,
+        empresaId: dados.empresaId,
+        posicao: indice + 1,
+      })),
+    );
+
+  for (const pedidoId of dados.ordem) {
+    // Encerra atribuição anterior (se houver) e abre a desta saída: um entregador atual por pedido.
+    await transacao
+      .update(atribuicoesEntrega)
+      .set({
+        encerradoEm: new Date(),
+        motivoEncerramento: "Reatribuído pela saída de entrega",
+      })
+      .where(
+        and(
+          eq(atribuicoesEntrega.pedidoId, pedidoId),
+          isNull(atribuicoesEntrega.encerradoEm),
+        ),
+      );
+    await transacao.insert(atribuicoesEntrega).values({
+      pedidoId,
+      entregadorId: dados.entregadorId,
+      empresaId: dados.empresaId,
+      atribuidoPorUsuarioId: dados.criadaPorUsuarioId,
+    });
+  }
+
+  return { saidaId: saida.id };
+}
+
 export async function inserirSaidaComParadas(
   banco: Banco,
-  dados: {
-    empresaId: string;
-    entregadorId: string;
-    criadaPorUsuarioId: string;
-    ordem: string[];
-  },
+  dados: DadosSaidaManual,
 ): Promise<{ saidaId: string } | { tipo: "conflito" }> {
   try {
-    return await banco.transaction(async (transacao) => {
-      // Saída manual nasce PREPARADA: já fechada (o gestor escolheu os pedidos) e já atribuída.
-      const agora = new Date();
-      const [saida] = await transacao
-        .insert(saidasEntrega)
-        .values({
-          empresaId: dados.empresaId,
-          entregadorId: dados.entregadorId,
-          criadaPorUsuarioId: dados.criadaPorUsuarioId,
-          fechadaEm: agora,
-          atribuidaEm: agora,
-        })
-        .returning({ id: saidasEntrega.id });
-      if (!saida) throw new Error("Inserção de saída não retornou registro.");
-
-      await transacao
-        .insert(paradasSaida)
-        .values(
-          dados.ordem.map((pedidoId, indice) => ({
-            saidaId: saida.id,
-            pedidoId,
-            empresaId: dados.empresaId,
-            posicao: indice + 1,
-          })),
-        );
-
-      for (const pedidoId of dados.ordem) {
-        // Encerra atribuição anterior (se houver) e abre a desta saída: um entregador atual por pedido.
-        await transacao
-          .update(atribuicoesEntrega)
-          .set({
-            encerradoEm: new Date(),
-            motivoEncerramento: "Reatribuído pela saída de entrega",
-          })
-          .where(
-            and(
-              eq(atribuicoesEntrega.pedidoId, pedidoId),
-              isNull(atribuicoesEntrega.encerradoEm),
-            ),
-          );
-        await transacao.insert(atribuicoesEntrega).values({
-          pedidoId,
-          entregadorId: dados.entregadorId,
-          empresaId: dados.empresaId,
-          atribuidoPorUsuarioId: dados.criadaPorUsuarioId,
-        });
-      }
-
-      return { saidaId: saida.id };
-    });
+    return await banco.transaction((transacao) => gravarSaidaManual(transacao, dados));
   } catch (erro) {
     if (ehViolacaoParadaAtiva(erro)) return { tipo: "conflito" };
     throw erro;
   }
+}
+
+export type ResultadoTransferencia =
+  | {
+      tipo: "transferido";
+      saidaAnteriorId: string;
+      statusAnterior: StatusSaida;
+      saidaAnteriorConcluida: boolean;
+      entregadorAnteriorId: string | null;
+      saidaNovaId: string;
+    }
+  // A saída do pedido já é deste entregador: nada a transferir.
+  | { tipo: "mesmo-entregador"; saidaId: string }
+  // O pedido não está (mais) em saída ativa — ex.: a formação foi concluída/cancelada agora há pouco.
+  | { tipo: "sem-saida" }
+  | { tipo: "saida-em-andamento" }
+  | { tipo: "pedido-nao-pronto" }
+  | { tipo: "entregador-indisponivel" };
+
+/**
+ * TRANSFERÊNCIA MANUAL de um pedido que está numa saída que AINDA NÃO saiu (formação automática,
+ * aguardando entregador, preparada ou liberada) para uma saída manual NOVA do entregador escolhido.
+ *
+ * Tudo numa transação, sob a MESMA trava por empresa do despacho automático: fechar/despachar uma
+ * formação e transferir nunca se intercalam. Dentro dela o estado real é relido e travado (pedido,
+ * parada/saída de origem e vínculo do novo entregador), então entregador iniciando a saída, pedido
+ * cancelado ou outra atribuição no mesmo instante resultam em recusa — nunca em duas saídas ativas,
+ * dois entregadores, parada órfã ou atribuição fantasma.
+ *
+ * Saída de origem: a parada é ENCERRADA (histórico preservado, com motivo), a versão da sequência
+ * avança (tela e percurso antigos ficam desatualizados) e, se não sobrou parada ativa, ela é concluída
+ * pelo mesmo mecanismo do cancelamento — nada é apagado.
+ */
+export async function transferirPedidoParaSaidaManual(
+  banco: Banco,
+  dados: {
+    empresaId: string;
+    pedidoId: string;
+    entregadorId: string;
+    usuarioId: string;
+    exigeRetornoBase: boolean;
+    podeTransferir: (status: StatusSaida) => boolean;
+    podeReceber: (vinculo: { status: (typeof entregadoresEmpresa.$inferSelect)["status"]; disponivel: boolean }) => boolean;
+  },
+): Promise<ResultadoTransferencia> {
+  return banco.transaction(async (transacao) => {
+    await transacao.execute(sql`select pg_advisory_xact_lock(hashtext(${dados.empresaId}))`);
+
+    const [pedido] = await transacao
+      .select({ status: pedidos.status })
+      .from(pedidos)
+      .where(and(eq(pedidos.id, dados.pedidoId), eq(pedidos.empresaId, dados.empresaId)))
+      .for("update")
+      .limit(1);
+    if (!pedido || pedido.status !== "pronto") return { tipo: "pedido-nao-pronto" };
+
+    const [origem] = await transacao
+      .select({
+        paradaId: paradasSaida.id,
+        saidaId: saidasEntrega.id,
+        status: saidasEntrega.status,
+        entregadorId: saidasEntrega.entregadorId,
+      })
+      .from(paradasSaida)
+      .innerJoin(saidasEntrega, eq(saidasEntrega.id, paradasSaida.saidaId))
+      .where(and(eq(paradasSaida.pedidoId, dados.pedidoId), isNull(paradasSaida.encerradaEm)))
+      .for("update")
+      .limit(1);
+    if (!origem) return { tipo: "sem-saida" };
+    if (!dados.podeTransferir(origem.status)) return { tipo: "saida-em-andamento" };
+    if (origem.entregadorId === dados.entregadorId) return { tipo: "mesmo-entregador", saidaId: origem.saidaId };
+
+    const [vinculo] = await transacao
+      .select({ status: entregadoresEmpresa.status, disponivel: entregadoresEmpresa.disponivel })
+      .from(entregadoresEmpresa)
+      .where(and(eq(entregadoresEmpresa.id, dados.entregadorId), eq(entregadoresEmpresa.empresaId, dados.empresaId)))
+      .for("update")
+      .limit(1);
+    if (!vinculo || !dados.podeReceber(vinculo)) return { tipo: "entregador-indisponivel" };
+
+    const agora = new Date();
+    await transacao
+      .update(paradasSaida)
+      .set({ encerradaEm: agora, motivoEncerramento: "Atribuído manualmente a outro entregador" })
+      .where(eq(paradasSaida.id, origem.paradaId));
+    await transacao
+      .update(saidasEntrega)
+      .set({ versaoSequencia: sql`${saidasEntrega.versaoSequencia} + 1` })
+      .where(eq(saidasEntrega.id, origem.saidaId));
+
+    const [restante] = await transacao
+      .select({ id: paradasSaida.id })
+      .from(paradasSaida)
+      .where(and(eq(paradasSaida.saidaId, origem.saidaId), isNull(paradasSaida.encerradaEm)))
+      .limit(1);
+    if (!restante) {
+      // Mesmo desfecho da saída que perdeu o último pedido por cancelamento: concluída, fechada para novos.
+      await transacao
+        .update(saidasEntrega)
+        .set({ status: "concluida", concluidaEm: agora, fechadaEm: sql`coalesce(${saidasEntrega.fechadaEm}, now())` })
+        .where(eq(saidasEntrega.id, origem.saidaId));
+      await transacao.delete(posicoesSaida).where(eq(posicoesSaida.saidaId, origem.saidaId));
+    }
+
+    const nova = await gravarSaidaManual(transacao, {
+      empresaId: dados.empresaId,
+      entregadorId: dados.entregadorId,
+      criadaPorUsuarioId: dados.usuarioId,
+      ordem: [dados.pedidoId],
+      exigeRetornoBase: dados.exigeRetornoBase,
+    });
+    return {
+      tipo: "transferido",
+      saidaAnteriorId: origem.saidaId,
+      statusAnterior: origem.status,
+      saidaAnteriorConcluida: !restante,
+      entregadorAnteriorId: origem.entregadorId,
+      saidaNovaId: nova.saidaId,
+    };
+  });
 }
 
 /**
@@ -627,3 +757,17 @@ export async function concluirSaidaSeTerminou(
 }
 
 export type { StatusSaida };
+
+/**
+ * Registra, UMA vez, que o cliente desta parada foi avisado de que ela é a PRÓXIMA. UPDATE condicional:
+ * duas publicações simultâneas, reconexão ou reprocessamento nunca geram um segundo aviso. Parada já
+ * encerrada não é avisada. Devolve true só para quem de fato gravou (e portanto deve avisar).
+ */
+export async function registrarAvisoProxima(banco: Banco, paradaId: string): Promise<boolean> {
+  const gravadas = await banco
+    .update(paradasSaida)
+    .set({ avisoProximaEm: sql`now()` })
+    .where(and(eq(paradasSaida.id, paradaId), isNull(paradasSaida.avisoProximaEm), isNull(paradasSaida.encerradaEm)))
+    .returning({ id: paradasSaida.id });
+  return gravadas.length > 0;
+}

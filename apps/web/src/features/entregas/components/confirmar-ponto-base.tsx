@@ -2,8 +2,7 @@
 
 import { formatarEnderecoResumido, type BaseEmpresa, type Coordenadas } from "@jaa/contratos";
 import { useEffect, useRef, useState } from "react";
-import { ATRIBUICAO_TILES, URL_TILES_MAPA } from "@/features/enderecos/mapa/configuracao-mapa";
-import { criarMapaLeaflet } from "@/features/enderecos/mapa/mapa-leaflet";
+import { criarMapaPontoPreferido } from "@/features/enderecos/mapa/mapa-mapbox";
 import { CENTRO_PADRAO, type MapaPonto } from "@/features/enderecos/mapa/provedor-mapa";
 
 /**
@@ -45,7 +44,7 @@ export function ConfirmarPontoBase({
     if (!elemento) return;
     let ativo = true;
 
-    void criarMapaLeaflet({ elemento, centro: centroInicial, pontoInicial: pontoSalvo ?? sugestao, aoMoverPonto: setPonto, urlTiles: URL_TILES_MAPA, atribuicao: ATRIBUICAO_TILES }).then((mapa) => {
+    void criarMapaPontoPreferido({ elemento, centro: centroInicial, pontoInicial: pontoSalvo ?? sugestao, aoMoverPonto: setPonto }).then((mapa) => {
       if (!ativo) {
         mapa.destruir();
         return;

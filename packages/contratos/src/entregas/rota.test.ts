@@ -15,6 +15,8 @@ const rota = (dados: Partial<RotaDaSaida> = {}): RotaDaSaida => ({
   motivoFallback: null,
   provedor: "mapbox",
   origem: { latitude: -19.9191, longitude: -43.9386 },
+  inicio: { latitude: -19.9191, longitude: -43.9386 },
+  comRetorno: false,
   sequenciaDoProvedor: true,
   geometria: [
     { latitude: -19.9191, longitude: -43.9386 },

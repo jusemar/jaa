@@ -121,9 +121,32 @@ describe("agenda de endereços", () => {
   });
 
   it("recusa endereço incompleto, CEP e UF inválidos", async () => {
-    for (const invalido of [{ logradouro: "  " }, { numero: "" }, { cep: "123" }, { uf: "XX" }, { apelido: "" }]) {
+    for (const invalido of [{ logradouro: "  " }, { numero: "" }, { cep: "123" }, { uf: "XX" }, { apelido: "x".repeat(41) }]) {
       assert.equal((await ctx.api(B, "POST", "/enderecos", { ...enderecoBase, ...invalido })).statusCode, 400, JSON.stringify(invalido));
     }
+  });
+
+  it("apelido é OPCIONAL: vazio, só espaços ou ausente grava null; com apelido continua igual", async () => {
+    const semApelido = [
+      await cadastrar(B, { apelido: "" }),
+      await cadastrar(B, { apelido: "   " }),
+      await cadastrar(B, { apelido: undefined }),
+    ];
+    const comApelido = await cadastrar(B, { apelido: "Base Barreiro" });
+    for (const endereco of semApelido) assert.equal(endereco.apelido, null);
+    assert.equal(comApelido.apelido, "Base Barreiro");
+
+    // Leitura posterior (lista e banco) mantém a mesma representação.
+    const lista: ListaEnderecos = (await ctx.api(B, "GET", "/enderecos")).json();
+    for (const endereco of semApelido) assert.equal(lista.enderecos.find((salvo) => salvo.id === endereco.id)?.apelido, null);
+    const [linha] = await ctx.banco.select().from(enderecosCliente).where(eq(enderecosCliente.id, semApelido[0]!.id));
+    assert.equal(linha?.apelido, null);
+
+    // Tirar o apelido de um endereço existente também vale (e não invalida o ponto).
+    const editado = await ctx.api(B, "PATCH", `/enderecos/${comApelido.id}`, { ...enderecoBase, apelido: "" });
+    assert.equal(editado.statusCode, 200, editado.body);
+    assert.equal(editado.json().apelido, null);
+    for (const endereco of [...semApelido, comApelido]) await ctx.api(B, "DELETE", `/enderecos/${endereco.id}`);
   });
 
   it("arquiva o endereço sem apagar o histórico dos pedidos", async () => {

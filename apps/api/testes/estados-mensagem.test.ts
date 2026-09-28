@@ -1,3 +1,4 @@
+import "./apoio/exigir-banco-de-teste.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
@@ -549,11 +550,11 @@ describe("histórico e lista refletem o estado persistido", () => {
 
     const listaA: PaginaConversas = (await api(A, "GET", "/conversas")).json();
     const item = listaA.conversas.find((c) => c.id === conversaAB);
-    assert.equal(item?.ultimaMensagem.id, enviada.id);
-    assert.equal(item?.ultimaMensagem.estado, "enviada");
+    assert.equal(item?.ultimaMensagem?.id, enviada.id);
+    assert.equal(item?.ultimaMensagem?.estado, "enviada");
 
     await confirmarLeitura(B, conversaAB, { ateMensagemId: enviada.id });
     const listaDepois: PaginaConversas = (await api(A, "GET", "/conversas")).json();
-    assert.equal(listaDepois.conversas.find((c) => c.id === conversaAB)?.ultimaMensagem.estado, "lida");
+    assert.equal(listaDepois.conversas.find((c) => c.id === conversaAB)?.ultimaMensagem?.estado, "lida");
   });
 });

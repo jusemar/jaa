@@ -16,6 +16,8 @@ export function resumoPedidoSql(tabelaMensagens = "mensagens"): SQL<ResumoPedido
       'status', pedido.status,
       'formaPagamentoNaEntrega', pedido.forma_pagamento_na_entrega,
       'trocoParaCentavos', pedido.troco_para_centavos,
+      'subtotalCentavos', pedido.subtotal_centavos,
+      'freteFinalCentavos', pedido.frete_final_centavos,
       'totalCentavos', pedido.total_centavos,
       'itens', coalesce((
         select json_agg(

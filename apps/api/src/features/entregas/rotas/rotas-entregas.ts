@@ -10,6 +10,7 @@ import {
   enviarPosicaoEntradaSchema,
   salvarBaseEntradaSchema,
   reordenarSequenciaEntradaSchema,
+  recalcularRotaEntradaSchema,
   alterarStatusEntregadorEntradaSchema,
   atribuirEntregaEntradaSchema,
   convidarEntregadorEntradaSchema,
@@ -69,6 +70,7 @@ import {
   obterMinhaSaida,
   obterSaidaDaEmpresaAutorizado,
   reordenarMinhaSaida,
+  recalcularRotaDaMinhaSaida,
   serializarSaidaComEmpresa,
 } from "../casos-de-uso/gerir-saidas.js";
 import {
@@ -474,7 +476,13 @@ export function registrarRotasEntregas(
           return responder(resposta, 409, {
             codigo: "SAIDA_EM_ANDAMENTO",
             mensagem:
-              "Este pedido faz parte de uma saída de entrega; troque pela saída, não por pedido.",
+              "A entrega deste pedido já saiu para a rua; ele não pode ser passado a outro entregador por aqui.",
+          });
+        case "confirmar-transferencia":
+          return responder(resposta, 409, {
+            codigo: "PEDIDO_EM_SAIDA_TRANSFERIVEL",
+            mensagem:
+              "Este pedido já está em uma saída que ainda não saiu. Confirme para tirá-lo dela e entregá-lo ao entregador escolhido.",
           });
         case "conflito":
           return responder(resposta, 409, {
@@ -1554,6 +1562,41 @@ export function registrarRotasEntregas(
               "A sequência mudou enquanto você organizava. Recarregue para ver a ordem atual.",
           });
         case "reordenada":
+          await publicarSaida(dependencias, resultado.saida);
+          return serializarSaidaComEmpresa(banco, resultado.saida);
+      }
+    },
+  );
+
+  /*
+   * "RECALCULAR MELHOR ROTA" pelo entregador: o Jaa escolhe de novo a ordem das entregas pendentes
+   * (substitui a ordem atual, inclusive a manual) e recalcula o percurso. Custo: só por este toque.
+   */
+  servidor.post(
+    "/entregas/saidas/:saidaId/recalcular-rota",
+    { preHandler },
+    async (requisicao, resposta) => {
+      const { usuarioId } = obterIdentidadeExigida(requisicao);
+      const parametros = parametrosSaidaSchema.safeParse(requisicao.params);
+      const entrada = recalcularRotaEntradaSchema.safeParse(requisicao.body);
+      if (!parametros.success || !entrada.success)
+        return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Informe a versão da sequência." });
+
+      const resultado = await recalcularRotaDaMinhaSaida(dependencias, usuarioId, parametros.data.saidaId, entrada.data.versaoSequencia);
+      switch (resultado.tipo) {
+        case "saida-nao-encontrada":
+          return responder(resposta, 404, SAIDA_NAO_ENCONTRADA);
+        case "nao-recalculavel":
+          return responder(resposta, 409, { codigo: "DADOS_INVALIDOS", mensagem: "Esta rota não tem mais o que reorganizar." });
+        case "em-andamento":
+          return responder(resposta, 409, { codigo: "DADOS_INVALIDOS", mensagem: "A rota já está sendo recalculada." });
+        case "versao-desatualizada":
+          return responder(resposta, 409, {
+            codigo: "SEQUENCIA_DESATUALIZADA",
+            mensagem: "A sequência mudou. Atualize para ver a ordem atual e tente de novo.",
+          });
+        case "recalculada":
+          // Empresa, entregador e a fila de cada cliente (e o aviso de "próxima", uma vez por parada).
           await publicarSaida(dependencias, resultado.saida);
           return serializarSaidaComEmpresa(banco, resultado.saida);
       }

@@ -21,6 +21,6 @@ export async function listarConversas(
 
   return {
     conversas,
-    proximoCursor: haMais && ultima ? ultima.ultimaMensagem.id : null,
+    proximoCursor: haMais && ultima ? ultima.atividadeId : null,
   };
 }

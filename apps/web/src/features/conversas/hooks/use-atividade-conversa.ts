@@ -2,7 +2,9 @@
 
 import {
   EVENTO_CONVERSA_DEIXAR_DE_OBSERVAR,
+  EVENTO_BLOQUEIO_ATUALIZADO,
   EVENTO_CONVERSA_OBSERVAR,
+  eventoBloqueioAtualizadoSchema,
   EVENTO_DIGITANDO_ATUALIZADO,
   EVENTO_DIGITANDO_INFORMAR,
   EVENTO_MENSAGEM_NOVA,
@@ -74,6 +76,17 @@ export function useAtividadeConversa({ conversaId, outraIdentidadeId }: { conver
       }
     };
     const aoConectar = () => void observar();
+    /*
+     * Bloqueio criado/desfeito com a outra pessoa: presença e "digitando" deixam de valer (ou voltam).
+     * Observar de novo faz o SERVIDOR recalcular o que esta conexão pode ver; a tela só limpa o que tinha.
+     */
+    const aoMudarBloqueio = (evento: unknown) => {
+      const resultado = eventoBloqueioAtualizadoSchema.safeParse(evento);
+      if (!resultado.success || resultado.data.identidadeId !== outraIdentidadeId) return;
+      setPresenca(null);
+      indicador.limpar();
+      if (socket.connected) void observar();
+    };
     const aoDesconectar = () => {
       setPresenca(null);
       indicador.limpar();
@@ -85,6 +98,7 @@ export function useAtividadeConversa({ conversaId, outraIdentidadeId }: { conver
     socket.on(EVENTO_MENSAGEM_NOVA, aoReceberMensagem);
     socket.on("connect", aoConectar);
     socket.on("disconnect", aoDesconectar);
+    socket.on(EVENTO_BLOQUEIO_ATUALIZADO, aoMudarBloqueio);
     if (socket.connected) void observar();
 
     return () => {
@@ -98,6 +112,7 @@ export function useAtividadeConversa({ conversaId, outraIdentidadeId }: { conver
       socket.off(EVENTO_MENSAGEM_NOVA, aoReceberMensagem);
       socket.off("connect", aoConectar);
       socket.off("disconnect", aoDesconectar);
+      socket.off(EVENTO_BLOQUEIO_ATUALIZADO, aoMudarBloqueio);
     };
   }, [conversaId, outraIdentidadeId]);
 

@@ -3,7 +3,9 @@ name: jaa
 
 services:
   postgres:
-    image: postgres:18
+    # PostgreSQL 18 + PostGIS 3.6 (mesma base Debian/PostgreSQL da imagem oficial postgres:18).
+    # As extensões NÃO vêm da imagem: são criadas pelas migrations, como em produção.
+    image: postgis/postgis:18-3.6
     container_name: jaa-postgres-local
     restart: unless-stopped
     environment:
@@ -16,7 +18,11 @@ services:
       - "127.0.0.1:55433:5432"
     volumes:
       # A partir do PostgreSQL 18 a imagem oficial guarda os dados em /var/lib/postgresql/<versão>/docker.
-      - jaa-postgres-local-dados:/var/lib/postgresql
+      - jaa-postgres-local-dados-postgis:/var/lib/postgresql
+    tmpfs:
+      # Desliga o script de inicialização da imagem PostGIS, que instalaria postgis_topology,
+      # postgis_tiger_geocoder e fuzzystrmatch no banco — extensões que produção não terá.
+      - /docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U jaa -d jaa"]
       interval: 5s
@@ -24,5 +30,7 @@ services:
       retries: 10
 
 volumes:
-  jaa-postgres-local-dados:
-    name: jaa-postgres-local-dados
+  # Volume novo na troca para PostGIS (dados restaurados por pg_dump/pg_restore). O antigo,
+  # `jaa-postgres-local-dados`, fica intacto fora do compose como ponto de retorno.
+  jaa-postgres-local-dados-postgis:
+    name: jaa-postgres-local-dados-postgis

@@ -14,8 +14,8 @@ import { buscarMensagemNaConversa } from "../../mensagens/repositorios/repositor
 import { listarProdutosDisponiveisPorIds } from "../../produtos/repositorios/repositorio-produtos.js";
 import { listarGruposDisponiveisPorProdutos } from "../../produtos/repositorios/repositorio-personalizacao.js";
 import { serializarGruposPublicos } from "../../produtos/lib/serializar-personalizacao.js";
-import { calcularItens, resolverPagamento } from "../lib/calcular-pedido.js";
-import { avaliarCoberturaDoPonto } from "../../entregas/casos-de-uso/gerir-zonas.js";
+import { calcularItens, resolverFrete, resolverPagamento, totalizarPedido } from "../lib/calcular-pedido.js";
+import { resolverZonaDeEntrega } from "../../entregas/casos-de-uso/gerir-zonas.js";
 import {
   buscarPedido,
   buscarPedidoPorTentativa,
@@ -54,9 +54,10 @@ interface EntradaPedido {
 
 /**
  * Cria o PEDIDO JAA a partir do carrinho do cliente. O cliente manda produto e quantidade; TUDO o que
- * é dinheiro (preço unitário, subtotal, total) vem do banco aqui, nunca do navegador.
+ * é dinheiro (preço unitário, subtotal, frete, total) vem do banco aqui, nunca do navegador.
  * Sequência: empresa pública ativa → conversa com cliente E empresa → ENDEREÇO do próprio cliente com
- * ponto confirmado → produtos disponíveis DESTA empresa → cálculo → regra de pagamento na entrega →
+ * ponto confirmado → ZONA do ponto (cobertura + frete) → produtos disponíveis DESTA empresa → cálculo
+ * (subtotal + frete = total) → regra de pagamento na entrega sobre o TOTAL →
  * transação (pedido + itens + destino, todos snapshot + histórico inicial + card) → evento.
  * Retry com o mesmo `idCliente` devolve o MESMO pedido; conteúdo diferente é conflito.
  */
@@ -109,11 +110,18 @@ export async function criarPedido(
     return { tipo: "localizacao-nao-confirmada" };
   }
 
-  const cobertura = await avaliarCoberturaDoPonto(banco, empresa.empresaId, {
-    latitude: endereco.latitude as number,
-    longitude: endereco.longitude as number,
-  });
-  if (!cobertura.atendida) return { tipo: "endereco-fora-area-entrega" };
+  /*
+   * FRETE: zona lida AGORA do banco a partir do ponto confirmado do endereço — a mesma classificação
+   * da cobertura. Nenhum campo de frete vem do cliente (o contrato de entrada nem o tem): trocar
+   * R$ 7,00 por R$ 0,00 no payload não tem onde entrar.
+   */
+  const frete = resolverFrete(
+    await resolverZonaDeEntrega(banco, empresa.empresaId, {
+      latitude: endereco.latitude as number,
+      longitude: endereco.longitude as number,
+    }),
+  );
+  if (frete.tipo !== "frete") return { tipo: "endereco-fora-area-entrega" };
 
   const produtoIds = entrada.itens.map((item) => item.produtoId);
   const produtos = await listarProdutosDisponiveisPorIds(banco, empresa.empresaId, produtoIds);
@@ -132,7 +140,14 @@ export async function criarPedido(
   if (calculo.tipo === "escolhas-invalidas") return { tipo: "escolhas-invalidas", mensagem: mensagemEscolhasInvalidas(calculo) };
   if (calculo.tipo !== "itens") return { tipo: "itens-invalidos" };
 
-  const pagamento = resolverPagamento(entrada.pagamento, calculo.totalCentavos);
+  // Os itens somam o SUBTOTAL; o total do pedido é subtotal + frete.
+  const subtotalCentavos = calculo.totalCentavos;
+  const total = totalizarPedido(subtotalCentavos, frete);
+  if (total.tipo !== "total") return { tipo: "itens-invalidos" };
+  const { tipo: _tipoFrete, ...valoresFrete } = frete;
+
+  // Troco é comparado com o TOTAL (com frete): "troco para R$ 32" num pedido de R$ 35 é recusado.
+  const pagamento = resolverPagamento(entrada.pagamento, total.totalCentavos);
   if (pagamento.tipo !== "pagamento") return { tipo: "pagamento-invalido" };
 
   try {
@@ -142,7 +157,9 @@ export async function criarPedido(
       conversaId: entrada.conversaId,
       formaPagamentoNaEntrega: entrada.pagamento.forma,
       trocoParaCentavos: pagamento.trocoParaCentavos,
-      totalCentavos: calculo.totalCentavos,
+      subtotalCentavos,
+      ...valoresFrete,
+      totalCentavos: total.totalCentavos,
       idCliente: entrada.idCliente,
       itens: calculo.itens,
       destino: {
@@ -190,9 +207,10 @@ export async function criarPedido(
     if (!existente) return { tipo: "id-cliente-reutilizado" };
 
     /*
-     * Retry legítimo = mesma empresa, mesma conversa, mesmo pagamento e mesmos itens/total. A
+     * Retry legítimo = mesma empresa, mesma conversa, mesmo pagamento e mesmos itens/frete/total. A
      * comparação inclui a MONTAGEM: dois itens do mesmo produto podem existir com escolhas
      * diferentes, então a assinatura leva produto, quantidade, subtotal e as escolhas gravadas.
+     * O pedido existente é devolvido como está: o retry nunca regrava o snapshot financeiro.
      */
     const mesmosItens = mesmaColecao(existente.itens.map(assinaturaItem), calculo.itens.map(assinaturaItem));
     const mesmaTentativa =
@@ -200,7 +218,9 @@ export async function criarPedido(
       existente.pedido.conversaId === entrada.conversaId &&
       existente.pedido.formaPagamentoNaEntrega === entrada.pagamento.forma &&
       existente.pedido.trocoParaCentavos === pagamento.trocoParaCentavos &&
-      existente.pedido.totalCentavos === calculo.totalCentavos &&
+      existente.pedido.subtotalCentavos === subtotalCentavos &&
+      existente.pedido.freteFinalCentavos === frete.freteFinalCentavos &&
+      existente.pedido.totalCentavos === total.totalCentavos &&
       mesmosItens;
 
     return mesmaTentativa

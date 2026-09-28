@@ -21,6 +21,12 @@ export const configuracoesDespacho = pgTable(
     combinarZonas: boolean().notNull().default(true),
     // Quando desligada, quantidade/tempo fecham e organizam a rota, mas o gestor ainda a libera.
     liberacaoAutomatica: boolean().notNull().default(true),
+    /*
+     * Padrão da empresa para as saídas NOVAS: o entregador precisa voltar à base ao terminar (ex.: para
+     * prestar contas do dinheiro recebido). É decisão da operação, não derivada do pagamento: hoje todo
+     * pedido é pago na entrega, e isso não implica, sozinho, voltar.
+     */
+    saidasExigemRetornoBase: boolean().notNull().default(false),
     criadoEm: timestamp({ withTimezone: true }).notNull().defaultNow(),
     atualizadoEm: timestamp({ withTimezone: true })
       .notNull()

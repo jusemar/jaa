@@ -20,6 +20,8 @@ export interface OpcoesMapaZona {
   centro: Coordenadas;
   // Contorno inicial (zona existente) ou vazio (zona nova).
   verticesIniciais?: PoligonoZona | undefined;
+  // Abrir já enquadrando o contorno inicial (e as referências), em vez de só centralizar.
+  enquadrarInicial?: boolean | undefined;
   nomeZona?: string | undefined;
   // Chamado a cada ponto marcado/removido enquanto a pessoa desenha.
   aoMudarVertices: (vertices: PoligonoZona) => void;

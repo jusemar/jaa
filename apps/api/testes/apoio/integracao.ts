@@ -1,3 +1,4 @@
+import "./exigir-banco-de-teste.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
@@ -277,8 +278,18 @@ export function criarAmbienteIntegracao({
     await banco.delete(rateLimits).where(like(rateLimits.key, `${prefixoIp}%`));
   }
 
+  // Preflight de CORS como o NAVEGADOR faz (o `api()` acima não passa por essa checagem).
+  function preflight(url: string, metodo: string) {
+    return app.inject({
+      method: "OPTIONS",
+      url,
+      headers: { origin: ORIGEM_WEB, "access-control-request-method": metodo, "access-control-request-headers": "content-type" },
+    });
+  }
+
   return {
     banco,
+    preflight,
     eventosMensagens,
     eventosPedidos,
     eventosEntregas,

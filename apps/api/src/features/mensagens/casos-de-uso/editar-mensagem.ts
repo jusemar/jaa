@@ -1,3 +1,4 @@
+import { existeBloqueioCom } from "../../bloqueios/repositorios/repositorio-bloqueios.js";
 import type { Banco } from "@jaa/banco";
 import { listarIdsParticipantesDaConversa } from "../../conversas/repositorios/repositorio-conversas.js";
 import type { CanalEventosMensagens } from "../lib/eventos-mensagens.js";
@@ -12,6 +13,7 @@ import {
 type ResultadoEditarMensagem =
   | { tipo: "editada" | "sem-alteracao"; mensagem: MensagemRegistro }
   | { tipo: "conversa-nao-encontrada" }
+  | { tipo: "comunicacao-bloqueada" }
   | { tipo: "mensagem-nao-encontrada" }
   | { tipo: "de-outra-identidade" }
   | { tipo: "excluida" };
@@ -34,6 +36,8 @@ export async function editarMensagem(
 ): Promise<ResultadoEditarMensagem> {
   const participantes = await listarIdsParticipantesDaConversa(banco, conversaId);
   if (!participantes.includes(identidadeId)) return { tipo: "conversa-nao-encontrada" };
+  // Editar também é falar com o outro: com bloqueio entre as pessoas, nada muda na mensagem.
+  if (await existeBloqueioCom(banco, identidadeId, participantes.filter((id) => id !== identidadeId))) return { tipo: "comunicacao-bloqueada" };
 
   const atual = await buscarMensagemNaConversa(banco, conversaId, mensagemId);
   if (!atual || (await estaOcultaPara(banco, mensagemId, identidadeId))) return { tipo: "mensagem-nao-encontrada" };

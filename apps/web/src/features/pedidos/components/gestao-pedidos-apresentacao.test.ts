@@ -85,6 +85,12 @@ const pedido = (
   formaPagamentoNaEntrega: "dinheiro",
   trocoParaCentavos: 10000,
   totalCentavos: 7980,
+  subtotalCentavos: 7980,
+  freteOriginalCentavos: 0,
+  descontoFreteCentavos: 0,
+  freteFinalCentavos: 0,
+  zonaEntregaId: null,
+  zonaEntregaNome: null,
   criadoEm: "2026-09-15T12:00:00.000Z",
   atualizadoEm: "2026-09-15T12:09:00.000Z",
 });
@@ -226,6 +232,9 @@ const linha: PedidoDaEmpresa = {
   },
   conversaId: uuid(5),
   quantidadeItens: 3,
+  subtotalCentavos: 9180,
+  freteFinalCentavos: 0,
+  zonaEntregaNome: null,
   totalCentavos: 9180,
   formaPagamentoNaEntrega: "dinheiro",
   trocoParaCentavos: 10000,
@@ -327,6 +336,7 @@ const saida = (status: StatusSaida, entregador = true): SaidaEntrega => ({
   zonaPrincipal: { id: uuid(8), nome: "D" },
   zonasCombinadas: [],
   automatica: true,
+  exigeRetornoBase: false,
   criadoEm: "2026-09-15T12:00:00.000Z",
   formacaoIniciadaEm: null,
   prazoFormacaoEm: null,
@@ -422,5 +432,35 @@ describe("resumo logístico do pedido", () => {
         status,
       );
     }
+  });
+});
+
+describe("recusa do servidor na área de pedidos", () => {
+  it("atribuição/avanço recusados: o aviso é mostrado DEPOIS da releitura (que limpa o erro)", async () => {
+    // Causa do "atribuiu, mas não apareceu": a releitura (`abrir`) chamava setErro(null) e apagava o
+    // 409 (ex.: pedido já dentro da saída automática). Sem DOM nos testes: garantia estrutural.
+    const { readFileSync } = await import("node:fs");
+    const fonte = readFileSync(new URL("./area-pedidos-empresa.tsx", import.meta.url), "utf8");
+    assert.match(fonte, /if \(!resultado\.ok\) \{[\s\S]*?await abrir\(pedidoId\);\s*setErro\(resultado\.mensagem\);/);
+    assert.match(fonte, /await carregar\(filtro\);\s*setErro\(resultado\.mensagem\);/);
+  });
+});
+
+describe("atribuição manual de pedido que está numa saída que ainda não saiu", () => {
+  it("a MESMA ação pede confirmação curta e, confirmada, reenvia com transferirDaSaida", async () => {
+    const { ConfirmarTransferencia } = await import("../../entregas/components/entrega-do-pedido.tsx");
+    const html = renderToStaticMarkup(createElement(ConfirmarTransferencia, { nomeEntregador: "Motoboy Teste", ocupado: false, aoConfirmar: () => {}, aoCancelar: () => {} }));
+    assert.ok(html.includes('role="alertdialog"'));
+    assert.ok(html.includes("Deseja atribuí-lo a Motoboy Teste?"));
+    assert.ok(html.includes("Atribuir mesmo assim"));
+    assert.ok(html.includes("Cancelar"));
+
+    const { readFileSync } = await import("node:fs");
+    const fonte = readFileSync(new URL("./area-pedidos-empresa.tsx", import.meta.url), "utf8");
+    assert.match(fonte, /resultado\.codigo === "PEDIDO_EM_SAIDA_TRANSFERIVEL"/);
+    assert.match(fonte, /aoConfirmar=\{\(\) => void atribuir\(transferencia\.pedidoId, transferencia\.entregadorId, true\)\}/);
+    // Sucesso aparece e a tela relê (sem F5); nenhum fluxo paralelo de transferência.
+    assert.match(fonte, /avisar\.sucesso\(/);
+    assert.equal((fonte.match(/atribuirEntrega\(/g) ?? []).length, 1);
   });
 });

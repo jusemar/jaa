@@ -95,7 +95,7 @@ describe("editar mensagem", () => {
       assert.equal(recarregada?.estado, "lida");
     }
     const listaDepois = await ctx.lista(A);
-    assert.deepEqual(listaDepois.conversas.map((c) => [c.id, c.ultimaMensagem.id]), listaAntes.conversas.map((c) => [c.id, c.ultimaMensagem.id]));
+    assert.deepEqual(listaDepois.conversas.map((c) => [c.id, c.ultimaMensagem?.id]), listaAntes.conversas.map((c) => [c.id, c.ultimaMensagem?.id]));
   });
 
   it("resposta que cita a mensagem editada passa a mostrar o conteúdo atual (sem cópia)", async () => {

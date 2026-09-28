@@ -12,6 +12,39 @@ import { formatarHorarioMensagem } from "@/features/conversas/lib/horarios";
 
 const STATUS_COM_ENTREGADOR = new Set<StatusPedido>(["pronto", "saiu_para_entrega", "em_rota"]);
 
+/**
+ * O pedido já está numa saída que AINDA NÃO saiu (formação automática, aguardando, preparada ou
+ * liberada). Uma pergunta curta antes de tirá-lo de lá; a mesma ação de atribuir continua depois.
+ */
+export function ConfirmarTransferencia({
+  nomeEntregador,
+  ocupado,
+  aoConfirmar,
+  aoCancelar,
+}: {
+  nomeEntregador: string | null;
+  ocupado: boolean;
+  aoConfirmar: () => void;
+  aoCancelar: () => void;
+}) {
+  return (
+    <div role="alertdialog" aria-labelledby="titulo-transferencia" data-confirmar-transferencia className="flex flex-col gap-2 rounded-jaa border border-aviso p-2 text-xs">
+      <p id="titulo-transferencia" className="font-medium">
+        Este pedido já está em uma saída que ainda não saiu. Deseja atribuí-lo a {nomeEntregador ?? "este entregador"}?
+      </p>
+      <p className="text-conteudo-suave">Ele sai daquela saída; os outros pedidos dela continuam como estão.</p>
+      <span className="flex gap-2">
+        <button type="button" data-confirmar-transferencia-sim disabled={ocupado} onClick={aoConfirmar} className="rounded bg-marca px-2 py-1 text-white disabled:opacity-50">
+          {ocupado ? "Atribuindo…" : "Atribuir mesmo assim"}
+        </button>
+        <button type="button" disabled={ocupado} onClick={aoCancelar} className="rounded-jaa border px-2 py-1">
+          Cancelar
+        </button>
+      </span>
+    </div>
+  );
+}
+
 export function EntregaDoPedidoEmpresa({
   status,
   entrega,

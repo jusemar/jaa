@@ -87,3 +87,11 @@ export function excluirMensagemParaMim(conversaId: string, mensagemId: string): 
 export function excluirMensagemParaTodos(conversaId: string, mensagemId: string): Promise<ResultadoApi<Mensagem>> {
   return requisitarApi(`/conversas/${conversaId}/mensagens/${mensagemId}?escopo=todos`, mensagemSchema, { method: "DELETE", headers: cabecalhosIdentidadeAtuante() });
 }
+
+// LIMPAR / APAGAR conversa: só para a identidade atuante (o outro participante não perde nada).
+function estadoPessoal(conversaId: string, acao: "limpar" | "apagar"): Promise<ResultadoApi<null>> {
+  return requisitarApi(`/conversas/${encodeURIComponent(conversaId)}/${acao}`, { parse: () => null }, { method: "POST", headers: cabecalhosIdentidadeAtuante() });
+}
+
+export const limparConversa = (conversaId: string) => estadoPessoal(conversaId, "limpar");
+export const apagarConversa = (conversaId: string) => estadoPessoal(conversaId, "apagar");

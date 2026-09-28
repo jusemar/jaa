@@ -1,5 +1,6 @@
 import type { Banco } from "@jaa/banco";
-import { listarIdsParticipantesDaConversa } from "../../conversas/repositorios/repositorio-conversas.js";
+import { existeBloqueioCom } from "../../bloqueios/repositorios/repositorio-bloqueios.js";
+import { contarNaoLidas, listarIdsParticipantesDaConversa } from "../../conversas/repositorios/repositorio-conversas.js";
 import type { CanalEventosMensagens } from "../lib/eventos-mensagens.js";
 import {
   avancarMarcadorLeitura,
@@ -33,6 +34,20 @@ export async function confirmarLeitura(
 
   if (!(await mensagemRecebidaNaConversa(banco, leitorIdentidadeId, conversaId, ateMensagemId))) {
     return { tipo: "mensagem-nao-encontrada" };
+  }
+
+  /*
+   * BLOQUEIO: confirmação de leitura também é sinal social. Com bloqueio (qualquer sentido), a leitura
+   * vale SÓ para as não lidas de quem leu (marcador sem aviso): nada de ✓✓ novo nem `mensagens:lidas`
+   * para o outro — nem vindo de um cliente alterado. O que já tinha sido lido antes continua.
+   */
+  const outros = participantes.filter((identidadeId) => identidadeId !== leitorIdentidadeId);
+  if (await existeBloqueioCom(banco, leitorIdentidadeId, outros)) {
+    if (await avancarMarcadorLeitura(banco, leitorIdentidadeId, conversaId, ateMensagemId, "sem-aviso")) {
+      const naoLidas = await contarNaoLidas(banco, conversaId, leitorIdentidadeId);
+      if (naoLidas !== null) eventosMensagens.publicar({ tipo: "nao-lidas-atualizadas", conversaId, naoLidas, destinatariosIdentidadeIds: [leitorIdentidadeId] });
+    }
+    return { tipo: "confirmada", lidaAteMensagemId: ateMensagemId };
   }
 
   if (await avancarMarcadorLeitura(banco, leitorIdentidadeId, conversaId, ateMensagemId)) {

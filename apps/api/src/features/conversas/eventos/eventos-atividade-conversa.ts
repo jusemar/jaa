@@ -13,6 +13,7 @@ import { salaDaConversa, salaDePresenca } from "../../../realtime/salas.js";
 import type { SocketRealtime } from "../../../realtime/tipos.js";
 import type { RegistroPresenca } from "../../presenca/lib/registro-presenca.js";
 import { presencasVisiveis } from "../../perfil/lib/visibilidade-presenca.js";
+import { existeBloqueioCom } from "../../bloqueios/repositorios/repositorio-bloqueios.js";
 import { autorizarObservacaoConversa } from "../casos-de-uso/autorizar-observacao-conversa.js";
 import type { RegistroDigitando } from "../lib/registro-digitando.js";
 
@@ -107,17 +108,36 @@ export function registrarEventosAtividadeConversa(socket: SocketRealtime, depend
     responderSeFuncao<RespostaEventoRealtime>(responder, { ok: true });
   });
 
-  socket.on(EVENTO_DIGITANDO_INFORMAR, (dados, responder) => {
+  socket.on(EVENTO_DIGITANDO_INFORMAR, async (dados, responder) => {
     const entrada = informarDigitandoEntradaSchema.safeParse(dados);
     if (!entrada.success) {
       responderSeFuncao<RespostaEventoRealtime>(responder, { ok: false, codigo: "DADOS_INVALIDOS" });
       return;
     }
     // Participação já verificada no banco ao observar; participantes de conversa direta não mudam.
-    if (!observacoes.has(entrada.data.conversaId)) {
+    const outros = observacoes.get(entrada.data.conversaId);
+    if (!outros) {
       responderSeFuncao<RespostaEventoRealtime>(responder, { ok: false, codigo: "CONVERSA_NAO_ENCONTRADA" });
       return;
     }
+
+    /*
+     * "Digitando" também é comunicação: com bloqueio entre as pessoas (em QUALQUER sentido), o sinal
+     * não é retransmitido — nem de um cliente alterado. Conferido a cada aviso, porque o bloqueio pode
+     * ter nascido depois da observação. Parar de digitar sempre passa (só encerra estado).
+     */
+    try {
+      if (entrada.data.digitando && (await existeBloqueioCom(dependencias.banco, identidadeId, outros))) {
+        dependencias.digitando.pararConexaoNaConversa(entrada.data.conversaId, socket.id);
+        responderSeFuncao<RespostaEventoRealtime>(responder, { ok: false, codigo: "COMUNICACAO_BLOQUEADA" });
+        return;
+      }
+    } catch (erro) {
+      dependencias.log.error({ erro: erro instanceof Error ? erro.message : "desconhecido" }, "Falha ao conferir bloqueio do digitando");
+      responderSeFuncao<RespostaEventoRealtime>(responder, { ok: false, codigo: "CONVERSA_NAO_ENCONTRADA" });
+      return;
+    }
+    if (!observacoes.has(entrada.data.conversaId)) return;
 
     dependencias.digitando.informar({ ...entrada.data, identidadeId, conexaoId: socket.id });
     responderSeFuncao<RespostaEventoRealtime>(responder, { ok: true });

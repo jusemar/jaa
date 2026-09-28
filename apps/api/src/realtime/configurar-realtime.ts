@@ -16,6 +16,9 @@ import {
   EVENTO_VINCULO_ENTREGADOR,
   EVENTO_FILA_ATUALIZADA,
   EVENTO_PEDIDO_FILA,
+  EVENTO_BLOQUEIO_ATUALIZADO,
+  EVENTO_CONVERSA_ESTADO_PESSOAL,
+  EVENTO_PEDIDO_ENTREGA_PROXIMA,
   EVENTO_SITUACAO_OPERACIONAL,
   EVENTO_SAIDA_ATUALIZADA,
   EVENTO_PEDIDO_STATUS_ATUALIZADO,
@@ -182,6 +185,19 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
           ultimaMensagem: evento.ultimaMensagem && serializarMensagem(evento.ultimaMensagem),
         });
         return;
+      case "conversa-estado-pessoal":
+        realtime.to(salas).emit(EVENTO_CONVERSA_ESTADO_PESSOAL, { conversaId: evento.conversaId, acao: evento.acao });
+        return;
+      case "bloqueio-atualizado":
+        /*
+         * Só as duas pessoas envolvidas; cada uma recebe o id da OUTRA e relê a situação. Antes, as
+         * conexões dela saem da sala de presença da outra: presença é sinal social e não atravessa
+         * bloqueio. Ao observar de novo (o cliente faz isso ao receber o evento), o servidor decide
+         * outra vez o que ela pode ver — inclusive ao desbloquear.
+         */
+        realtime.in(salas).socketsLeave(salaDePresenca(evento.identidadeId));
+        realtime.to(salas).emit(EVENTO_BLOQUEIO_ATUALIZADO, { identidadeId: evento.identidadeId });
+        return;
       case "nao-lidas-atualizadas":
         realtime.to(salas).emit(EVENTO_CONVERSA_NAO_LIDAS, { conversaId: evento.conversaId, naoLidas: evento.naoLidas });
         return;
@@ -248,6 +264,11 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
     if (evento.tipo === "situacao-operacional-atualizada") {
       // Situação própria: só para o entregador dela.
       realtime.to(salas).emit(EVENTO_SITUACAO_OPERACIONAL, { situacao: evento.situacao });
+      return;
+    }
+    if (evento.tipo === "entrega-proxima") {
+      // Só o cliente dono do pedido: nunca a empresa, o entregador ou outros clientes.
+      realtime.to(salas).emit(EVENTO_PEDIDO_ENTREGA_PROXIMA, { pedidoId: evento.pedidoId, avisoId: evento.avisoId });
       return;
     }
     if (evento.tipo === "fila-atualizada") {

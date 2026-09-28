@@ -1,14 +1,18 @@
 "use client";
 
 import {
+  EVENTO_BLOQUEIO_ATUALIZADO,
+  EVENTO_CONVERSA_ESTADO_PESSOAL,
   EVENTO_CONVERSA_NAO_LIDAS,
   EVENTO_MENSAGEM_ATUALIZADA,
   EVENTO_MENSAGEM_EXCLUIDA_PARA_MIM,
   EVENTO_MENSAGEM_NOVA,
+  eventoConversaEstadoPessoalSchema,
   eventoConversaNaoLidasSchema,
   eventoMensagemAtualizadaSchema,
   eventoMensagemExcluidaParaMimSchema,
   eventoMensagemNovaSchema,
+  type EventoConversaEstadoPessoal,
   type ExclusaoParaMim,
   type ItemListaConversas,
   type Mensagem,
@@ -18,10 +22,12 @@ import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { listarConversas } from "../lib/api-conversas";
 import {
   aplicarAtualizacaoNaLista,
+  aplicarEstadoPessoalNaLista,
   aplicarExclusaoParaMimNaLista,
   aplicarMensagemNaLista,
   aplicarNaoLidasNaLista,
   mesclarConversas,
+  precisaCarregarConversa,
 } from "../lib/lista-conversas";
 
 type EstadoLista = {
@@ -122,11 +128,30 @@ export function useListaConversas() {
     };
     const aoAtualizarNaoLidas = (evento: unknown) => {
       const resultado = eventoConversaNaoLidasSchema.safeParse(evento);
-      if (resultado.success) setEstado((atual) => ({ ...atual, itens: aplicarNaoLidasNaLista(atual.itens, resultado.data) }));
+      if (!resultado.success) return;
+      /*
+       * Conversa com não lidas que a lista ainda NÃO tem: o indicador de Conversas já a conta (ele
+       * ouve o mesmo evento), então a lista busca a 1ª página em vez de ignorar — senão o badge
+       * dizia "4" e nenhuma linha mostrava de quem eram.
+       */
+      if (resultado.data.naoLidas > 0 && precisaCarregarConversa(itensRef.current, resultado.data)) {
+        void recarregarPrimeiraPagina();
+        return;
+      }
+      setEstado((atual) => ({ ...atual, itens: aplicarNaoLidasNaLista(atual.itens, resultado.data) }));
     };
     const aoConectar = () => void recarregarPrimeiraPagina();
+    // Limpar/apagar feito por esta identidade em QUALQUER aba.
+    const aoMudarEstadoPessoal = (evento: unknown) => {
+      const resultado = eventoConversaEstadoPessoalSchema.safeParse(evento);
+      if (resultado.success) setEstado((atual) => ({ ...atual, itens: aplicarEstadoPessoalNaLista(atual.itens, resultado.data) }));
+    };
+    // Bloqueio criado/desfeito com alguém: o 🚫 da lista vem do servidor — relê a primeira página.
+    const aoMudarBloqueio = () => void recarregarPrimeiraPagina();
 
     socket.on(EVENTO_MENSAGEM_NOVA, aoReceber);
+    socket.on(EVENTO_CONVERSA_ESTADO_PESSOAL, aoMudarEstadoPessoal);
+    socket.on(EVENTO_BLOQUEIO_ATUALIZADO, aoMudarBloqueio);
     socket.on(EVENTO_MENSAGEM_ATUALIZADA, aoAtualizar);
     socket.on(EVENTO_MENSAGEM_EXCLUIDA_PARA_MIM, aoExcluirParaMim);
     socket.on(EVENTO_CONVERSA_NAO_LIDAS, aoAtualizarNaoLidas);
@@ -134,6 +159,8 @@ export function useListaConversas() {
     void recarregarPrimeiraPagina();
     return () => {
       socket.off(EVENTO_MENSAGEM_NOVA, aoReceber);
+      socket.off(EVENTO_CONVERSA_ESTADO_PESSOAL, aoMudarEstadoPessoal);
+      socket.off(EVENTO_BLOQUEIO_ATUALIZADO, aoMudarBloqueio);
       socket.off(EVENTO_MENSAGEM_ATUALIZADA, aoAtualizar);
       socket.off(EVENTO_MENSAGEM_EXCLUIDA_PARA_MIM, aoExcluirParaMim);
       socket.off(EVENTO_CONVERSA_NAO_LIDAS, aoAtualizarNaoLidas);
@@ -159,5 +186,10 @@ export function useListaConversas() {
     );
   }, [estado.proximoCursor, estado.carregandoMais]);
 
-  return { ...estado, carregarMais, registrarMensagem, registrarAtualizacao, registrarExclusaoParaMim };
+  // A própria tela limpou/apagou: aplica já (o evento que chega depois é idempotente).
+  const registrarEstadoPessoal = useCallback((evento: EventoConversaEstadoPessoal) => {
+    setEstado((atual) => ({ ...atual, itens: aplicarEstadoPessoalNaLista(atual.itens, evento) }));
+  }, []);
+
+  return { ...estado, carregarMais, registrarMensagem, registrarAtualizacao, registrarExclusaoParaMim, registrarEstadoPessoal, recarregarPrimeiraPagina };
 }

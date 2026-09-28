@@ -49,7 +49,9 @@ describe("itemListaConversasSchema", () => {
       editadaEm: null,
       excluidaEm: null,
     },
+    atividadeId: uuid,
     naoLidas: 0,
+    comunicacaoBloqueada: false,
   };
 
   it("aceita item válido e remove dados que não pertencem ao contrato", () => {
@@ -60,8 +62,12 @@ describe("itemListaConversasSchema", () => {
     assert.deepEqual(Object.keys(resultado.outraIdentidade).sort(), ["identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
   });
 
-  it("exige última mensagem", () => {
-    assert.equal(itemListaConversasSchema.safeParse({ ...item, ultimaMensagem: null }).success, false);
+  it("última mensagem é obrigatória no item, mas pode ser null (conversa LIMPA por quem lista); atividade é obrigatória", () => {
+    assert.equal(itemListaConversasSchema.safeParse({ ...item, ultimaMensagem: null }).success, true);
+    const { ultimaMensagem: _semUltima, ...semCampo } = item;
+    assert.equal(itemListaConversasSchema.safeParse(semCampo).success, false);
+    const { atividadeId: _semAtividade, ...semAtividade } = item;
+    assert.equal(itemListaConversasSchema.safeParse(semAtividade).success, false);
   });
 });
 

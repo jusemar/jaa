@@ -25,6 +25,7 @@ import {
   type VinculoEntregador,
 } from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
+import { avisar } from "@/components/ui/avisos";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import {
@@ -38,6 +39,7 @@ import {
   listarMinhasSituacoes,
   recusarMinhaSaida,
   reordenarSequencia,
+  recalcularRota,
   responderConvite,
 } from "../lib/api-entregas";
 import { MapaPercursoMapbox } from "./mapa-percurso-mapbox";
@@ -64,7 +66,7 @@ export function entregasForaDasSaidas(
  * Mostra só o que está atribuído a ele AGORA e só o necessário para entregar — sem telefone do
  * cliente, sem outros pedidos e sem nada do painel da empresa.
  */
-export function AreaMinhasEntregas() {
+export function AreaMinhasEntregas({ aoAbrirConversa }: { aoAbrirConversa?: (nomeUsuario: string) => void } = {}) {
   const [entregas, setEntregas] = useState<EntregaAtribuida[]>([]);
   const [convites, setConvites] = useState<ConviteEntregador[]>([]);
   const [vinculos, setVinculos] = useState<VinculoEntregador[]>([]);
@@ -127,16 +129,34 @@ export function AreaMinhasEntregas() {
   }, []);
 
   /*
-   * A sequência do Jaa é sugestão: quem conhece a região é quem está na rua. Mover uma parada envia a
-   * nova ordem inteira com a versão que a tela viu — se alguém mudou antes, a API recusa e recarregamos.
+   * A sequência do Jaa é sugestão: quem conhece a região é quem está na rua. "Alterar ordem" envia a
+   * nova ordem INTEIRA uma vez, com a versão que a tela viu — se alguém mudou antes, a API recusa (409)
+   * e recarregamos. A ordem dele vira a oficial; o Jaa só recalcula o trajeto, sem reotimizar.
    */
-  async function mover(saida: SaidaEntrega, pedidoId: string, direcao: -1 | 1) {
-    const ordem = paradasAtivas(saida).map((parada) => parada.pedidoId);
-    const de = ordem.indexOf(pedidoId);
-    const para = de + direcao;
-    if (de < 0 || para < 0 || para >= ordem.length) return;
-    [ordem[de], ordem[para]] = [ordem[para] as string, ordem[de] as string];
+  /*
+   * "Recalcular melhor rota": pedido EXPLÍCITO (custa chamada ao provedor). O Jaa escolhe a ordem das
+   * entregas pendentes e ela substitui a atual; depois, "Alterar ordem" continua valendo. Sem cálculo
+   * pelas ruas (provedor fora), a resposta é honesta: foi uma aproximação, não "a melhor rota".
+   */
+  async function recalcularMinhaRota(saida: SaidaEntrega): Promise<boolean> {
+    setOcupado(true);
+    try {
+      const resultado = await recalcularRota(saida.id, saida.versaoSequencia);
+      if (!resultado.ok) {
+        avisar.erro(resultado.mensagem);
+        if (resultado.codigo === "SEQUENCIA_DESATUALIZADA") await recarregar();
+        return false;
+      }
+      setSaidas((atuais) => atuais.map((item) => (item.id === resultado.dados.id ? resultado.dados : item)));
+      if (resultado.dados.rota?.estado === "percurso_real") avisar.sucesso("Rota recalculada pelas ruas.");
+      else avisar.informacao("Ordem reorganizada por aproximação — o cálculo pelas ruas não está disponível agora.");
+      return true;
+    } finally {
+      setOcupado(false);
+    }
+  }
 
+  async function salvarOrdem(saida: SaidaEntrega, ordem: string[]): Promise<boolean> {
     setOcupado(true);
     try {
       const resultado = await reordenarSequencia(
@@ -147,7 +167,7 @@ export function AreaMinhasEntregas() {
       if (!resultado.ok) {
         setErro(resultado.mensagem);
         await recarregar();
-        return;
+        return false;
       }
       setErro(null);
       setSaidas((atuais) =>
@@ -155,6 +175,7 @@ export function AreaMinhasEntregas() {
           item.id === resultado.dados.id ? resultado.dados : item,
         ),
       );
+      return true;
     } finally {
       setOcupado(false);
     }
@@ -414,6 +435,17 @@ export function AreaMinhasEntregas() {
               · {paradasAtivas(saida).length}{" "}
               {paradasAtivas(saida).length === 1 ? "entrega" : "entregas"}
             </p>
+            {/* Problema na entrega? A conversa DIRETA de sempre com a empresa (nada de chat paralelo). */}
+            {aoAbrirConversa ? (
+              <button
+                type="button"
+                data-conversar-empresa={saida.empresa.nomeUsuario}
+                onClick={() => aoAbrirConversa(saida.empresa.nomeUsuario)}
+                className="self-start rounded-full border border-borda px-3 py-1 text-xs font-medium text-marca"
+              >
+                Conversar com {saida.empresa.nome}
+              </button>
+            ) : null}
             <AcaoIniciarSaida
               saida={saida}
               ocupado={ocupado}
@@ -427,9 +459,9 @@ export function AreaMinhasEntregas() {
               entregas={entregas}
               mostrarPercurso={false}
               ocupado={ocupado}
-              aoMover={(pedidoId, direcao) =>
-                void mover(saida, pedidoId, direcao)
-              }
+              aoSalvarOrdem={(ordem) => salvarOrdem(saida, ordem)}
+              aoRecalcularRota={() => recalcularMinhaRota(saida)}
+              {...(aoAbrirConversa ? { aoConversar: aoAbrirConversa } : {})}
               aoConcluir={(pedidoId, numeroPedido) =>
                 void concluirParada(saida, pedidoId, numeroPedido)
               }

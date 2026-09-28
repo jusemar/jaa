@@ -85,7 +85,7 @@ describe("notificação de nova mensagem", () => {
   it("destinatário offline não perde o estado: ao voltar, lista e não lidas refletem a mensagem", async () => {
     const offline = await ctx.enviar(A, conversaAB, "enquanto B estava offline");
     const item = (await ctx.lista(B)).conversas.find((c) => c.id === conversaAB);
-    assert.equal(item?.ultimaMensagem.id, offline.id);
+    assert.equal(item?.ultimaMensagem?.id, offline.id);
     assert.ok((item?.naoLidas ?? 0) >= 1);
   });
 });

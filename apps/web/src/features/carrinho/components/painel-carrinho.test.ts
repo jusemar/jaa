@@ -4,7 +4,8 @@ import type { EmpresaPublica, EnderecoCliente } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Carrinho } from "../lib/carrinho.ts";
-import { PainelCarrinho, PainelPedidoVazio } from "./painel-carrinho.tsx";
+import { freteDaCobertura, rotuloTaxaEntrega, type FreteEntrega } from "../lib/frete-entrega.ts";
+import { PainelCarrinho, PainelPedidoVazio, type ConfirmacaoPedido } from "./painel-carrinho.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
 const empresa: EmpresaPublica = {
@@ -76,16 +77,19 @@ const endereco: EnderecoCliente = {
   atualizadoEm: "2026-09-16T12:00:00.000Z",
 };
 
+const GRATIS: FreteEntrega = { estado: "atendido", freteCentavos: 0 };
+
 const renderizar = (
   atual: Carrinho = carrinho,
   destino: EnderecoCliente | null = endereco,
-  coberturaAprovada = true,
+  // Padrão: endereço atendido por zona de frete grátis (a taxa vem do servidor).
+  frete: FreteEntrega = GRATIS,
 ) =>
   renderToStaticMarkup(
     createElement(PainelCarrinho, {
       carrinho: atual,
       endereco: destino,
-      coberturaAprovada,
+      frete,
       enviando: false,
       erro: null,
       aoAlterarQuantidade: () => {},
@@ -114,10 +118,10 @@ describe("carrinho e confirmação do pedido (Web técnica)", () => {
     ]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
-    // Subtotal (itens) e Total são linhas próprias; a taxa de entrega é do domínio de entrega.
+    // Subtotal (itens), taxa de entrega (do servidor) e Total são linhas próprias.
     assert.ok(html.includes("data-subtotal-carrinho"));
     assert.ok(html.includes("data-total-carrinho"));
-    assert.ok(!conteudo.includes("Taxa de entrega"), "o painel não inventa frete");
+    assert.ok(conteudo.includes("Taxa de entrega"));
   });
 
   it("linha do item é compacta: sem repetir quantidade × preço e com o seletor junto do excluir", () => {
@@ -185,7 +189,7 @@ describe("carrinho e confirmação do pedido (Web técnica)", () => {
       createElement(PainelCarrinho, {
         carrinho,
         endereco,
-        coberturaAprovada: true,
+        frete: GRATIS,
         enviando: false,
         erro: null,
         aoAlterarQuantidade: () => {},
@@ -212,7 +216,7 @@ describe("carrinho e confirmação do pedido (Web técnica)", () => {
       createElement(PainelCarrinho, {
         carrinho: carrinhoMontado,
         endereco,
-        coberturaAprovada: true,
+        frete: GRATIS,
         enviando: false,
         erro: null,
         aoAlterarQuantidade: () => {},
@@ -282,7 +286,10 @@ describe("carrinho e confirmação do pedido (Web técnica)", () => {
         }),
       ),
     );
-    assert.ok(estaDesabilitado(renderizar(carrinho, endereco, false)));
+    // Fora da área (ou taxa ainda não informada pelo servidor) continua bloqueando.
+    for (const frete of [{ estado: "fora-da-area" }, { estado: "consultando" }, { estado: "erro", mensagem: "Falha" }] as const) {
+      assert.ok(estaDesabilitado(renderizar(carrinho, endereco, frete)), frete.estado);
+    }
     assert.equal(estaDesabilitado(renderizar()), false);
   });
 
@@ -327,7 +334,7 @@ describe("carrinho e confirmação do pedido (Web técnica)", () => {
       createElement(PainelCarrinho, {
         carrinho,
         endereco: longo,
-        coberturaAprovada: true,
+        frete: GRATIS,
         enviando: false,
         erro: null,
         aoAlterarQuantidade: () => {},
@@ -351,5 +358,64 @@ describe("carrinho e confirmação do pedido (Web técnica)", () => {
     assert.ok(conteudo.includes("São José do Rio Preto do Oeste"));
     // O botão de trocar continua utilizável ao lado.
     assert.ok(bloco.includes("data-escolher-endereco"));
+  });
+
+  describe("taxa de entrega informada pelo servidor", () => {
+    const rodapeEntrega = (html: string) => texto(html.slice(html.lastIndexOf('<div class="shrink-0 border-t')));
+    const valorDe = (html: string, atributo: string) => {
+      const inicio = html.indexOf(atributo);
+      return texto(html.slice(html.indexOf(">", inicio) + 1, html.indexOf("</p>", inicio)));
+    };
+
+    it("zona de R$ 0 → Taxa de entrega Grátis e total = subtotal", () => {
+      const html = renderizar();
+      assert.ok(rodapeEntrega(html).includes("Taxa de entrega"));
+      assert.ok(valorDe(html, "data-taxa-entrega").includes("Grátis"));
+      assert.ok(valorDe(html, "data-total-carrinho").includes("R$ 91,80"));
+    });
+
+    it("zona de R$ 5 → total = subtotal + R$ 5,00", () => {
+      const html = renderizar(carrinho, endereco, { estado: "atendido", freteCentavos: 500 });
+      assert.ok(valorDe(html, "data-taxa-entrega").includes("R$ 5,00"));
+      assert.ok(valorDe(html, "data-total-carrinho").includes("R$ 96,80"));
+      // A aba de itens continua mostrando só o subtotal dos produtos.
+      assert.ok(valorDe(html, "data-subtotal-carrinho").includes("R$ 91,80"));
+    });
+
+    it("trocar para endereço de outra zona muda a taxa e o total exibidos", () => {
+      const zonaA = renderizar(carrinho, endereco, { estado: "atendido", freteCentavos: 500 });
+      const zonaB = renderizar(carrinho, { ...endereco, id: "eeeeeeee-0000-4000-8000-000000000000" }, { estado: "atendido", freteCentavos: 700 });
+      assert.ok(valorDe(zonaA, "data-total-carrinho").includes("R$ 96,80"));
+      assert.ok(valorDe(zonaB, "data-taxa-entrega").includes("R$ 7,00"));
+      assert.ok(valorDe(zonaB, "data-total-carrinho").includes("R$ 98,80"));
+    });
+
+    it("sem taxa informada, o painel não mostra total inventado e explica o bloqueio fora da área", () => {
+      const calculando = renderizar(carrinho, endereco, { estado: "consultando" });
+      assert.ok(valorDe(calculando, "data-taxa-entrega").includes("Calculando"));
+      assert.ok(valorDe(calculando, "data-total-carrinho").includes("—"));
+
+      const fora = renderizar(carrinho, endereco, { estado: "fora-da-area" });
+      assert.ok(fora.includes("data-frete-indisponivel"));
+      assert.ok(texto(fora).includes("não realiza entregas neste endereço"));
+      assert.ok(valorDe(fora, "data-total-carrinho").includes("—"));
+    });
+
+    it("resposta da cobertura vira o estado exibido; empresa sem zonas responde frete 0 (Grátis)", () => {
+      assert.deepEqual(freteDaCobertura({ ok: true, dados: { atendida: true, zonasConfiguradas: false, freteCentavos: 0 } }), GRATIS);
+      assert.deepEqual(freteDaCobertura({ ok: true, dados: { atendida: true, zonasConfiguradas: true, freteCentavos: 700 } }), { estado: "atendido", freteCentavos: 700 });
+      assert.deepEqual(freteDaCobertura({ ok: true, dados: { atendida: false, zonasConfiguradas: true, freteCentavos: null } }), { estado: "fora-da-area" });
+      assert.deepEqual(freteDaCobertura({ ok: false, mensagem: "Sem conexão" }), { estado: "erro", mensagem: "Sem conexão" });
+      assert.equal(rotuloTaxaEntrega(GRATIS), "Grátis");
+      assert.equal(rotuloTaxaEntrega({ estado: "sem-endereco" }), "Escolha o endereço");
+    });
+
+    it("o painel não tem campo de frete nem envia valor: a confirmação leva só forma de pagamento e troco", () => {
+      const html = renderizar(carrinho, endereco, { estado: "atendido", freteCentavos: 700 });
+      assert.ok(!/name="frete/i.test(html), "nenhum campo de frete editável");
+      // O tipo da confirmação é o contrato do painel com a conversa: sem frete, zona ou total.
+      const confirmacao: ConfirmacaoPedido = { forma: "cartao", trocoParaCentavos: null };
+      assert.deepEqual(Object.keys(confirmacao).sort(), ["forma", "trocoParaCentavos"]);
+    });
   });
 });

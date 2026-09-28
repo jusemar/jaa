@@ -8,6 +8,7 @@ import {
   enderecoTemLocalizacaoConfirmada,
   formatarCep,
   formatarEnderecoResumido,
+  rotuloEndereco,
 } from "./endereco.ts";
 
 const base = {
@@ -34,6 +35,19 @@ describe("cadastro de endereço", () => {
     const endereco = criarEnderecoEntradaSchema.parse({ ...base, complemento: "  ", pontoReferencia: "" });
     assert.equal(endereco.complemento, null);
     assert.equal(endereco.pontoReferencia, null);
+  });
+
+  it("apelido é opcional: vazio ou ausente vira null; acima de 40 caracteres é recusado", () => {
+    assert.equal(criarEnderecoEntradaSchema.parse({ ...base, apelido: "" }).apelido, null);
+    const { apelido: _sem, ...semApelido } = base;
+    assert.equal(criarEnderecoEntradaSchema.parse(semApelido).apelido, null);
+    assert.equal(criarEnderecoEntradaSchema.parse(base).apelido, "Casa");
+    assert.equal(criarEnderecoEntradaSchema.safeParse({ ...base, apelido: "x".repeat(41) }).success, false);
+  });
+
+  it("sem apelido, a tela chama o endereço pelo próprio endereço (nunca 'null')", () => {
+    assert.equal(rotuloEndereco({ ...base, apelido: null }), "Rua das Flores, 150 — Apto 302");
+    assert.equal(rotuloEndereco({ ...base, apelido: "Casa" }), "Casa");
   });
 
   it("recusa endereço incompleto, CEP inválido e UF inexistente", () => {

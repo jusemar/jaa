@@ -1,3 +1,4 @@
+import "./apoio/exigir-banco-de-teste.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
@@ -242,7 +243,10 @@ describe("conteúdo e ordem da lista", () => {
       tipo: "direta",
       outraIdentidade: { identidadeId: B.identidadeId, tipo: "pessoal", nomeExibicao: "Pessoa lst_b", nomeUsuario: "lst_b" },
       ultimaMensagem: mensagem,
+      // Atividade = a última mensagem visível; sem bloqueio entre as pessoas.
+      atividadeId: mensagem.id,
       naoLidas: 0,
+      comunicacaoBloqueada: false,
     });
     assert.equal(itemB?.naoLidas, 1, "a mensagem de A é não lida para B");
     assert.deepEqual(itemB?.outraIdentidade, { identidadeId: A.identidadeId, tipo: "pessoal", nomeExibicao: "Pessoa lst_a", nomeUsuario: "lst_a" });
@@ -267,10 +271,10 @@ describe("conteúdo e ordem da lista", () => {
     const [topo] = lista.conversas;
     const [noBanco] = await banco.select().from(mensagens).where(eq(mensagens.id, ultima.id));
     assert.ok(noBanco);
-    assert.equal(topo?.ultimaMensagem.id, noBanco.id);
-    assert.equal(topo?.ultimaMensagem.conteudo, "segunda, agora de A");
-    assert.equal(topo?.ultimaMensagem.remetenteIdentidadeId, A.identidadeId);
-    assert.equal(topo?.ultimaMensagem.criadoEm, noBanco.criadoEm.toISOString());
+    assert.equal(topo?.ultimaMensagem?.id, noBanco.id);
+    assert.equal(topo?.ultimaMensagem?.conteudo, "segunda, agora de A");
+    assert.equal(topo?.ultimaMensagem?.remetenteIdentidadeId, A.identidadeId);
+    assert.equal(topo?.ultimaMensagem?.criadoEm, noBanco.criadoEm.toISOString());
     assert.deepEqual(idsDaLista(await listar(A)), await ordemEsperadaNoBanco(A.identidadeId));
   });
 
@@ -291,8 +295,8 @@ describe("conteúdo e ordem da lista", () => {
 
     const primeira = await listar(A);
     const [topo, segundo] = primeira.conversas;
-    assert.equal(topo?.ultimaMensagem.criadoEm, segundo?.ultimaMensagem.criadoEm);
-    assert.ok((topo?.ultimaMensagem.id ?? "") > (segundo?.ultimaMensagem.id ?? ""));
+    assert.equal(topo?.ultimaMensagem?.criadoEm, segundo?.ultimaMensagem?.criadoEm);
+    assert.ok((topo?.ultimaMensagem?.id ?? "") > (segundo?.ultimaMensagem?.id ?? ""));
     for (let i = 0; i < 5; i++) assert.deepEqual(await listar(A), primeira);
   });
 });
@@ -333,9 +337,9 @@ describe("isolamento e privacidade", () => {
     const json = resposta.json() as PaginaConversas;
     assert.deepEqual(Object.keys(json).sort(), ["conversas", "proximoCursor"]);
     for (const item of json.conversas as ItemListaConversas[]) {
-      assert.deepEqual(Object.keys(item).sort(), ["id", "naoLidas", "outraIdentidade", "tipo", "ultimaMensagem"]);
+      assert.deepEqual(Object.keys(item).sort(), ["atividadeId", "comunicacaoBloqueada", "id", "naoLidas", "outraIdentidade", "tipo", "ultimaMensagem"]);
       assert.deepEqual(Object.keys(item.outraIdentidade).sort(), ["identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
-      assert.deepEqual(Object.keys(item.ultimaMensagem).sort(), ["conteudo", "conversaId", "criadoEm", "editadaEm", "estado", "excluidaEm", "id", "mensagemRespondida", "pedido", "remetenteIdentidadeId", "tipo"]);
+      assert.deepEqual(Object.keys(item.ultimaMensagem ?? {}).sort(), ["conteudo", "conversaId", "criadoEm", "editadaEm", "estado", "excluidaEm", "id", "mensagemRespondida", "pedido", "remetenteIdentidadeId", "tipo"]);
     }
 
     const contas = await banco.select({ id: users.id, email: users.email }).from(users).where(inArray(users.phoneNumber, TELEFONES_TESTE));
@@ -406,7 +410,7 @@ describe("paginação por cursor", () => {
       const pagina: PaginaConversas = await listar(P, `limite=${limite}${cursor ? `&antesDe=${cursor}` : ""}`);
       assert.ok(pagina.conversas.length <= limite);
       ids.push(...idsDaLista(pagina));
-      if (pagina.proximoCursor) assert.equal(pagina.proximoCursor, pagina.conversas.at(-1)?.ultimaMensagem.id);
+      if (pagina.proximoCursor) assert.equal(pagina.proximoCursor, pagina.conversas.at(-1)?.ultimaMensagem?.id);
       cursor = pagina.proximoCursor;
       paginas += 1;
       assert.ok(paginas <= TOTAL_EXTRAS + 1, "paginação não termina");
@@ -426,7 +430,7 @@ describe("paginação por cursor", () => {
   it("limite padrão é 20 e máximo é 50", async () => {
     const padrao = await listar(P);
     assert.equal(padrao.conversas.length, 20);
-    assert.equal(padrao.proximoCursor, padrao.conversas.at(-1)?.ultimaMensagem.id);
+    assert.equal(padrao.proximoCursor, padrao.conversas.at(-1)?.ultimaMensagem?.id);
     const maximo = await listar(P, "limite=50");
     assert.equal(maximo.conversas.length, TOTAL_EXTRAS);
     assert.equal(maximo.proximoCursor, null);
@@ -508,7 +512,7 @@ describe("realtime reflete a lista", () => {
     await aguardarAte(() => eventosA2.length === 2);
     assert.equal(eventosA2[1]?.mensagem.id, outra.id);
     assert.equal(eventosA1.length, 1);
-    assert.equal((await listar(A)).conversas[0]?.ultimaMensagem.id, outra.id);
+    assert.equal((await listar(A)).conversas[0]?.ultimaMensagem?.id, outra.id);
 
     for (const socket of [a2, b1, c1]) socket.disconnect();
   });

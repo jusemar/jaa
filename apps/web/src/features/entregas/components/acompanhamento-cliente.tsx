@@ -2,7 +2,10 @@
 
 import {
   EVENTO_PEDIDO_ACOMPANHAMENTO,
+  EVENTO_PEDIDO_FILA,
+  TEXTO_AVISO_ENTREGA_PROXIMA,
   eventoPedidoAcompanhamentoSchema,
+  eventoPedidoFilaSchema,
   rotuloFila,
   rotuloUltimaPosicao,
   type AcompanhamentoPedido,
@@ -14,7 +17,7 @@ import { obterAcompanhamentoDoPedido } from "../lib/api-entregas";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 
 /*
- * ACOMPANHAMENTO DO CLIENTE. Ele vê a fila de sempre ("3 entregas antes da sua") e, SÓ quando a
+ * ACOMPANHAMENTO DO CLIENTE. Ele vê a posição na fila ("Você é o 3º na fila de entregas.") e, SÓ quando a
  * entrega dele vira a atual, o entregador no mapa.
  *
  * Quem decide isso é o SERVIDOR: a posição só chega no payload quando é a vez dele. A tela não
@@ -31,6 +34,7 @@ export function ResumoAcompanhamento({ acompanhamento, agora = new Date() }: { a
       <span data-fila-pedido={fila.situacao} className={`text-xs ${fila.situacao === "indo_ate_voce" ? "font-semibold text-marca" : "text-conteudo-suave"}`}>
         {rotuloFila(fila)}
       </span>
+      {fila.situacao === "indo_ate_voce" && <span className="text-xs text-conteudo">{TEXTO_AVISO_ENTREGA_PROXIMA.orientacao}</span>}
       {fila.situacao === "indo_ate_voce" && (
         <span data-posicao-entregador={posicaoEntregador ? "disponivel" : "indisponivel"} className="text-xs text-conteudo-suave">
           {posicaoEntregador ? rotuloUltimaPosicao({ capturadaEm: posicaoEntregador.capturadaEm }, agora) : "Localização temporariamente indisponível"}
@@ -41,10 +45,44 @@ export function ResumoAcompanhamento({ acompanhamento, agora = new Date() }: { a
 }
 
 /**
+ * QUEM ESTÁ COM A ENTREGA: identidade pública do Jaa (nome e @usuario). Aparece mesmo se houver
+ * bloqueio de mensagens entre os dois — bloqueio corta a conversa, nunca a operação. "Conversar" abre
+ * a conversa direta de sempre; se estiver bloqueada, ela abre com o envio desabilitado.
+ */
+export function EntregadorDaEntrega({ acompanhamento, aoConversarCom }: { acompanhamento: AcompanhamentoPedido; aoConversarCom?: ((nomeUsuario: string) => void) | undefined }) {
+  const { entregador, fila } = acompanhamento;
+  if (!entregador || fila.situacao === "encerrado") return null;
+  return (
+    <span data-entregador-da-entrega={entregador.nomeUsuario} className="flex flex-wrap items-center gap-2 text-xs text-conteudo-suave">
+      Entregador: <strong className="font-semibold text-conteudo">{entregador.nomeExibicao}</strong> @{entregador.nomeUsuario}
+      {aoConversarCom && (
+        <button
+          type="button"
+          data-conversar-entregador={entregador.nomeUsuario}
+          onClick={() => aoConversarCom(entregador.nomeUsuario)}
+          className="rounded-full border border-borda px-2 py-0.5 text-[11px] font-medium text-marca"
+        >
+          Conversar
+        </button>
+      )}
+    </span>
+  );
+}
+
+/**
  * Container do cliente: busca o estado atual (é isto que resolve a RECONEXÃO, sem depender do último
  * evento) e acompanha o realtime do próprio pedido.
  */
-export function AcompanhamentoDoPedido({ pedidoId, destino }: { pedidoId: string; destino?: { latitude: number; longitude: number } | undefined }) {
+export function AcompanhamentoDoPedido({
+  pedidoId,
+  destino,
+  aoConversarCom,
+}: {
+  pedidoId: string;
+  destino?: { latitude: number; longitude: number } | undefined;
+  // Abre a conversa DIRETA de sempre com o entregador (nada de chat de entrega).
+  aoConversarCom?: ((nomeUsuario: string) => void) | undefined;
+}) {
   const [acompanhamento, setAcompanhamento] = useState<AcompanhamentoPedido | null>(null);
 
   useEffect(() => {
@@ -64,9 +102,30 @@ export function AcompanhamentoDoPedido({ pedidoId, destino }: { pedidoId: string
       // Só o próprio pedido: o servidor já filtra, e a tela confere de novo.
       if (resultado.success && resultado.data.pedidoId === pedidoId) setAcompanhamento(resultado.data.acompanhamento);
     };
+    /*
+     * A FILA muda sem posição de GPS nenhuma (entrega anterior concluída, cancelamento, reordenação):
+     * `pedido:fila` traz a posição atual do PRÓPRIO pedido. Virando a vez dele, relê o acompanhamento
+     * completo (com o ponto do entregador, se houver).
+     */
+    const aoMudarFila = (evento: unknown) => {
+      const resultado = eventoPedidoFilaSchema.safeParse(evento);
+      if (!resultado.success || resultado.data.pedidoId !== pedidoId) return;
+      const fila = resultado.data;
+      setAcompanhamento((atual) => ({
+        fila,
+        entregador: atual?.entregador ?? null,
+        posicaoEntregador: fila.situacao === "indo_ate_voce" ? (atual?.posicaoEntregador ?? null) : null,
+      }));
+      // Relê o todo (entregador atual e, se for a vez dele, o ponto): o evento só avisa.
+      void obterAcompanhamentoDoPedido(pedidoId).then((relido) => {
+        if (relido.ok) setAcompanhamento(relido.dados);
+      });
+    };
     socket.on(EVENTO_PEDIDO_ACOMPANHAMENTO, aoAtualizar);
+    socket.on(EVENTO_PEDIDO_FILA, aoMudarFila);
     return () => {
       socket.off(EVENTO_PEDIDO_ACOMPANHAMENTO, aoAtualizar);
+      socket.off(EVENTO_PEDIDO_FILA, aoMudarFila);
     };
   }, [pedidoId]);
 
@@ -75,6 +134,7 @@ export function AcompanhamentoDoPedido({ pedidoId, destino }: { pedidoId: string
   return (
     <span className="flex flex-col gap-1">
       <ResumoAcompanhamento acompanhamento={acompanhamento} />
+      <EntregadorDaEntrega acompanhamento={acompanhamento} {...(aoConversarCom ? { aoConversarCom } : {})} />
       {acompanhamento.posicaoEntregador && <MapaDoEntregador posicao={acompanhamento.posicaoEntregador} destino={destino} />}
     </span>
   );

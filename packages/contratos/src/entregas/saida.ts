@@ -96,6 +96,8 @@ export const saidaEntregaSchema = z.object({
   zonasCombinadas: z.array(zonaDaSaidaSchema),
   // Montada pela automação (a saída manual do gestor continua existindo e nasce preparada).
   automatica: z.boolean(),
+  // Regra operacional: o entregador precisa voltar à base ao terminar (a volta entra na rota).
+  exigeRetornoBase: z.boolean(),
   criadoEm: z.iso.datetime(),
   // Relógio da formação: começa no PRIMEIRO pedido e o prazo fica persistido (sobrevive a restart).
   formacaoIniciadaEm: z.iso.datetime().nullable(),
@@ -117,6 +119,8 @@ export type ListaSaidas = z.infer<typeof listaSaidasSchema>;
 export const criarSaidaEntradaSchema = z.object({
   entregadorId: z.uuid(),
   pedidoIds: z.array(z.uuid()).min(1, "Escolha ao menos um pedido.").max(MAXIMO_PARADAS_POR_SAIDA),
+  // O entregador volta à base ao terminar? Ausente = o padrão da empresa (configuração de despacho).
+  exigeRetornoBase: z.boolean().optional(),
 });
 
 export type CriarSaidaEntrada = z.input<typeof criarSaidaEntradaSchema>;
@@ -185,12 +189,23 @@ export const filaDoPedidoSchema = z.object({
 
 export type FilaDoPedido = z.infer<typeof filaDoPedidoSchema>;
 
+// Aviso da vez do cliente — texto exato, usado na fila e no aviso em tempo real.
+export const TEXTO_AVISO_ENTREGA_PROXIMA = { titulo: "🔔 Sua entrega é a próxima", orientacao: "Por favor, aguarde na calçada." } as const;
+
+/**
+ * Texto do cliente. A POSIÇÃO é derivada na hora (entregas ativas antes + 1): muda sozinha quando uma
+ * entrega anterior termina, é cancelada ou o entregador reorganiza a sequência — nada é congelado.
+ */
+export function posicaoNaFila(fila: FilaDoPedido): number | null {
+  return fila.entregasAntes === null ? null : fila.entregasAntes + 1;
+}
+
 export function rotuloFila(fila: FilaDoPedido): string {
   switch (fila.situacao) {
     case "indo_ate_voce":
-      return "Indo até você";
+      return TEXTO_AVISO_ENTREGA_PROXIMA.titulo;
     case "na_fila":
-      return fila.entregasAntes === 1 ? "1 entrega antes da sua" : `${fila.entregasAntes ?? 0} entregas antes da sua`;
+      return `Você é o ${posicaoNaFila(fila) ?? 1}º na fila de entregas.`;
     case "aguardando_saida":
       return "Seu pedido está separado para a entrega";
     case "encerrado":
@@ -198,4 +213,30 @@ export function rotuloFila(fila: FilaDoPedido): string {
     case "sem_saida":
       return "Ainda não saiu para entrega";
   }
+}
+
+/**
+ * "Recalcular melhor rota": o entregador manda só a VERSÃO da sequência que está vendo. O Jaa escolhe a
+ * nova ordem das paradas ativas; se a sequência mudou nesse meio-tempo, 409 e nada é sobrescrito.
+ */
+export const recalcularRotaEntradaSchema = z.object({ versaoSequencia: z.number().int().min(1) }).strict();
+
+export type RecalcularRotaEntrada = z.infer<typeof recalcularRotaEntradaSchema>;
+
+// Só faz sentido reorganizar com pelo menos duas entregas pendentes e a saída ainda na operação.
+export const STATUS_SAIDA_RECALCULAVEL = ["preparada", "liberada_retirada", "em_andamento"] as const;
+
+export function podeRecalcularRota(saida: Pick<SaidaEntrega, "status" | "paradas">): boolean {
+  return (STATUS_SAIDA_RECALCULAVEL as readonly string[]).includes(saida.status) && paradasAtivas(saida).length >= 2;
+}
+
+/*
+ * TRANSFERÊNCIA MANUAL: enquanto a saída NÃO foi para a rua, o gerente pode tirar um pedido dela e
+ * entregá-lo a outro entregador (a decisão dele prevalece sobre a formação automática). Em todos estes
+ * estados o pedido ainda está PRONTO. `em_andamento` (entregador na rua) fica de fora de propósito.
+ */
+export const STATUS_SAIDA_TRANSFERIVEL = ["em_formacao", "aguardando_entregador", "preparada", "liberada_retirada"] as const;
+
+export function saidaPermiteTransferencia(status: StatusSaida): boolean {
+  return (STATUS_SAIDA_TRANSFERIVEL as readonly string[]).includes(status);
 }

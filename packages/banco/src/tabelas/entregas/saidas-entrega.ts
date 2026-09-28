@@ -62,6 +62,19 @@ export const saidasEntrega = pgTable(
     rotaDuracaoSegundos: integer(),
     rotaCalculadaEm: timestamp({ withTimezone: true }),
     rotaVersaoSequencia: integer(),
+    /*
+     * Regra OPERACIONAL da saída: o entregador precisa voltar à base ao terminar. Muda o planejamento
+     * (a volta faz parte da otimização e do percurso). Falso por padrão = o comportamento de antes.
+     */
+    exigeRetornoBase: boolean().notNull().default(false),
+    // O percurso gravado inclui a volta à base (a última entrega NÃO é o fim).
+    rotaComRetorno: boolean().notNull().default(false),
+    /*
+     * De onde partiu o ÚLTIMO cálculo (a base, ou a posição do entregador num recálculo na rua). Não é
+     * o snapshot da base acima, que é histórico e não muda por causa de recálculo.
+     */
+    rotaOrigemLatitude: numeric({ precision: 9, scale: 6, mode: "number" }),
+    rotaOrigemLongitude: numeric({ precision: 9, scale: 6, mode: "number" }),
     // Montada pela automação (a criação manual do gestor continua existindo e nasce preparada).
     automatica: boolean().notNull().default(false),
     // Incrementa a cada mudança da sequência; quem salva manda a versão que viu.
@@ -136,6 +149,7 @@ export const saidasEntrega = pgTable(
       "saidas_entrega_origem_completa",
       sql`(${tabela.origemLatitude} is null) = (${tabela.origemLongitude} is null)`,
     ),
+    check("saidas_entrega_rota_origem_completa", sql`(${tabela.rotaOrigemLatitude} is null) = (${tabela.rotaOrigemLongitude} is null)`),
     // Números e traçado só existem com percurso REAL: em fallback, nada é inventado.
     check(
       "saidas_entrega_percurso_por_estado",

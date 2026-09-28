@@ -256,6 +256,8 @@ describe("zonas de entrega", () => {
     zonaA = resposta.json();
     assert.equal(zonaA.ativa, true);
     assert.equal(zonaA.vertices.length, 4);
+    // Sem frete informado, a zona nasce com frete grátis (default do banco).
+    assert.equal(zonaA.freteCentavos, 0);
 
     const respostaB = await ctx.api(
       A,
@@ -334,6 +336,7 @@ describe("zonas de entrega", () => {
     assert.deepEqual(dentro.json(), {
       atendida: true,
       zonasConfiguradas: true,
+      freteCentavos: 0,
     });
 
     const fora = await ctx.api(
@@ -343,7 +346,7 @@ describe("zonas de entrega", () => {
       PONTO_FORA,
     );
     assert.equal(fora.statusCode, 200, fora.body);
-    assert.deepEqual(fora.json(), { atendida: false, zonasConfiguradas: true });
+    assert.deepEqual(fora.json(), { atendida: false, zonasConfiguradas: true, freteCentavos: null });
 
     const cadastro = await ctx.api(B1, "POST", "/enderecos", {
       apelido: "Fora",
@@ -497,6 +500,29 @@ describe("zonas de entrega", () => {
         ativa: true,
       })
     ).json();
+  });
+
+  it("cada zona guarda o próprio frete; editar sem informar o frete não o zera", async () => {
+    const caminho = `/empresas/${pizzaria.id}/zonas/${zonaB.id}`;
+    const comFrete = await ctx.api(A, "PATCH", caminho, { nome: zonaB.nome, vertices: ZONA_B, freteCentavos: 500 });
+    assert.equal(comFrete.statusCode, 200, comFrete.body);
+    assert.equal((comFrete.json() as ZonaEntrega).freteCentavos, 500);
+
+    // Mesmo formulário de antes (só nome/desenho): o frete configurado permanece.
+    const semFrete = await ctx.api(A, "PATCH", caminho, { nome: zonaB.nome, vertices: ZONA_B });
+    assert.equal((semFrete.json() as ZonaEntrega).freteCentavos, 500);
+    const listada = ((await ctx.api(A, "GET", `/empresas/${pizzaria.id}/zonas`)).json() as { zonas: ZonaEntrega[] }).zonas;
+    assert.equal(listada.find((zona) => zona.id === zonaB.id)?.freteCentavos, 500);
+    assert.equal(listada.find((zona) => zona.id === zonaA.id)?.freteCentavos, 0);
+
+    for (const invalido of [-1, 4.5, "500"]) {
+      const recusada = await ctx.api(A, "PATCH", caminho, { nome: zonaB.nome, vertices: ZONA_B, freteCentavos: invalido });
+      assert.equal(recusada.statusCode, 400, `frete ${String(invalido)}`);
+    }
+
+    // Volta a grátis para não interferir nos testes seguintes.
+    zonaB = (await ctx.api(A, "PATCH", caminho, { nome: zonaB.nome, vertices: ZONA_B, freteCentavos: 0 })).json();
+    assert.equal(zonaB.freteCentavos, 0);
   });
 });
 

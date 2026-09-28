@@ -5,15 +5,21 @@
   "type": "module",
   "exports": {
     ".": "./src/conexao.ts",
-    "./schema": "./src/schema.ts"
+    "./schema": "./src/schema.ts",
+    "./geoespacial": "./src/geoespacial.ts",
+    "./banco-de-teste": "./src/banco-de-teste.ts",
+    "./territorio": "./src/territorio/importacao-malha.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/com-banco-teste.ts tsx --test \"testes/**/*.test.ts\"",
     "gerar-migration": "drizzle-kit generate",
     "migrar": "drizzle-kit migrate",
     "verificar-migrations": "drizzle-kit check",
     "verificar-conexao": "tsx --env-file-if-exists=.env scripts/verificar-conexao.ts",
-    "semear-montagem": "tsx --env-file-if-exists=.env scripts/semear-montagem-local.ts"
+    "semear-montagem": "tsx --env-file-if-exists=.env scripts/semear-montagem-local.ts",
+    "com-banco-teste": "tsx scripts/com-banco-teste.ts",
+    "ibge:importar-malha": "tsx --env-file-if-exists=.env scripts/importar-malha-municipal.ts"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

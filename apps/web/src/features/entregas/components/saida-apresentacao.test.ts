@@ -9,7 +9,8 @@ import type {
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AcaoIniciarSaida } from "./area-minhas-entregas.tsx";
-import { FilaDoCliente, SequenciaDaSaida } from "./saida-apresentacao.tsx";
+import { podeRecalcularRota } from "@jaa/contratos";
+import { FilaDoCliente, SequenciaDaSaida, moverNoRascunho } from "./saida-apresentacao.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
 const uuid = (n: number) =>
@@ -71,6 +72,7 @@ const saida = (paradas: ParadaSaida[]): SaidaEntrega => ({
   zonaPrincipal: null,
   zonasCombinadas: [],
   automatica: false,
+  exigeRetornoBase: false,
   criadoEm: "2026-09-16T12:00:00.000Z",
   formacaoIniciadaEm: null,
   prazoFormacaoEm: null,
@@ -105,7 +107,7 @@ describe("sequência da saída", () => {
       createElement(SequenciaDaSaida, {
         saida: dados,
         entregas,
-        ...(comReordenacao ? { aoMover: () => {} } : {}),
+        ...(comReordenacao ? { aoSalvarOrdem: async () => true } : {}),
         ...(comConclusao ? { aoConcluir: () => {} } : {}),
       }),
     );
@@ -191,30 +193,48 @@ describe("sequência da saída", () => {
     );
   });
 
-  it("só oferece reordenar quando quem exibe é o entregador", () => {
+  it("só oferece 'Alterar ordem' ao entregador e com mais de uma parada; setas só no modo de edição", () => {
     const unica = render(saida([parada(1, 1)]), true);
-    assert.equal(unica.includes("data-subir-parada"), false);
-    assert.equal(unica.includes("data-descer-parada"), false);
+    assert.equal(unica.includes("data-alterar-ordem"), false);
     assert.ok(texto(unica).includes("Parada única nesta rota."));
 
-    assert.equal(
-      render(saida([parada(1, 1), parada(2, 2)])).includes("data-subir-parada"),
-      false,
-    );
+    assert.equal(render(saida([parada(1, 1), parada(2, 2)])).includes("data-alterar-ordem"), false, "a empresa só acompanha");
     const doEntregador = render(saida([parada(1, 1), parada(2, 2)]), true);
-    assert.ok(doEntregador.includes("data-subir-parada"));
-    assert.ok(doEntregador.includes("data-descer-parada"));
-    // A primeira não sobe e a última não desce.
-    assert.equal(
-      (doEntregador.match(/data-subir-parada="true" disabled=""/g) ?? [])
-        .length,
-      1,
-    );
-    assert.equal(
-      (doEntregador.match(/data-descer-parada="true" disabled=""/g) ?? [])
-        .length,
-      1,
-    );
+    assert.ok(doEntregador.includes("data-alterar-ordem"));
+    // Fora do modo de edição, nada de setas: a numeração grande é o que ele segue.
+    assert.equal(doEntregador.includes("data-subir-parada"), false);
+    assert.equal((doEntregador.match(/data-numero-parada="\d"/g) ?? []).length, 2);
+  });
+
+  it("'Recalcular melhor rota' só para o entregador, com 2+ entregas pendentes e a saída ainda na operação", () => {
+    const comBotao = (dados: SaidaEntrega, recalcula = true) =>
+      renderToStaticMarkup(
+        createElement(SequenciaDaSaida, { saida: dados, aoSalvarOrdem: async () => true, ...(recalcula ? { aoRecalcularRota: async () => true } : {}) }),
+      ).includes("data-recalcular-rota");
+    const duas = saida([parada(1, 1), parada(2, 2)]);
+    assert.equal(comBotao(duas), true);
+    assert.ok(texto(renderToStaticMarkup(createElement(SequenciaDaSaida, { saida: duas, aoRecalcularRota: async () => true, aoSalvarOrdem: async () => true }))).includes("Recalcular melhor rota"));
+    assert.equal(comBotao(duas, false), false, "a empresa só acompanha");
+    assert.equal(comBotao(saida([parada(1, 1)])), false, "uma entrega só: nada a reorganizar");
+    assert.equal(comBotao({ ...duas, status: "concluida" }), false);
+    // Concluída não conta: sobrou uma pendente.
+    assert.equal(comBotao(saida([parada(1, 1, "2026-09-16T12:40:00.000Z"), parada(2, 2)])), false);
+    assert.equal(podeRecalcularRota(duas), true);
+  });
+
+  it("rascunho da ordem: move uma posição, respeita os limites e não perde pedido", () => {
+    const ordem = ["a", "b", "c", "d"];
+    assert.deepEqual(moverNoRascunho(ordem, "c", -1), ["a", "c", "b", "d"]);
+    assert.deepEqual(moverNoRascunho(ordem, "a", -1), ordem);
+    assert.deepEqual(moverNoRascunho(ordem, "d", 1), ordem);
+    assert.deepEqual(moverNoRascunho(ordem, "x", 1), ordem);
+    assert.deepEqual(ordem, ["a", "b", "c", "d"], "o original não é alterado");
+  });
+
+  it("'Conversar' abre a conversa direta com o cliente da parada (sem chat de entrega)", () => {
+    const html = renderToStaticMarkup(createElement(SequenciaDaSaida, { saida: saida([parada(1, 1)]), aoConversar: () => {} }));
+    assert.match(html, /data-conversar-cliente="[^"]+"/);
+    assert.equal(render(saida([parada(1, 1)])).includes("data-conversar-cliente"), false);
   });
 
   it("saída sem parada ativa explica o estado", () => {
@@ -234,12 +254,12 @@ describe("fila do cliente", () => {
     assert.ok(
       texto(
         render({ pedidoId: uuid(9), situacao: "na_fila", entregasAntes: 3 }),
-      ).includes("3 entregas antes da sua"),
+      ).includes("Você é o 4º na fila de entregas."),
     );
     assert.ok(
       texto(
         render({ pedidoId: uuid(9), situacao: "na_fila", entregasAntes: 1 }),
-      ).includes("1 entrega antes da sua"),
+      ).includes("Você é o 2º na fila de entregas."),
     );
     assert.ok(
       texto(
@@ -248,7 +268,7 @@ describe("fila do cliente", () => {
           situacao: "indo_ate_voce",
           entregasAntes: 0,
         }),
-      ).includes("Indo até você"),
+      ).includes("🔔 Sua entrega é a próximaPor favor, aguarde na calçada."),
     );
     assert.ok(
       texto(

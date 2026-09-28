@@ -17,7 +17,8 @@ export const zonasEntrega = pgTable(
       .notNull()
       .references(() => empresas.id, { onDelete: "cascade" }),
     nome: text().notNull(),
-    freteCentavos: integer("frete_centavos").notNull().default(0),
+    // Frete cobrado do cliente cujo destino cai nesta zona, em centavos. 0 = frete grátis.
+    freteCentavos: integer().notNull().default(0),
     vertices: jsonb().notNull(),
     // Zona desativada continua no histórico das saídas, mas não classifica pedido novo.
     ativa: boolean().notNull().default(true),

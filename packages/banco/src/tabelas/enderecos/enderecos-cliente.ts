@@ -18,7 +18,8 @@ export const enderecosCliente = pgTable(
     identidadeId: uuid()
       .notNull()
       .references(() => identidades.id, { onDelete: "cascade" }),
-    apelido: text().notNull(),
+    // Opcional: sem apelido, a tela identifica o endereço pelo próprio endereço.
+    apelido: text(),
     cep: text().notNull(),
     logradouro: text().notNull(),
     numero: text().notNull(),
@@ -53,7 +54,7 @@ export const enderecosCliente = pgTable(
     check("enderecos_cliente_cep_valido", sql`${tabela.cep} ~ '^[0-9]{8}$'`),
     check(
       "enderecos_cliente_textos_validos",
-      sql`char_length(${tabela.apelido}) between 1 and 40 and char_length(${tabela.logradouro}) between 1 and 120 and char_length(${tabela.numero}) between 1 and 20 and char_length(${tabela.bairro}) between 1 and 80 and char_length(${tabela.cidade}) between 1 and 80 and (${tabela.complemento} is null or char_length(${tabela.complemento}) between 1 and 60) and (${tabela.pontoReferencia} is null or char_length(${tabela.pontoReferencia}) between 1 and 160)`,
+      sql`(${tabela.apelido} is null or char_length(${tabela.apelido}) between 1 and 40) and char_length(${tabela.logradouro}) between 1 and 120 and char_length(${tabela.numero}) between 1 and 20 and char_length(${tabela.bairro}) between 1 and 80 and char_length(${tabela.cidade}) between 1 and 80 and (${tabela.complemento} is null or char_length(${tabela.complemento}) between 1 and 60) and (${tabela.pontoReferencia} is null or char_length(${tabela.pontoReferencia}) between 1 and 160)`,
     ),
   ],
 );

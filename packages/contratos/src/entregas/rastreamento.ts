@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { latitudeSchema, longitudeSchema } from "../enderecos/endereco.ts";
+import { participanteConversaSchema } from "../conversas/conversa.ts";
 import { filaDoPedidoSchema } from "./saida.ts";
 
 /*
@@ -84,6 +85,12 @@ export type RespostaPosicaoSaida = z.infer<typeof respostaPosicaoSaidaSchema>;
  */
 export const acompanhamentoPedidoSchema = z.object({
   fila: filaDoPedidoSchema,
+  /*
+   * Quem está com a entrega AGORA (atribuição atual): identidade PÚBLICA do Jaa (nome e @usuario),
+   * para o cliente saber quem vem e poder conversar pelo chat de sempre. null sem entregador.
+   * Nada além disso: nem telefone, nem vínculo, nem outras entregas dele.
+   */
+  entregador: participanteConversaSchema.nullable(),
   // null enquanto não é a vez dele, quando não há saída em andamento ou quando não há posição válida.
   posicaoEntregador: z
     .object({

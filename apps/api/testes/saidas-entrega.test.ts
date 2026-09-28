@@ -3,9 +3,11 @@ import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { paradasSaida, saidasEntrega } from "@jaa/banco/schema";
 import {
+  EVENTO_PEDIDO_ENTREGA_PROXIMA,
   EVENTO_PEDIDO_FILA,
   EVENTO_SAIDA_ATUALIZADA,
   type Empresa,
+  type EventoPedidoEntregaProxima,
   type EventoPedidoFila,
   type EventoSaidaAtualizada,
   type FilaDoPedido,
@@ -1120,5 +1122,116 @@ describe("saída no banco", () => {
       ),
       false,
     );
+  });
+});
+
+describe("fila dinâmica do cliente e aviso da próxima entrega", () => {
+  const clientePorPedido = new Map<string, Pessoa>();
+
+  async function saidaLiberada(): Promise<SaidaEntrega> {
+    const pedidos = [];
+    for (const cliente of [B1, B2, B3]) {
+      const pedido = await pedidoPronto(cliente);
+      clientePorPedido.set(pedido.id, cliente);
+      pedidos.push(pedido);
+    }
+    const saida: SaidaEntrega = (await criarSaida(A, pizzaria, { entregadorId: paulo, pedidoIds: pedidos.map((pedido) => pedido.id) })).json();
+    assert.equal((await liberarSaida(saida.id)).statusCode, 200);
+    return (await ctx.api(P, "GET", `/entregas/saidas/${saida.id}`)).json();
+  }
+  const ordemAtiva = (saida: SaidaEntrega) =>
+    saida.paradas.filter((parada) => parada.encerradaEm === null).sort((a, b) => a.posicao - b.posicao).map((parada) => parada.pedidoId);
+  async function fila(pedidoId: string): Promise<FilaDoPedido> {
+    const cliente = clientePorPedido.get(pedidoId) as Pessoa;
+    return (await ctx.api(cliente, "GET", `/pedidos/${pedidoId}/fila`)).json();
+  }
+  const posicoes = async (ordem: string[]) => Promise.all(ordem.map(async (pedidoId) => (await fila(pedidoId)).entregasAntes));
+  const concluirComo = (saidaId: string, pedidoId: string) => ctx.api(P, "POST", `/entregas/saidas/${saidaId}/paradas/${pedidoId}/concluir`);
+
+  it("posição = paradas ATIVAS antes + 1, e muda com conclusão, reordenação e cancelamento", async () => {
+    const liberada = await saidaLiberada();
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${liberada.id}/iniciar`)).statusCode, 200);
+    const inicial = ordemAtiva(liberada);
+    assert.deepEqual(await posicoes(inicial), [0, 1, 2]);
+    assert.equal((await fila(inicial[0] as string)).situacao, "indo_ate_voce");
+
+    // A primeira foi entregue: as outras sobem.
+    assert.equal((await concluirComo(liberada.id, inicial[0] as string)).statusCode, 200);
+    assert.deepEqual(await posicoes([inicial[1] as string, inicial[2] as string]), [0, 1]);
+
+    // O entregador troca as duas restantes: a posição de cada cliente acompanha.
+    const atual: SaidaEntrega = (await ctx.api(P, "GET", `/entregas/saidas/${liberada.id}`)).json();
+    const trocada = [inicial[2] as string, inicial[1] as string];
+    assert.equal((await ctx.api(P, "PATCH", `/entregas/saidas/${liberada.id}/sequencia`, { versaoSequencia: atual.versaoSequencia, pedidoIds: trocada })).statusCode, 200);
+    assert.deepEqual(await posicoes(trocada), [0, 1]);
+
+    // Cancelada a primeira da vez: a outra vira a próxima.
+    assert.equal(
+      (await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${trocada[0]}/cancelar`, { statusAtual: "saiu_para_entrega", motivo: "Cliente desistiu" })).statusCode,
+      200,
+    );
+    assert.deepEqual(await posicoes([trocada[1] as string]), [0]);
+  });
+
+  it("concluída não entra na reordenação; a ordem manual não é desfeita ao iniciar", async () => {
+    const liberada = await saidaLiberada();
+    // Antes de sair, o entregador escolhe a ordem dele...
+    const escolhida = [...ordemAtiva(liberada)].reverse();
+    const reordenada = await ctx.api(P, "PATCH", `/entregas/saidas/${liberada.id}/sequencia`, { versaoSequencia: liberada.versaoSequencia, pedidoIds: escolhida });
+    assert.equal(reordenada.statusCode, 200, reordenada.body);
+    // ...e iniciar NÃO reotimiza: a ordem dele continua a oficial.
+    const iniciada: SaidaEntrega = (await ctx.api(P, "POST", `/entregas/saidas/${liberada.id}/iniciar`)).json();
+    assert.deepEqual(ordemAtiva(iniciada), escolhida);
+
+    assert.equal((await concluirComo(liberada.id, escolhida[0] as string)).statusCode, 200);
+    const atual: SaidaEntrega = (await ctx.api(P, "GET", `/entregas/saidas/${liberada.id}`)).json();
+    // Mandar a concluída junto é recusado: só as ativas, uma vez cada.
+    const comConcluida = await ctx.api(P, "PATCH", `/entregas/saidas/${liberada.id}/sequencia`, { versaoSequencia: atual.versaoSequencia, pedidoIds: [escolhida[0], escolhida[2], escolhida[1]] });
+    assert.equal(comConcluida.statusCode, 400);
+    // Versão velha: 409, nada sobrescrito.
+    const velha = await ctx.api(P, "PATCH", `/entregas/saidas/${liberada.id}/sequencia`, { versaoSequencia: liberada.versaoSequencia, pedidoIds: [escolhida[2], escolhida[1]] });
+    assert.equal(velha.statusCode, 409);
+    assert.deepEqual(ordemAtiva((await ctx.api(P, "GET", `/entregas/saidas/${liberada.id}`)).json()), [escolhida[1], escolhida[2]]);
+  });
+
+  it("aviso 'próxima entrega' só com a saída em andamento, só para o cliente da vez e UMA vez por parada", async () => {
+    const liberada = await saidaLiberada();
+    const sockets = await Promise.all([ctx.conectar(B1), ctx.conectar(B2), ctx.conectar(B3), ctx.conectar(como(A, pizzaria.identidadeId)), ctx.conectar(P)]);
+    const avisos = sockets.map((socket) => coletar<EventoPedidoEntregaProxima>(socket, EVENTO_PEDIDO_ENTREGA_PROXIMA));
+    const avisosDe = (cliente: Pessoa) => avisos[[B1, B2, B3].indexOf(cliente)] as EventoPedidoEntregaProxima[];
+    const total = () => avisos.reduce((soma, lista) => soma + lista.length, 0);
+
+    // Liberada mas não iniciada: ninguém precisa descer para a calçada.
+    const semSaida: SaidaEntrega = (await ctx.api(P, "GET", `/entregas/saidas/${liberada.id}`)).json();
+    const ordem = ordemAtiva(semSaida);
+    await ctx.api(P, "PATCH", `/entregas/saidas/${liberada.id}/sequencia`, { versaoSequencia: semSaida.versaoSequencia, pedidoIds: ordem });
+    assert.equal(total(), 0);
+
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${liberada.id}/iniciar`)).statusCode, 200);
+    const primeiro = clientePorPedido.get(ordem[0] as string) as Pessoa;
+    await aguardarAte(() => avisosDe(primeiro).length >= 1);
+    assert.deepEqual(avisosDe(primeiro)[0]?.pedidoId, ordem[0]);
+
+    // Mudanças que NÃO trocam a primeira (reordenar as de trás, reler a fila) não repetem o aviso.
+    const emAndamento: SaidaEntrega = (await ctx.api(P, "GET", `/entregas/saidas/${liberada.id}`)).json();
+    await ctx.api(P, "PATCH", `/entregas/saidas/${liberada.id}/sequencia`, { versaoSequencia: emAndamento.versaoSequencia, pedidoIds: [ordem[0], ordem[2], ordem[1]] });
+    await fila(ordem[0] as string);
+    // A nova segunda virou a próxima: ela recebe o aviso quando a primeira é entregue.
+    assert.equal((await concluirComo(liberada.id, ordem[0] as string)).statusCode, 200);
+    const segundo = clientePorPedido.get(ordem[2] as string) as Pessoa;
+    await aguardarAte(() => avisosDe(segundo).length >= 1);
+    await new Promise((resolver) => setTimeout(resolver, 200));
+
+    assert.equal(avisosDe(primeiro).length, 1, "o aviso da primeira não se repete");
+    assert.equal(avisosDe(segundo).length, 1);
+    assert.equal(avisosDe(segundo)[0]?.pedidoId, ordem[2]);
+    assert.equal(avisosDe(clientePorPedido.get(ordem[1] as string) as Pessoa).length, 0, "quem ainda não é a próxima não é avisado");
+    assert.equal((avisos[3] ?? []).length + (avisos[4] ?? []).length, 0, "empresa e entregador nunca recebem o aviso do cliente");
+
+    // No banco: o aviso é um fato gravado uma vez por parada.
+    const paradas = await ctx.banco.select({ pedidoId: paradasSaida.pedidoId, aviso: paradasSaida.avisoProximaEm }).from(paradasSaida).where(eq(paradasSaida.saidaId, liberada.id));
+    const avisadas = paradas.filter((parada) => parada.aviso !== null).map((parada) => parada.pedidoId).sort();
+    assert.deepEqual(avisadas, [ordem[0], ordem[2]].sort());
+    for (const socket of sockets) socket.disconnect();
   });
 });

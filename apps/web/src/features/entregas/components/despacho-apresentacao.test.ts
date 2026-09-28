@@ -19,6 +19,7 @@ const saida = (dados: Partial<SaidaEntrega> = {}): SaidaEntrega => ({
   zonaPrincipal: { id: uuid(3), nome: "Centro" },
   zonasCombinadas: [],
   automatica: true,
+  exigeRetornoBase: false,
   criadoEm: "2026-09-16T12:00:00.000Z",
   formacaoIniciadaEm: "2026-09-16T12:00:00.000Z",
   prazoFormacaoEm: "2026-09-16T12:15:00.000Z",
@@ -57,7 +58,7 @@ const parada = (n: number) => ({
 });
 
 const painel = (dados: Partial<PainelDespacho> = {}): PainelDespacho => ({
-  configuracao: { maxPedidosPorSaida: 5, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true },
+  configuracao: { maxPedidosPorSaida: 5, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true, saidasExigemRetornoBase: false },
   zonas: [],
   pedidosForaDeZona: [],
   automacaoAtiva: true,
@@ -100,6 +101,9 @@ describe("pendências fora das zonas", () => {
               cliente: { identidadeId: uuid(8), tipo: "pessoal", nomeExibicao: "Bruna Cliente", nomeUsuario: "bruna" },
               conversaId: uuid(7),
               quantidadeItens: 2,
+              subtotalCentavos: 7980,
+              freteFinalCentavos: 0,
+              zonaEntregaNome: null,
               totalCentavos: 7980,
               formaPagamentoNaEntrega: "dinheiro",
               trocoParaCentavos: null,

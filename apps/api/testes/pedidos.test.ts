@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
-import { itensPedido, mensagens, pedidos } from "@jaa/banco/schema";
+import { itensPedido, mensagens, pedidos, zonasEntrega } from "@jaa/banco/schema";
 import {
   EVENTO_CONVERSA_NAO_LIDAS,
   EVENTO_MENSAGEM_NOVA,
@@ -123,6 +123,9 @@ describe("criar pedido a partir da conversa", () => {
       status: "recebido",
       formaPagamentoNaEntrega: "dinheiro",
       trocoParaCentavos: 10000,
+      // Pizzaria sem zonas: frete 0, total = subtotal.
+      subtotalCentavos: 9180,
+      freteFinalCentavos: 0,
       totalCentavos: 9180,
       itens: [
         // Produto comum: sem montagem nem observação, mas os campos existem (vazio/null, nunca ausentes).
@@ -428,5 +431,93 @@ describe("pedido com produto montado pelo cliente", () => {
     const relido: Pedido = (await ctx.api(B, "GET", `/pedidos/${pedidoId}`)).json();
     assert.deepEqual(relido.itens[0]!.escolhas, [{ grupoNome: "Tamanho", opcaoNome: "Grande", precoAdicionalCentavos: 500 }]);
     assert.equal(relido.itens[0]!.precoUnitarioCentavos, 2990, "o preço do pedido não muda");
+  });
+});
+
+/*
+ * FUNDAÇÃO DO FRETE: o pedido já tem subtotal, frete em snapshot e zona, mas a criação AINDA NÃO
+ * resolve frete — nasce sem frete (subtotal = total, frete 0, sem zona). O banco é a última linha de
+ * defesa das invariantes financeiras.
+ */
+describe("frete do pedido: modelo e invariantes", () => {
+  let pedidoId = "";
+
+  it("pedido criado hoje nasce sem frete: subtotal = total, frete 0 e nenhuma zona", async () => {
+    const resposta = await pedir(B, pedidoBase());
+    assert.equal(resposta.statusCode, 201, resposta.body);
+    const pedido: Pedido = resposta.json();
+    pedidoId = pedido.id;
+    assert.equal(pedido.subtotalCentavos, 7980);
+    assert.equal(pedido.totalCentavos, 7980);
+    assert.deepEqual(
+      [pedido.freteOriginalCentavos, pedido.descontoFreteCentavos, pedido.freteFinalCentavos, pedido.zonaEntregaId, pedido.zonaEntregaNome],
+      [0, 0, 0, null, null],
+    );
+  });
+
+  it("o banco recusa combinação financeira incoerente", async () => {
+    const violacoes: Array<Partial<typeof pedidos.$inferInsert>> = [
+      // total ≠ subtotal + frete final
+      { freteOriginalCentavos: 500, freteFinalCentavos: 500 },
+      // frete final ≠ original − desconto
+      { freteOriginalCentavos: 500, descontoFreteCentavos: 100, freteFinalCentavos: 500, totalCentavos: 8480 },
+      // desconto maior que o frete
+      { freteOriginalCentavos: 500, descontoFreteCentavos: 600, freteFinalCentavos: -100, totalCentavos: 7880 },
+      // frete negativo
+      { freteOriginalCentavos: -500, freteFinalCentavos: -500, totalCentavos: 7480 },
+    ];
+    for (const valores of violacoes) {
+      await assert.rejects(
+        ctx.banco.update(pedidos).set(valores).where(eq(pedidos.id, pedidoId)),
+        (erro: unknown) => erro instanceof Error && erro.cause instanceof Error && "constraint" in erro.cause && erro.cause.constraint === "pedidos_valores_entrega_validos",
+        JSON.stringify(valores),
+      );
+    }
+
+    // Coerente: subtotal 79,80 + frete 5,00 − desconto 5,00 = 79,80 (benefício futuro) — aceito.
+    await ctx.banco.update(pedidos).set({ freteOriginalCentavos: 500, descontoFreteCentavos: 500, freteFinalCentavos: 0 }).where(eq(pedidos.id, pedidoId));
+    const relido: Pedido = (await ctx.api(B, "GET", `/pedidos/${pedidoId}`)).json();
+    assert.deepEqual([relido.subtotalCentavos, relido.freteOriginalCentavos, relido.descontoFreteCentavos, relido.freteFinalCentavos, relido.totalCentavos], [7980, 500, 500, 0, 7980]);
+  });
+
+  it("o frete da zona recusa negativo no banco", async () => {
+    await assert.rejects(
+      ctx.banco.insert(zonasEntrega).values({
+        empresaId: pizzaria.id,
+        nome: `${PREFIXO} negativa`,
+        vertices: [{ latitude: 0, longitude: 0 }, { latitude: 0, longitude: 1 }, { latitude: 1, longitude: 1 }],
+        ativa: false,
+        freteCentavos: -1,
+      }),
+      (erro: unknown) => erro instanceof Error && erro.cause instanceof Error && "constraint" in erro.cause && erro.cause.constraint === "zonas_entrega_frete_valido",
+    );
+  });
+
+  it("zona removida: o pedido perde a referência (SET NULL), mas mantém o nome e o valor do snapshot", async () => {
+    // Zona INATIVA: não liga a automação nem altera a cobertura dos outros testes da empresa.
+    const [zona] = await ctx.banco
+      .insert(zonasEntrega)
+      .values({
+        empresaId: pizzaria.id,
+        nome: `${PREFIXO} Zona C`,
+        vertices: [{ latitude: 0, longitude: 0 }, { latitude: 0, longitude: 1 }, { latitude: 1, longitude: 1 }],
+        ativa: false,
+        freteCentavos: 500,
+      })
+      .returning({ id: zonasEntrega.id });
+    assert.ok(zona);
+    await ctx.banco
+      .update(pedidos)
+      .set({ zonaEntregaId: zona.id, zonaEntregaNome: "Zona C", freteOriginalCentavos: 500, descontoFreteCentavos: 0, freteFinalCentavos: 500, totalCentavos: 8480 })
+      .where(eq(pedidos.id, pedidoId));
+
+    // Mudar o frete da zona depois não altera o pedido (o valor é snapshot, não referência).
+    await ctx.banco.update(zonasEntrega).set({ freteCentavos: 900 }).where(eq(zonasEntrega.id, zona.id));
+    await ctx.banco.delete(zonasEntrega).where(eq(zonasEntrega.id, zona.id));
+
+    const relido: Pedido = (await ctx.api(B, "GET", `/pedidos/${pedidoId}`)).json();
+    assert.equal(relido.zonaEntregaId, null);
+    assert.equal(relido.zonaEntregaNome, "Zona C");
+    assert.deepEqual([relido.freteFinalCentavos, relido.totalCentavos], [500, 8480]);
   });
 });

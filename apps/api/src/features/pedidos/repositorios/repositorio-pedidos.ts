@@ -79,6 +79,13 @@ export async function inserirPedidoComItens(
     conversaId: string;
     formaPagamentoNaEntrega: FormaPagamentoEntrega;
     trocoParaCentavos: number | null;
+    // Valores já resolvidos pelo servidor (itens e zona lidos do banco): total = subtotal + frete final.
+    subtotalCentavos: number;
+    freteOriginalCentavos: number;
+    descontoFreteCentavos: number;
+    freteFinalCentavos: number;
+    zonaEntregaId: string | null;
+    zonaEntregaNome: string | null;
     totalCentavos: number;
     idCliente: string;
     itens: ItemParaGravar[];
@@ -111,6 +118,13 @@ export async function inserirPedidoComItens(
           conversaId: dados.conversaId,
           formaPagamentoNaEntrega: dados.formaPagamentoNaEntrega,
           trocoParaCentavos: dados.trocoParaCentavos,
+          // Snapshot financeiro: mudar o frete da zona (ou apagá-la) depois não altera este pedido.
+          subtotalCentavos: dados.subtotalCentavos,
+          freteOriginalCentavos: dados.freteOriginalCentavos,
+          descontoFreteCentavos: dados.descontoFreteCentavos,
+          freteFinalCentavos: dados.freteFinalCentavos,
+          zonaEntregaId: dados.zonaEntregaId,
+          zonaEntregaNome: dados.zonaEntregaNome,
           totalCentavos: dados.totalCentavos,
           idCliente: dados.idCliente,
         })
@@ -278,6 +292,9 @@ export interface PedidoDaEmpresaRegistro {
   cliente: ClientePublico;
   conversaId: string | null;
   quantidadeItens: number;
+  subtotalCentavos: number;
+  freteFinalCentavos: number;
+  zonaEntregaNome: string | null;
   totalCentavos: number;
   formaPagamentoNaEntrega: FormaPagamentoEntrega;
   trocoParaCentavos: number | null;
@@ -303,6 +320,9 @@ export async function listarPedidosDaEmpresa(
       numero: pedidos.numero,
       status: pedidos.status,
       conversaId: pedidos.conversaId,
+      subtotalCentavos: pedidos.subtotalCentavos,
+      freteFinalCentavos: pedidos.freteFinalCentavos,
+      zonaEntregaNome: pedidos.zonaEntregaNome,
       totalCentavos: pedidos.totalCentavos,
       formaPagamentoNaEntrega: pedidos.formaPagamentoNaEntrega,
       trocoParaCentavos: pedidos.trocoParaCentavos,

@@ -13,7 +13,7 @@ import {
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as z from "zod";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
-import { criarConsultaViaCep, type ConsultaCep } from "../lib/consulta-cep.js";
+import { criarConsultaCepPadrao, type ConsultaCep } from "../lib/consulta-cep.js";
 import {
   exigirIdentidadeAtuante,
   obterIdentidadeExigida,
@@ -31,7 +31,8 @@ import {
 import type { GeocodificadorEndereco } from "../lib/geocodificador.js";
 import { serializarEndereco } from "../lib/serializar-endereco.js";
 import { buscarEmpresaPublicaPorIdentidade } from "../../catalogo/repositorios/repositorio-empresas-publicas.js";
-import { avaliarCoberturaDoPonto } from "../../entregas/casos-de-uso/gerir-zonas.js";
+import { avaliarCoberturaDoPonto, resolverZonaDeEntrega } from "../../entregas/casos-de-uso/gerir-zonas.js";
+import { resolverFrete } from "../../pedidos/lib/calcular-pedido.js";
 
 const parametrosEnderecoSchema = z.object({ enderecoId: z.uuid() });
 const parametrosEmpresaPublicaSchema = z.object({
@@ -66,8 +67,8 @@ export function registrarRotasEnderecos(
 ) {
   const preHandler = exigirIdentidadeAtuante(dependencias);
   const { banco, geocodificador } = dependencias;
-  // Sem provedor injetado, usa o ViaCEP (público, sem chave); os testes injetam um falso.
-  const consultaCep = dependencias.consultaCep ?? criarConsultaViaCep();
+  // Sem provedor injetado: ViaCEP com a BrasilAPI de reserva (públicos, sem chave); os testes injetam um falso.
+  const consultaCep = dependencias.consultaCep ?? criarConsultaCepPadrao();
 
   // Endereço é do consumidor: quem age como empresa não tem agenda de endereços.
   function identidadePessoal(
@@ -311,11 +312,14 @@ export function registrarRotasEnderecos(
           codigo: "EMPRESA_NAO_ENCONTRADA",
           mensagem: "Empresa não encontrada.",
         });
-      const cobertura: CoberturaEntrega = await avaliarCoberturaDoPonto(
-        banco,
-        empresa.empresaId,
-        entrada.data,
-      );
+      // Mesma resolução da criação do pedido (zona do ponto → frete fixo), só que sem gravar nada.
+      const zona = await resolverZonaDeEntrega(banco, empresa.empresaId, entrada.data);
+      const frete = resolverFrete(zona);
+      const cobertura: CoberturaEntrega = {
+        atendida: frete.tipo === "frete",
+        zonasConfiguradas: zona.zonasConfiguradas,
+        freteCentavos: frete.tipo === "frete" ? frete.freteFinalCentavos : null,
+      };
       return cobertura;
     },
   );

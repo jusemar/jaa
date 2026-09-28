@@ -34,6 +34,7 @@ export function serializarSaida(registro: SaidaComParadasRegistro, empresa: Empr
     zonaPrincipal,
     zonasCombinadas,
     automatica: saida.automatica,
+    exigeRetornoBase: saida.exigeRetornoBase,
     criadoEm: saida.criadoEm.toISOString(),
     formacaoIniciadaEm: saida.formacaoIniciadaEm?.toISOString() ?? null,
     prazoFormacaoEm: saida.prazoFormacaoEm?.toISOString() ?? null,

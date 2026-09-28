@@ -4,6 +4,7 @@ import type { ContaAtual } from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
 import { AreaContatos } from "@/features/contatos/components/area-contatos";
 import { MensageiroTecnico } from "@/features/conversas/components/mensageiro-tecnico";
+import { useAvisosMensagens } from "@/features/conversas/hooks/use-avisos-mensagens";
 import { AreaEmpresas } from "@/features/empresas/components/area-empresas";
 import { AreaMinhasEntregas } from "@/features/entregas/components/area-minhas-entregas";
 import { AreaLogisticaEmpresa } from "@/features/entregas/components/area-logistica-empresa";
@@ -12,6 +13,7 @@ import { useIdentidadeAtiva } from "@/features/identidades/hooks/use-identidade-
 import { AreaPedidosEmpresa } from "@/features/pedidos/components/area-pedidos-empresa";
 import { AreaPerfil } from "@/features/perfil/components/area-perfil";
 import { AreaProdutos } from "@/features/produtos/components/area-produtos";
+import { AvisosDeAcao } from "@/components/ui/avisos";
 import { Botao, Carregando, Secao } from "@/components/ui/primitivos";
 import { IconeConversa } from "@/components/ui/icones";
 import { areaValida, areasDaIdentidade } from "./areas";
@@ -67,7 +69,17 @@ export function AppJaa({
     if (typeof window !== "undefined") window.location.hash = id;
   }
 
+  // "Conversar com…" de qualquer área: vai para Conversas e abre a conversa DIRETA com esse @usuario.
+  const [conversaSolicitada, setConversaSolicitada] = useState<string | null>(null);
+  function abrirConversaCom(nomeUsuario: string) {
+    setConversaSolicitada(nomeUsuario);
+    abrir("conversas");
+  }
+  const conversaAtendida = useCallback(() => setConversaSolicitada(null), []);
+
   const ativa = identidades.ativa;
+  // Não lidas + som de mensagem recebida da identidade ATUANTE, em qualquer área (não só em Conversas).
+  const naoLidasConversas = useAvisosMensagens(ativa?.identidadeId ?? null);
   /*
    * A identidade PESSOAL da conta, da mesma lista operável que alimenta o "Agindo como": é ela que
    * o topo da lista de conversas mostra, mesmo quando a pessoa está agindo como empresa.
@@ -101,11 +113,13 @@ export function AppJaa({
      * conversas, conversa, pedido) mantêm proporção legível.
      */
     <div className="mx-auto flex h-dvh w-full max-w-[100rem] overflow-hidden border-borda bg-fundo shadow-suave lg:border-x">
+      <AvisosDeAcao />
       <NavegacaoApp
         areas={areas}
         areaAtiva={areaAtiva}
         aoAbrir={abrir}
         ocultarNoCelular={ehConversas && conversaAberta}
+        naoLidasConversas={naoLidasConversas}
         rodape={
           <>
             <SeletorIdentidade
@@ -157,6 +171,8 @@ export function AppJaa({
             tipoIdentidade={ativa.tipo}
             pessoa={pessoal}
             aoAlterarConversaAberta={registrarConversaAberta}
+            abrirConversaCom={conversaSolicitada}
+            aoAbrirConversaSolicitada={conversaAtendida}
             /*
              * "Meus pedidos" no cabeçalho da conversa leva para a área que JÁ existe — e só aparece
              * quando ela existe para a identidade atual. Nada de destino inventado.
@@ -174,11 +190,11 @@ export function AppJaa({
               {areaAtiva === "contatos" && (
                 <AreaContatos
                   key={ativa.identidadeId}
-                  aoAbrirConversa={() => abrir("conversas")}
+                  aoAbrirConversa={abrirConversaCom}
                 />
               )}
 
-              {areaAtiva === "entregas" && <AreaMinhasEntregas />}
+              {areaAtiva === "entregas" && <AreaMinhasEntregas aoAbrirConversa={abrirConversaCom} />}
 
               {areaAtiva === "perfil" && (
                 <div className="flex flex-col gap-8">
@@ -217,6 +233,7 @@ export function AppJaa({
                   key={ativa.empresa.id}
                   empresaId={ativa.empresa.id}
                   nomeEmpresa={ativa.nomeExibicao}
+                  aoAbrirConversa={abrirConversaCom}
                 />
               )}
             </div>

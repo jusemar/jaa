@@ -52,6 +52,13 @@ export const rotaDaSaidaSchema = z.object({
    * base depois; a saída já planejada continua descrevendo de onde ela realmente partiu.
    */
   origem: coordenadasSchema.nullable(),
+  /*
+   * De onde parte o percurso ATUAL: a base, ou a posição do entregador num recálculo feito na rua.
+   * Diferente da `origem` (histórica), muda a cada cálculo.
+   */
+  inicio: coordenadasSchema.nullable(),
+  // O percurso termina NA BASE (a volta está na ordem e na distância/duração/traçado).
+  comRetorno: z.boolean(),
   // true quando a ORDEM das paradas veio do provedor; false quando veio da aproximação local.
   sequenciaDoProvedor: z.boolean(),
   // Traçado pelas ruas, para desenhar no mapa. Nunca é inventado: ou vem do provedor, ou é null.

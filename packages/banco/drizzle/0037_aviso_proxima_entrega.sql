@@ -1,0 +1,1 @@
+ALTER TABLE "paradas_saida" ADD COLUMN "aviso_proxima_em" timestamp with time zone;

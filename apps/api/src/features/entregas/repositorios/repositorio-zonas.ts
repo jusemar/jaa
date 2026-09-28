@@ -14,6 +14,7 @@ export interface ZonaRegistro {
   nome: string;
   vertices: PoligonoZona;
   ativa: boolean;
+  freteCentavos: number;
   criadoEm: Date;
   atualizadoEm: Date;
 }
@@ -21,6 +22,13 @@ export interface ZonaRegistro {
 // O polígono chega do banco como jsonb: validamos na leitura em vez de confiar no que está gravado.
 function comVertices(linha: typeof zonasEntrega.$inferSelect): ZonaRegistro {
   return { ...linha, vertices: poligonoZonaSchema.parse(linha.vertices) };
+}
+
+export interface DadosZona {
+  nome: string;
+  vertices: PoligonoZona;
+  ativa: boolean;
+  freteCentavos?: number | undefined;
 }
 
 export async function listarZonas(banco: Banco, empresaId: string): Promise<ZonaRegistro[]> {
@@ -41,10 +49,11 @@ export async function buscarZona(banco: Banco, empresaId: string, zonaId: string
   return zona ? comVertices(zona) : null;
 }
 
-export async function inserirZona(banco: Banco, empresaId: string, dados: { nome: string; vertices: PoligonoZona; ativa: boolean }): Promise<ZonaRegistro> {
+export async function inserirZona(banco: Banco, empresaId: string, dados: DadosZona): Promise<ZonaRegistro> {
   const [zona] = await banco
     .insert(zonasEntrega)
-    .values({ empresaId, nome: dados.nome, vertices: dados.vertices, ativa: dados.ativa })
+    // Frete ausente = default do banco (0, grátis).
+    .values({ empresaId, nome: dados.nome, vertices: dados.vertices, ativa: dados.ativa, freteCentavos: dados.freteCentavos })
     .returning();
   if (!zona) throw new Error("Inserção de zona não retornou registro.");
   return comVertices(zona);
@@ -54,11 +63,12 @@ export async function atualizarZona(
   banco: Banco,
   empresaId: string,
   zonaId: string,
-  dados: { nome: string; vertices: PoligonoZona; ativa: boolean },
+  dados: DadosZona,
 ): Promise<ZonaRegistro | null> {
   const [zona] = await banco
     .update(zonasEntrega)
-    .set({ nome: dados.nome, vertices: dados.vertices, ativa: dados.ativa })
+    // Frete ausente (undefined) não entra no SET: editar só o desenho não zera o frete da zona.
+    .set({ nome: dados.nome, vertices: dados.vertices, ativa: dados.ativa, freteCentavos: dados.freteCentavos })
     .where(and(eq(zonasEntrega.id, zonaId), eq(zonasEntrega.empresaId, empresaId)))
     .returning();
   return zona ? comVertices(zona) : null;
@@ -135,6 +145,7 @@ export async function buscarConfiguracaoDespacho(banco: Banco, empresaId: string
     tempoFormacaoMinutos: linha.tempoFormacaoMinutos,
     combinarZonas: linha.combinarZonas,
     liberacaoAutomatica: linha.liberacaoAutomatica,
+    saidasExigemRetornoBase: linha.saidasExigemRetornoBase,
   };
 }
 
@@ -150,5 +161,6 @@ export async function salvarConfiguracaoDespacho(banco: Banco, empresaId: string
     tempoFormacaoMinutos: linha.tempoFormacaoMinutos,
     combinarZonas: linha.combinarZonas,
     liberacaoAutomatica: linha.liberacaoAutomatica,
+    saidasExigemRetornoBase: linha.saidasExigemRetornoBase,
   };
 }

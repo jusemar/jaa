@@ -125,13 +125,15 @@ export function atribuirEntrega(
   pedidoId: string,
   entregadorId: string,
   entregadorAtualId: string | null,
+  // O gerente confirmou tirar o pedido da saída que ainda não saiu (a API pede essa confirmação).
+  transferirDaSaida = false,
 ): Promise<ResultadoApi<EntregaDoPedido>> {
   return requisitarApi(
     daEmpresa(empresaId, `/pedidos/${encodeURIComponent(pedidoId)}/entrega`),
     entregaDoPedidoSchema,
     {
       method: "POST",
-      body: JSON.stringify({ entregadorId, entregadorAtualId }),
+      body: JSON.stringify({ entregadorId, entregadorAtualId, ...(transferirDaSaida ? { transferirDaSaida: true } : {}) }),
     },
   );
 }
@@ -254,6 +256,14 @@ export function listarMinhasSaidas(): Promise<ResultadoApi<ListaSaidas>> {
 }
 
 // A sequência do Jaa é sugestão: quem está na rua reordena, informando a versão que viu.
+// "Recalcular melhor rota": só a versão que a tela vê; o Jaa escolhe a nova ordem das pendentes.
+export function recalcularRota(saidaId: string, versaoSequencia: number): Promise<ResultadoApi<SaidaEntrega>> {
+  return requisitarApi(`/entregas/saidas/${encodeURIComponent(saidaId)}/recalcular-rota`, saidaEntregaSchema, {
+    method: "POST",
+    body: JSON.stringify({ versaoSequencia }),
+  });
+}
+
 export function reordenarSequencia(
   saidaId: string,
   versaoSequencia: number,

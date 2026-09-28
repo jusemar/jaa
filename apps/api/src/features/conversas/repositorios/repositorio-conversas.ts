@@ -1,5 +1,5 @@
 import type { Banco } from "@jaa/banco";
-import { conversas, identidades, mensagens, participantesConversa } from "@jaa/banco/schema";
+import { bloqueiosIdentidade, conversas, identidades, mensagens, participantesConversa } from "@jaa/banco/schema";
 import { and, asc, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { colunasMensagemCompleta, visivelPara, type MensagemRegistro } from "../../mensagens/repositorios/repositorio-mensagens.js";
@@ -84,8 +84,11 @@ export interface ItemListaConversasRegistro {
   conversaId: string;
   tipo: "direta";
   outraIdentidade: ParticipanteRegistro;
-  ultimaMensagem: MensagemRegistro;
+  // null = a identidade limpou a conversa e nada novo chegou (continua na lista, sem prévia).
+  ultimaMensagem: MensagemRegistro | null;
+  atividadeId: string;
   naoLidas: number;
+  comunicacaoBloqueada: boolean;
 }
 
 /**
@@ -100,6 +103,9 @@ export interface ItemListaConversasRegistro {
  * 2. só as linhas da página buscam conteúdo da mensagem, conversa e a outra identidade.
  * Custo da etapa 1 cresce com o número de conversas DA identidade (não com o de mensagens).
  * Conversas sem mensagens não têm atividade e não aparecem.
+ *
+ * LIMPAR/APAGAR (por identidade): conversa LIMPA sem mensagem nova continua na lista, sem prévia, com a
+ * atividade = até onde limpou; conversa APAGADA só volta quando passa a ter mensagem visível (nova).
  */
 export async function listarConversasDaIdentidade(
   banco: Banco,
@@ -118,21 +124,25 @@ export async function listarConversasDaIdentidade(
     .limit(1)
     .as("ultima_mensagem");
 
+  const atividade = sql<string>`coalesce(${ultimaMensagem.ultimaMensagemId}, ${participacao.limpaAteMensagemId})`;
   const pagina = banco
     .select({
       conversaId: participacao.conversaId,
       lidaAteMensagemId: participacao.lidaAteMensagemId,
       ultimaMensagemId: ultimaMensagem.ultimaMensagemId,
+      atividadeId: atividade.as("atividade_id"),
     })
     .from(participacao)
-    .crossJoinLateral(ultimaMensagem)
+    .leftJoinLateral(ultimaMensagem, sql`true`)
     .where(
       and(
         eq(participacao.identidadeId, identidadeId),
-        antesDe ? lt(ultimaMensagem.ultimaMensagemId, antesDe) : undefined,
+        // Com mensagem visível; ou LIMPA (e não apagada), que continua na lista mesmo vazia.
+        sql`(${ultimaMensagem.ultimaMensagemId} is not null or (${participacao.limpaAteMensagemId} is not null and not ${participacao.apagada}))`,
+        antesDe ? sql`${atividade} < ${antesDe}` : undefined,
       ),
     )
-    .orderBy(desc(ultimaMensagem.ultimaMensagemId))
+    .orderBy(desc(atividade))
     .limit(limite + 1)
     .as("pagina");
 
@@ -148,20 +158,33 @@ export async function listarConversasDaIdentidade(
       },
       // Estado e referência de resposta calculados só para as linhas da página.
       ultimaMensagem: colunasMensagemCompleta,
+      ultimaMensagemId: pagina.ultimaMensagemId,
+      atividadeId: pagina.atividadeId,
       // Contagem limitada, calculada só para as linhas da página.
       naoLidas: naoLidasSql(sql`${pagina.conversaId}`, sql`${pagina.lidaAteMensagemId}`, identidadeId),
+      // Bloqueio de comunicação com a outra pessoa (só as linhas da página; bloqueio é pessoa ↔ pessoa).
+      comunicacaoBloqueada: sql<boolean>`exists (
+        select 1 from ${bloqueiosIdentidade} b
+        where (b.bloqueador_identidade_id = ${identidadeId} and b.bloqueado_identidade_id = ${identidades.id})
+           or (b.bloqueado_identidade_id = ${identidadeId} and b.bloqueador_identidade_id = ${identidades.id})
+      )`,
     })
     .from(pagina)
     .innerJoin(conversas, eq(conversas.id, pagina.conversaId))
-    .innerJoin(mensagens, eq(mensagens.id, pagina.ultimaMensagemId))
+    .leftJoin(mensagens, eq(mensagens.id, pagina.ultimaMensagemId))
     .innerJoin(
       outroParticipante,
       and(eq(outroParticipante.conversaId, pagina.conversaId), ne(outroParticipante.identidadeId, identidadeId)),
     )
     .innerJoin(identidades, eq(identidades.id, outroParticipante.identidadeId))
-    .orderBy(desc(pagina.ultimaMensagemId));
+    .orderBy(desc(pagina.atividadeId));
 
-  return { conversas: linhas.slice(0, limite), haMais: linhas.length > limite };
+  const itens = linhas.map(({ ultimaMensagemId, ultimaMensagem, ...resto }) => ({
+    ...resto,
+    // Sem mensagem visível (conversa limpa), a junção não trouxe nada: nada de prévia.
+    ultimaMensagem: ultimaMensagemId ? (ultimaMensagem as MensagemRegistro) : null,
+  }));
+  return { conversas: itens.slice(0, limite), haMais: itens.length > limite };
 }
 
 export async function listarIdsParticipantesDaConversa(banco: Banco, conversaId: string): Promise<string[]> {
@@ -186,6 +209,18 @@ export async function listarIdsParticipantesPorConversa(banco: Banco, conversaId
   return porConversa;
 }
 
+/**
+ * Conversas da identidade com não lidas (> 0), pela mesma derivação da lista (`naoLidasSql`): uma
+ * busca limitada por intervalo no índice (conversa_id, id) para cada participação dela.
+ */
+export async function listarNaoLidasPorConversa(banco: Banco, identidadeId: string): Promise<Array<{ conversaId: string; naoLidas: number }>> {
+  const contagem = naoLidasSql(sql`${participantesConversa.conversaId}`, sql`${participantesConversa.lidaAteMensagemId}`, identidadeId);
+  return banco
+    .select({ conversaId: participantesConversa.conversaId, naoLidas: contagem })
+    .from(participantesConversa)
+    .where(and(eq(participantesConversa.identidadeId, identidadeId), sql`${contagem} > 0`));
+}
+
 // Não lidas atuais de uma conversa para uma identidade (null se ela não participa).
 export async function contarNaoLidas(banco: Banco, conversaId: string, identidadeId: string): Promise<number | null> {
   const [linha] = await banco
@@ -196,4 +231,31 @@ export async function contarNaoLidas(banco: Banco, conversaId: string, identidad
     .where(and(eq(participantesConversa.conversaId, conversaId), eq(participantesConversa.identidadeId, identidadeId)))
     .limit(1);
   return linha?.naoLidas ?? null;
+}
+
+/**
+ * LIMPAR (e, com `apagar`, também tirar da lista) SÓ para esta identidade: o marcador vai até a última
+ * mensagem atual da conversa e nunca volta para trás. Nada é apagado nem copiado; o outro participante
+ * não é tocado. Devolve false se a identidade não participa da conversa.
+ */
+export async function limparConversaPara(banco: Banco, conversaId: string, identidadeId: string, apagar: boolean): Promise<boolean> {
+  // Não existe max(uuid): a última é a de maior id pela ordem do índice (conversa_id, id).
+  const ultima = sql`(select ${mensagens.id} from ${mensagens} where ${mensagens.conversaId} = ${conversaId} order by ${mensagens.id} desc limit 1)`;
+  const atualizadas = await banco
+    .update(participantesConversa)
+    .set({
+      limpaAteMensagemId: sql`greatest(${participantesConversa.limpaAteMensagemId}, ${ultima})`,
+      apagada: apagar,
+    })
+    .where(and(eq(participantesConversa.conversaId, conversaId), eq(participantesConversa.identidadeId, identidadeId)))
+    .returning({ conversaId: participantesConversa.conversaId });
+  return atualizadas.length > 0;
+}
+
+// A própria identidade reabriu a conversa (ex.: procurou a pessoa de novo): volta para a lista dela.
+export async function reabrirConversaPara(banco: Banco, conversaId: string, identidadeId: string): Promise<void> {
+  await banco
+    .update(participantesConversa)
+    .set({ apagada: false })
+    .where(and(eq(participantesConversa.conversaId, conversaId), eq(participantesConversa.identidadeId, identidadeId), eq(participantesConversa.apagada, true)));
 }

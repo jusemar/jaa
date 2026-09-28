@@ -1,6 +1,7 @@
 import * as z from "zod";
+import { EVENTO_BLOQUEIO_ATUALIZADO, type EventoBloqueioAtualizado } from "../identidades/bloqueio.ts";
 import { participanteConversaSchema } from "../conversas/conversa.ts";
-import { contagemNaoLidasSchema } from "../conversas/lista-conversas.ts";
+import { EVENTO_CONVERSA_ESTADO_PESSOAL, contagemNaoLidasSchema, type EventoConversaEstadoPessoal } from "../conversas/lista-conversas.ts";
 import { exclusaoParaMimSchema, mensagemSchema } from "../mensagens/mensagem.ts";
 import { conviteEntregadorSchema, entregaAtribuidaSchema, entregadorDaEmpresaSchema, vinculoEntregadorSchema } from "../entregas/entregador.ts";
 import { painelOperacionalSchema, situacaoOperacionalSchema } from "../entregas/base-e-fila.ts";
@@ -166,6 +167,17 @@ export const eventoPedidoFilaSchema = filaDoPedidoSchema;
 export type EventoPedidoFila = z.infer<typeof eventoPedidoFilaSchema>;
 
 /**
+ * A entrega do cliente VIROU A PRÓXIMA (primeira parada ativa de uma saída em andamento). Vai só para
+ * a identidade do cliente dono do pedido, UMA vez por parada — o servidor grava o aviso antes de
+ * emitir. `avisoId` identifica o aviso: a tela nunca toca o som duas vezes para o mesmo.
+ */
+export const EVENTO_PEDIDO_ENTREGA_PROXIMA = "pedido:entrega-proxima";
+
+export const eventoPedidoEntregaProximaSchema = z.object({ pedidoId: z.uuid(), avisoId: z.uuid() });
+
+export type EventoPedidoEntregaProxima = z.infer<typeof eventoPedidoEntregaProximaSchema>;
+
+/**
  * A operação da base mudou (alguém chegou, saiu, ligou/desligou "aceitando", pegou uma saída):
  * o painel inteiro vai para a identidade da EMPRESA daquela base — nunca para outra empresa.
  * É estado DERIVADO: nenhuma coordenada de entregador trafega aqui.
@@ -252,6 +264,9 @@ export interface EventosRealtimeServidorParaCliente {
   [EVENTO_ENTREGADOR_DISPONIBILIDADE]: (evento: EventoEntregadorDisponibilidade) => void;
   [EVENTO_SAIDA_ATUALIZADA]: (evento: EventoSaidaAtualizada) => void;
   [EVENTO_PEDIDO_FILA]: (evento: EventoPedidoFila) => void;
+  [EVENTO_PEDIDO_ENTREGA_PROXIMA]: (evento: EventoPedidoEntregaProxima) => void;
+  [EVENTO_BLOQUEIO_ATUALIZADO]: (evento: EventoBloqueioAtualizado) => void;
+  [EVENTO_CONVERSA_ESTADO_PESSOAL]: (evento: EventoConversaEstadoPessoal) => void;
   [EVENTO_FILA_ATUALIZADA]: (evento: EventoFilaAtualizada) => void;
   [EVENTO_SITUACAO_OPERACIONAL]: (evento: EventoSituacaoOperacional) => void;
   [EVENTO_DESPACHO_ATUALIZADO]: (evento: EventoDespachoAtualizado) => void;

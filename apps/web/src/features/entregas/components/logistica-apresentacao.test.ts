@@ -59,6 +59,7 @@ const saida = (status: SaidaEntrega["status"] = "em_andamento"): SaidaEntrega =>
   zonaPrincipal: { id: uuid, nome: "Zona A" },
   zonasCombinadas: [],
   automatica: true,
+  exigeRetornoBase: false,
   criadoEm: "2026-09-20T12:00:00.000Z",
   formacaoIniciadaEm: null,
   prazoFormacaoEm: null,

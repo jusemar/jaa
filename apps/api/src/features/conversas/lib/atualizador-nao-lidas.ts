@@ -70,7 +70,12 @@ export function criarAtualizadorNaoLidas({
       case "mensagens-entregues":
       case "nao-lidas-atualizadas":
       case "notificacao-nova-mensagem":
+      // Bloquear/desbloquear não muda contagem nenhuma: o histórico continua igual.
+      case "bloqueio-atualizado":
         return null;
+      // Limpar/apagar zera o que ela tinha para ler naquela conversa: recalcula só para ela.
+      case "conversa-estado-pessoal":
+        return { conversaId: evento.conversaId, identidadeIds: evento.destinatariosIdentidadeIds };
     }
   }
 

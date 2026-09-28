@@ -95,8 +95,11 @@ function avaliar(feature: Feature, endereco: EnderecoGeocodificavel): number | n
   if (match?.region === "unmatched" || match?.place === "unmatched" || match?.country === "unmatched") return null;
   if (context.place?.name && !mesmoTexto(context.place.name, endereco.cidade) && match?.place !== "matched") return null;
   // CEP é o principal desempate: resultado que declara outro CEP nunca vence por estar primeiro.
-  if (cepResultado && cepResultado !== cepInformado) return null;
-  if (match?.postcode === "unmatched") return null;
+  // Mas o Mapbox muitas vezes declara só o PREFIXO de 5 dígitos ("30668") — e aí marca o CEP como
+  // "unmatched". Prefixo que bate com o CEP informado não é "outro CEP"; prefixo diferente continua sendo.
+  const cepPrefixoCompativel = cepResultado.length === 5 && cepInformado.startsWith(cepResultado);
+  if (cepResultado && cepResultado !== cepInformado && !cepPrefixoCompativel) return null;
+  if (match?.postcode === "unmatched" && !cepPrefixoCompativel) return null;
 
   let pontos = 0;
   const numeroResultado = context.address?.address_number;

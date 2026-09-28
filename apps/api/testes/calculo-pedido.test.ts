@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { GrupoOpcoesPublico } from "@jaa/contratos";
-import { calcularItens, resolverPagamento } from "../src/features/pedidos/lib/calcular-pedido.js";
+import { TOTAL_MAXIMO_PEDIDO_CENTAVOS, type GrupoOpcoesPublico } from "@jaa/contratos";
+import { calcularItens, resolverFrete, resolverPagamento, totalizarPedido } from "../src/features/pedidos/lib/calcular-pedido.js";
 import type { ProdutoRegistro } from "../src/features/produtos/repositorios/repositorio-produtos.js";
 
 /*
@@ -221,5 +221,49 @@ describe("cálculo do pedido com montagem", () => {
     if (resultado.tipo !== "itens") return;
     assert.equal(resultado.itens[0]!.observacao, "bem gelado");
     assert.deepEqual(resultado.itens[0]!.escolhas, []);
+  });
+});
+describe("frete fixo da zona", () => {
+  const zona = (freteCentavos: number) => ({ zonasConfiguradas: true, zona: { id: "zona-1", nome: "Bairro A", freteCentavos } });
+
+  it("usa o valor da zona que contém o ponto (0 = grátis), sem desconto", () => {
+    for (const valor of [0, 500, 700]) {
+      assert.deepEqual(resolverFrete(zona(valor)), {
+        tipo: "frete",
+        freteOriginalCentavos: valor,
+        descontoFreteCentavos: 0,
+        freteFinalCentavos: valor,
+        zonaEntregaId: "zona-1",
+        zonaEntregaNome: "Bairro A",
+      });
+    }
+  });
+
+  it("empresa sem zonas segue o fluxo manual: frete 0 e sem zona; com zonas, ponto fora é recusado", () => {
+    assert.deepEqual(resolverFrete({ zonasConfiguradas: false, zona: null }), {
+      tipo: "frete",
+      freteOriginalCentavos: 0,
+      descontoFreteCentavos: 0,
+      freteFinalCentavos: 0,
+      zonaEntregaId: null,
+      zonaEntregaNome: null,
+    });
+    assert.deepEqual(resolverFrete({ zonasConfiguradas: true, zona: null }), { tipo: "fora-da-area-de-entrega" });
+  });
+
+  it("total = subtotal + frete final (3000 + 0/500/700) e respeita o limite do pedido", () => {
+    for (const [valor, total] of [[0, 3000], [500, 3500], [700, 3700]] as const) {
+      const frete = resolverFrete(zona(valor));
+      assert.equal(frete.tipo, "frete");
+      if (frete.tipo === "frete") assert.deepEqual(totalizarPedido(3000, frete), { tipo: "total", totalCentavos: total });
+    }
+    const caro = resolverFrete(zona(TOTAL_MAXIMO_PEDIDO_CENTAVOS));
+    if (caro.tipo === "frete") assert.deepEqual(totalizarPedido(1, caro), { tipo: "total-acima-do-limite" });
+  });
+
+  it("troco é comparado com o total COM frete", () => {
+    assert.deepEqual(resolverPagamento({ forma: "dinheiro", trocoParaCentavos: 3200 }, 3500), { tipo: "pagamento-invalido" });
+    assert.deepEqual(resolverPagamento({ forma: "dinheiro", trocoParaCentavos: 3500 }, 3500), { tipo: "pagamento", trocoParaCentavos: null });
+    assert.deepEqual(resolverPagamento({ forma: "dinheiro", trocoParaCentavos: 5000 }, 3500), { tipo: "pagamento", trocoParaCentavos: 5000 });
   });
 });

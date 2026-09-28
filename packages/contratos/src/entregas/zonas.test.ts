@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   CONFIGURACAO_DESPACHO_PADRAO,
+  FRETE_ZONA_MAXIMO_CENTAVOS,
   MAXIMO_PEDIDOS_POR_SAIDA_MAXIMO,
   TEMPO_FORMACAO_MAXIMO_MINUTOS,
   classificarPonto,
   configuracaoDespachoSchema,
   pontoDentroDaZona,
   salvarZonaEntradaSchema,
+  zonaEntregaSchema,
   zonaTemGeometriaValida,
   zonasSobrepoem,
   type PoligonoZona,
@@ -63,6 +65,45 @@ describe("polígono da zona", () => {
       ]),
       false,
     );
+  });
+});
+
+describe("frete da zona", () => {
+  const entrada = (freteCentavos: unknown) => salvarZonaEntradaSchema.safeParse({ nome: "Centro", vertices: quadrado, freteCentavos });
+
+  it("aceita frete grátis (0) e valores inteiros em centavos até o limite do banco", () => {
+    assert.equal(entrada(0).success, true);
+    assert.equal(entrada(500).success, true);
+    assert.equal(entrada(FRETE_ZONA_MAXIMO_CENTAVOS).success, true);
+    // Ausente: criação usa o default do banco (0) e edição mantém o valor atual.
+    const semFrete = salvarZonaEntradaSchema.parse({ nome: "Centro", vertices: quadrado });
+    assert.equal(semFrete.freteCentavos, undefined);
+  });
+
+  it("recusa negativo, fração, texto e valor acima do limite", () => {
+    assert.equal(entrada(-1).success, false);
+    assert.equal(entrada(4.9).success, false);
+    assert.equal(entrada("500").success, false);
+    assert.equal(entrada(FRETE_ZONA_MAXIMO_CENTAVOS + 1).success, false);
+    assert.equal(entrada(null).success, false);
+  });
+
+  it("a zona devolvida sempre informa o frete", () => {
+    const zona = {
+      id: uuid(1),
+      nome: "Zona C",
+      vertices: quadrado,
+      ativa: true,
+      freteCentavos: 500,
+      compativeisCom: [],
+      criadoEm: "2026-09-20T12:00:00.000Z",
+      atualizadoEm: "2026-09-20T12:00:00.000Z",
+    };
+    assert.equal(zonaEntregaSchema.parse(zona).freteCentavos, 500);
+    assert.equal(zonaEntregaSchema.safeParse({ ...zona, freteCentavos: 0 }).success, true);
+    const { freteCentavos: _removido, ...semFrete } = zona;
+    assert.equal(zonaEntregaSchema.safeParse(semFrete).success, false);
+    assert.equal(zonaEntregaSchema.safeParse({ ...zona, freteCentavos: -500 }).success, false);
   });
 });
 
@@ -132,7 +173,7 @@ describe("classificação e configuração", () => {
   });
 
   it("quantidade e tempo são configuráveis, com limites seguros", () => {
-    assert.deepEqual(CONFIGURACAO_DESPACHO_PADRAO, { maxPedidosPorSaida: 5, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true });
+    assert.deepEqual(CONFIGURACAO_DESPACHO_PADRAO, { maxPedidosPorSaida: 5, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true, saidasExigemRetornoBase: false });
     assert.equal(configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: 0, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true }).success, false);
     assert.equal(
       configuracaoDespachoSchema.safeParse({ maxPedidosPorSaida: MAXIMO_PEDIDOS_POR_SAIDA_MAXIMO + 1, tempoFormacaoMinutos: 15, combinarZonas: true, liberacaoAutomatica: true }).success,

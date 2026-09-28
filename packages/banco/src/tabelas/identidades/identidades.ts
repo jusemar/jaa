@@ -35,6 +35,8 @@ export const identidades = pgTable(
   },
   (tabela) => [
     uniqueIndex("identidades_nome_usuario_unico").on(tabela.nomeUsuario),
+    // Alvo de FK composta (id, tipo): permite ao banco exigir identidade PESSOAL (ex.: perfil profissional).
+    uniqueIndex("identidades_id_tipo_unico").on(tabela.id, tabela.tipo),
     // Exatamente uma identidade pessoal por conta, garantido pelo banco.
     uniqueIndex("identidades_pessoal_por_usuario_unico")
       .on(tabela.usuarioId)

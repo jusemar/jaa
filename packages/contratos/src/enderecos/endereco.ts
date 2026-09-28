@@ -89,10 +89,8 @@ export const coordenadasSchema = z.object({
 export type Coordenadas = z.infer<typeof coordenadasSchema>;
 
 const camposTextuais = {
-  apelido: textoObrigatorio(
-    APELIDO_ENDERECO_TAMANHO_MAXIMO,
-    "Dê um apelido ao endereço (ex.: Casa).",
-  ),
+  // Etiqueta pessoal OPCIONAL ("Casa", "Trabalho"): vazio vira null, como os demais opcionais.
+  apelido: textoOpcional(APELIDO_ENDERECO_TAMANHO_MAXIMO),
   cep: cepSchema,
   logradouro: textoObrigatorio(
     LOGRADOURO_TAMANHO_MAXIMO,
@@ -130,6 +128,7 @@ export type ConfirmarLocalizacaoEntrada = z.infer<
 export const enderecoClienteSchema = z.object({
   id: z.uuid(),
   ...camposTextuais,
+  apelido: z.string().nullable(),
   complemento: z.string().nullable(),
   pontoReferencia: z.string().nullable(),
   // Coordenadas existem apenas quando o cliente confirmou o ponto no mapa.
@@ -158,6 +157,9 @@ export const enderecoDoCepSchema = z.object({
   bairro: z.string().nullable(),
   cidade: z.string().nullable(),
   uf: z.string().nullable(),
+  // Código IBGE do município informado pelo provedor (7 dígitos), quando disponível. Opcional:
+  // quem ainda não o usa (ex.: agenda do cliente) segue funcionando igual.
+  codigoIbge: z.string().regex(/^\d{7}$/).nullable().optional(),
   // false quando o provedor não respondeu: a tela avisa e segue no preenchimento manual.
   encontrado: z.boolean(),
 });
@@ -186,6 +188,12 @@ export type SalvarEnderecoParaEmpresaEntrada = z.input<
 export const coberturaEntregaSchema = z.object({
   atendida: z.boolean(),
   zonasConfiguradas: z.boolean(),
+  /*
+   * Taxa de entrega PREVISTA para este ponto (frete fixo da zona que o contém; 0 = grátis, inclusive
+   * para empresa sem zonas). null quando não atendida. É só exibição: ao criar o pedido o servidor
+   * resolve a zona de novo e o valor gravado é o dele — o navegador nunca envia frete.
+   */
+  freteCentavos: z.number().int().min(0).nullable(),
 });
 
 export type CoberturaEntrega = z.infer<typeof coberturaEntregaSchema>;
@@ -245,6 +253,13 @@ export function formatarEnderecoResumido(
   endereco: Pick<EnderecoCliente, "logradouro" | "numero" | "complemento">,
 ): string {
   return `${endereco.logradouro}, ${endereco.numero}${endereco.complemento ? ` — ${endereco.complemento}` : ""}`;
+}
+
+/** Como o endereço é chamado na tela: o apelido quando existe; sem ele, o próprio endereço. */
+export function rotuloEndereco(
+  endereco: Pick<EnderecoCliente, "apelido" | "logradouro" | "numero" | "complemento">,
+): string {
+  return endereco.apelido ?? formatarEnderecoResumido(endereco);
 }
 
 export function formatarCep(cep: string): string {

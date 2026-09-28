@@ -28,6 +28,12 @@ export const paradasSaida = pgTable(
     posicao: integer().notNull(),
     encerradaEm: timestamp({ withTimezone: true }),
     motivoEncerramento: text(),
+    /*
+     * Quando o CLIENTE foi avisado de que esta parada virou a PRÓXIMA (primeira ativa de uma saída em
+     * andamento). Gravado por UPDATE condicional (`is null`): o aviso sai uma vez só, mesmo com F5,
+     * reconexão, reprocessamento ou duas atualizações simultâneas. Não é posição — só o fato do aviso.
+     */
+    avisoProximaEm: timestamp({ withTimezone: true }),
     criadoEm: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (tabela) => [

@@ -112,7 +112,42 @@ function montarEscolhas(grupos: readonly GrupoOpcoesPublico[], opcaoIds: readonl
   return escolhas;
 }
 
-export type ResultadoPagamento = { tipo: "pagamento"; trocoParaCentavos: number | null } | { tipo: "pagamento-invalido" };
+export interface FreteDoPedido {
+  freteOriginalCentavos: number;
+  descontoFreteCentavos: number;
+  freteFinalCentavos: number;
+  zonaEntregaId: string | null;
+  zonaEntregaNome: string | null;
+}
+
+export type ResultadoFrete = ({ tipo: "frete" } & FreteDoPedido) | { tipo: "fora-da-area-de-entrega" };
+
+/**
+ * FRETE = valor FIXO da zona que contém o ponto do destino. Nada de distância, CEP, peso ou
+ * fornecedor externo. Empresa sem zona configurada segue o fluxo manual de antes: frete 0 e sem zona.
+ * Com zonas, ponto fora de todas é recusado (mesma regra da cobertura). Ainda não há benefício de
+ * frete, então o desconto é sempre 0 e o frete final é o próprio frete da zona.
+ */
+export function resolverFrete(resolucao: {
+  zonasConfiguradas: boolean;
+  zona: { id: string; nome: string; freteCentavos: number } | null;
+}): ResultadoFrete {
+  if (!resolucao.zona) {
+    return resolucao.zonasConfiguradas
+      ? { tipo: "fora-da-area-de-entrega" }
+      : { tipo: "frete", freteOriginalCentavos: 0, descontoFreteCentavos: 0, freteFinalCentavos: 0, zonaEntregaId: null, zonaEntregaNome: null };
+  }
+  const { id, nome, freteCentavos } = resolucao.zona;
+  return { tipo: "frete", freteOriginalCentavos: freteCentavos, descontoFreteCentavos: 0, freteFinalCentavos: freteCentavos, zonaEntregaId: id, zonaEntregaNome: nome };
+}
+
+/** total = subtotal (itens) + frete final. Recusado se passar do limite do pedido (o banco também confere). */
+export function totalizarPedido(subtotalCentavos: number, frete: FreteDoPedido): { tipo: "total"; totalCentavos: number } | { tipo: "total-acima-do-limite" } {
+  const totalCentavos = subtotalCentavos + frete.freteFinalCentavos;
+  return totalCentavos > TOTAL_MAXIMO_PEDIDO_CENTAVOS ? { tipo: "total-acima-do-limite" } : { tipo: "total", totalCentavos };
+}
+
+export type ResultadoPagamento ={ tipo: "pagamento"; trocoParaCentavos: number | null } | { tipo: "pagamento-invalido" };
 
 /**
  * Cartão na entrega nunca tem troco. Dinheiro: sem troco → null; com troco, o valor que o cliente

@@ -35,6 +35,8 @@ A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Co
 
 Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, pagamento dentro do Jaa, **rastreamento GPS durante a entrega, mapa do entregador em movimento, ETA do cliente, push real e frete** (o mapa existe para o cliente confirmar o ponto e para o entregador abrir o destino), loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
 
+**MOTOR PROFISSIONAL (Camada 1) — fundação de infraestrutura e de DADOS implementadas** (Bloco 1: PostGIS + busca textual, seção 5 "Banco"; Bloco 2: taxonomia, Perfil Profissional, base, áreas, matching e busca de serviços no domínio/banco — seção 14 "Motor Profissional"). Bloco 3: API e tela do PRÓPRIO profissional (Perfil → Perfil profissional). Busca pública de profissionais, oportunidades, Agenda real, desenho de área no mapa e a integração com entregadores **continuam proibidos até cada bloco ser explicitamente iniciado**; as decisões de produto já aprovadas para eles estão registradas na seção 14.
+
 ## FASE 1: MENSAGERIA
 
 Neste momento implementar somente o necessário para um mensageiro funcional.
@@ -263,7 +265,18 @@ Pendências do realtime:
 
 Desenvolvimento deve preferir PostgreSQL local e isolado de produção.
 
-Nenhum provedor de PostgreSQL em nuvem é obrigatório neste momento. A escolha de hospedagem será feita quando necessário.
+Produção: **Neon, região São Paulo** (decidido com o Motor Profissional). Nenhuma migration de produção é aplicada sem ensaio prévio (ex.: branch do Neon).
+
+### Requisitos do banco (local e produção)
+
+- **PostgreSQL 18+** (uuidv7, seção 13) **+ PostGIS 3.6 + pg_trgm + unaccent**. As extensões nascem **somente por migration** (`0031_extensoes_geoespaciais_e_busca`), nunca pela imagem Docker nem por comando manual — local e produção precisam ter exatamente as mesmas;
+- local: imagem `postgis/postgis:18-3.6` (mesma base Debian/PostgreSQL da oficial), com o script de inicialização da imagem desligado no `docker-compose.yml` (ele instalaria topology/tiger/fuzzystrmatch, que produção não terá);
+- **PostGIS NÃO substitui o Mapbox**: PostGIS faz raio, distância geográfica, cobertura e filtros espaciais indexados; Mapbox segue com mapa, geocodificação e ROTAS pelas ruas (Directions/Optimization só para poucos destinos já escolhidos, nunca para matching em massa). "Até 5 km" é distância geográfica, não de rota;
+- matching geográfico é SEMPRE filtrado no banco com índice — proibido carregar todos os candidatos no Node e calcular distância um a um;
+- **ponto** = `geometry(point,4326)` MEDIDO como `geography` (ST_DWithin/ST_Distance em metros), com índice GiST na expressão `(ponto::geography)`. Coluna `geography` não é usada porque o drizzle-kit gera DDL inválido para ela. **Área** (polígono desenhado, município) = `geometry(multipolygon,4326)` + `ST_Covers` (BORDA conta como dentro, igual às zonas) + GiST + `ST_IsValid`. Tipos e funções em `@jaa/banco/geoespacial`; coordenadas sempre por parâmetro, nunca WKT vindo do cliente;
+- **busca textual determinística**: `jaa_normalizar(text)` (minúsculas, sem acento, espaços colapsados) é IMMUTABLE para caber em índice/coluna gerada; trigramas via GIN `jaa_normalizar(...) gin_trgm_ops`. Se as regras do `unaccent` mudarem numa atualização, reindexar. Sem motor de busca externo;
+- as funcionalidades geográficas existentes (endereços, zonas em `jsonb` com `pontoDentroDaZona`, frete, despacho, rotas) **não migram** para PostGIS sem decisão explícita;
+- testes que escrevem no banco rodam em **banco descartável** (`scripts/com-banco-teste.ts`), que só aceita PostgreSQL local e é apagado ao final: o `npm test` da API e o de `@jaa/banco` já são **isolados por padrão** (`test:isolado` é apenas alias). Testes **nunca** usam o banco normal de desenvolvimento: todo teste de banco importa primeiro o guarda (`testes/apoio/exigir-banco-de-teste.ts` na API), que recusa qualquer alvo fora do banco descartável.
 
 ## Autenticação
 
@@ -554,6 +567,9 @@ pagamentos
 entregas
 localizacao
 publicacoes
+profissionais      # Perfil Profissional, serviços, áreas de atuação (seção 14, "Motor Profissional")
+territorio         # municípios IBGE e suas malhas
+oportunidades
 ```
 
 Esses domínios futuros não devem ser implementados antes da sua etapa.
@@ -1119,6 +1135,47 @@ Sequência das paradas, fila do cliente e reordenação estão implementadas na 
 
 **Duração ≠ ETA.** A duração é do TRAJETO, sempre rotulada assim: não inclui preparo, espera na porta nem a fila de entregas. O ETA do cliente (GPS + rota restante + paradas anteriores) é etapa futura, assim como rastreamento em tempo real — a arquitetura está pronta para recebê-los, mas nada disso existe hoje.
 
+## Motor Profissional (Camada 1) — decisões aprovadas
+
+**Implementado**: a fundação (Bloco 1 — seção 5, "Requisitos do banco") e a camada de DADOS (Bloco 2, migration `0032`, `apps/api/src/features/profissionais`, contratos em `@jaa/contratos` `profissionais/`) e a configuração pelo próprio profissional (Bloco 3, abaixo). Decisões técnicas do Bloco 2 que não podem ser desfeitas sem motivo:
+
+- taxonomia em tabelas (`categorias_profissionais` → `servicos_profissionais` → `especialidades_servico` / `atributos_servico` → `opcoes_atributo`); especialidade e opção carregam `servico_id` e toda escolha do perfil usa **FK composta com o serviço** — escolha de outro serviço é impossível no banco. `termos_busca_servico` é o dicionário da busca (termo → serviço, opcionalmente especialidade/opção), com `termo_normalizado` gerado por `jaa_normalizar` + GIN de trigramas; a busca procura nele, nunca entre profissionais;
+- perfil só de identidade PESSOAL por FK composta `(identidade_id, identidade_tipo)` → `identidades(id, tipo)`; limites da versão (3 serviços, 5 áreas ATIVAS, 50 km) em `LIMITES_PERFIL_PROFISSIONAL` (contratos), aplicados em transação com o perfil travado — nunca colunas fixas;
+- base profissional própria (`bases_profissionais`, mesmas regras do endereço do cliente, `codigo_ibge` do CEP como dado auxiliar); ÁREA de raio é medida a partir da BASE; área de município referencia `municipios` por código IBGE e o ponto é resolvido pela malha vigente (`malhas_municipio`, versionada por edição);
+- MALHA MUNICIPAL OFICIAL do IBGE fica armazenada LOCALMENTE no PostGIS (hoje: MG, edição 2025, 853 municípios). Importação reproduzível por UF/edição: `npm run ibge:importar-malha -- --uf MG [--edicao 2025]` (ZIP oficial do geoftp em cache fora do repositório, `~/.cache/jaa`; conversão com a imagem oficial do GDAL em container descartável; transação idempotente; só host local salvo `--permitir-remoto`). Pertencimento municipal é SEMPRE `ST_Covers` na malha local — nunca IBGE, ViaCEP ou Mapbox em runtime. Com malha cobrindo o ponto, a GEOMETRIA é a autoridade; código IBGE informado só vale se nenhuma malha cobrir o ponto. Teste com dados reais: `npm run test:malha-oficial -w @jaa/api` (fora do `npm test` por depender de Docker e do arquivo oficial);
+- horários: `periodos_atendimento` (serviço do perfil, dia ISO 1=segunda…7=domingo, início < fim, fim até 24:00, fim exclusivo) com TRIGGER contra sobreposição no mesmo serviço/dia (migration `0033`; sem `btree_gist`). São horas LOCAIS: o instante é convertido pelo `perfis_profissionais.fuso_horario` (IANA, padrão `America/Sao_Paulo`) — nunca comparar em UTC. O matching aceita um instante ("agora") ou um horário semanal ("terça 15:00");
+- área tem abrangência EXPLÍCITA (`todos_os_servicos` ou vínculos em `areas_atuacao_servicos`): remover o último serviço vinculado não a transforma em área geral;
+- matching (`repositorio-matching.ts`) é UMA consulta com três caminhos indexados (raio pela GiST da base com teto constante, polígono pela GiST da área, município por B-tree) e devolve dado INTERNO; o que sai para terceiros passa por `paraResultadosPublicos` / `profissionalEncontradoSchema` (`.strict()`, distância só quando a cobertura veio de raio e arredondada por `distanciaPublicaMetros`);
+- Bloco 3 (dono): rotas `/profissional/*` (`rotas-perfil-profissional.ts`) agem SEMPRE sobre o perfil da identidade PESSOAL da sessão (empresa = 403; id de atividade/área de outro perfil = 404) e cada mutação devolve `perfilProfissionalDoDonoSchema` (PRIVADO: inclui base e coordenada — nunca usar na busca pública). Situação: `inativo` (pausado) / `incompleto` (ativo com pendência) / `ativo`. Na interface, "serviço do perfil" = ATIVIDADE PROFISSIONAL (sem renomear banco/código). Catálogo inicial (Entregador, Mototáxi, Cabeleireiro) é DADO de produto semeado pela migration `0035` (IDs fixos, idempotente) — fixtures de teste usam slug `teste-*`. Municípios da tela vêm de `GET /profissional/municipios` (catálogo local). Telas novas com ponto no mapa usam `criarMapaPontoPreferido` (Mapbox com `NEXT_PUBLIC_MAPBOX_TOKEN`; sem token, a implementação Leaflet existente);
+- migration gerada pelo drizzle-kit com FK composta: ele cria as FKs ANTES dos índices únicos que elas referenciam — mova os índices para antes das FKs (feito na `0018` e na `0032`) antes de aplicar.
+
+O resto abaixo é decisão aprovada para os próximos blocos; **não implementar antes do bloco correspondente ser iniciado**.
+
+**Sem IA.** Cadastro, busca, filtros, geografia e matching são determinísticos e funcionam integralmente sem IA. A IA (Camada 2, futura) só traduz linguagem natural em filtros estruturados que alimentam o MESMO motor; nenhum código pode depender de LLM.
+
+**Perfil Profissional = capacidade da identidade PESSOAL** (1:1), nunca conta ou login separado.
+
+- até **3 serviços** por perfil na primeira versão (1, 2 ou 3; limite futuramente administrável). Uma pessoa não tem "uma profissão": João pode ser Eletricista + Pintor + Entrega;
+- **SERVIÇO** (o que oferece) ≠ **ESPECIALIDADE** (em que parte dele atua: "chuveiro", "pós-obra") ≠ **ATRIBUTO** (característica/filtro: "moto", "leva material próprio"). Especialidades e atributos pertencem **ao serviço cadastrado pelo profissional**, nunca ao perfil inteiro;
+- taxonomia (categorias → serviços → especialidades/atributos → opções, com sinônimos pesquisáveis) vive em TABELAS e vem da API: **proibido array de profissões/atributos no frontend**. Motoboy (Entrega + Moto) e mototáxi (Transporte de passageiros + Moto) são serviços DIFERENTES.
+
+**Área de atuação**: até **5 áreas ATIVAS** por perfil (desativadas continuam salvas, podem ser reativadas se houver vaga e não contam no limite), cada uma com **UMA** modalidade — RAIO a partir da base (máx. **50 km**), POLÍGONO desenhado ou REGIÃO (município pelo código IBGE, nunca pelo texto do nome). A cobertura é a **UNIÃO** das áreas ativas. Limites da V1, futuramente administráveis.
+
+**Localização e privacidade**: ativar o perfil exige endereço/base, permissão de localização e área. Localização atual válida do aparelho pode ser usada para proximidade; sem ela, vale base + área. Área ampla sem distância confiável → "Atende sua região", **nunca distância inventada**. Base e coordenadas exatas são dado PRIVADO de matching: nenhuma API pública as devolve (no máximo distância arredondada, cidade/região).
+
+**Disponibilidade = HORÁRIOS DE ATENDIMENTO de cada serviço do perfil.** Todo serviço do perfil tem uma grade semanal (zero ou mais períodos por dia, ex.: 08:00–12:00 + 14:00–18:00), criada com o padrão **segunda a sexta 08:00–18:00** (sábado e domingo sem período) e alterável pelo profissional; 24 h é só configurar 00:00–24:00, sem opção especial. Um mesmo profissional pode atender como Eletricista e não como Entregador no mesmo instante. **Não existe** classificação de serviço "imediato" nem booleano "disponível agora" (decisões anteriores substituídas). Horário é regra independente da geografia no matching. **Agenda é OPCIONAL por serviço** (`permite_agendamento`, padrão NÃO, decisão do profissional — nunca do tipo de profissão) e usa ESTA MESMA grade como base para reservas futuras; permitir agendamento não cria reserva. Reservas, duração, bloqueio de horário e calendário ainda não existem.
+
+**Solicitação normal ≠ Oportunidade (não misturar as regras)**:
+
+- SOLICITAÇÃO NORMAL (alguém procura/pede um serviço) respeita a área de atuação do profissional;
+- OPORTUNIDADE é enviada por uma empresa a profissionais compatíveis: estruturado só o necessário para distribuir (serviço/atributos + raio/área da oportunidade) + **uma mensagem de texto** do gestor com os detalhes (valor, horário, local). Ela usa a área DA OPORTUNIDADE e pode alcançar quem está fora da área normal **somente se o profissional escolheu receber** ("Oportunidades de outras regiões — Quero receber / Não quero receber"). Vale para qualquer serviço.
+
+**Entregador fixo — fluxo existente preservado.** Vínculo com empresa, disponibilidade por empresa, base, fila e despacho automático (seção 7) **não são reescritos** pelo Motor Profissional. Enquanto atua de forma exclusiva para as empresas vinculadas, o entregador fixo **não recebe corridas gerais** do Jaa; o PROFISSIONAL LIVRE é outro modo, que recebe solicitações gerais conforme serviço, disponibilidade e área. A área profissional só poderá entrar no despacho como **condição adicional**, em bloco próprio.
+
+**Interface**: configurações com frases curtas e naturais ("Oportunidades de outras regiões"), nunca jargão técnico ("polígono de atuação").
+
+**Gestor da Plataforma** (futuro) administrará taxonomia, limites (serviços, áreas, raio), regras e moderação: por isso esses valores não podem virar hardcode arquitetural.
+
 ## Presença e digitando (Fase 1)
 
 Atividade efêmera, sem tabela, migration ou histórico.
@@ -1392,6 +1449,8 @@ npm run build
 
 Somente executar scripts que realmente existam no projeto.
 
+Testes que gravam no banco: `npm test` da API e de `@jaa/banco` já rodam no banco descartável; nunca usar o banco normal de desenvolvimento (seção 5, "Requisitos do banco").
+
 Para mudanças restritas a um workspace, preferir validar o workspace afetado quando isso for suficiente.
 
 Não afirmar que algo foi testado se não foi executado.
@@ -1564,7 +1623,7 @@ Informar:
 
 Não inventar decisão para os itens abaixo. Eles serão definidos quando necessários:
 
-- provedor de PostgreSQL em produção;
+- ~~provedor de PostgreSQL em produção~~ — decidido: Neon, região São Paulo (seção 5, "Banco");
 - hospedagem final da API;
 - storage de arquivos;
 - push notification provider/configuração final;
@@ -1572,7 +1631,7 @@ Não inventar decisão para os itens abaixo. Eles serão definidos quando necess
 - provedor de mapas/geocodificação para PRODUÇÃO (hoje: Leaflet + tiles OSM na Web e geocodificação opcional compatível com Nominatim, ambos livres e sem chave; a política de uso do OSM não cobre volume de produção, então o serviço definitivo será escolhido quando houver escala — sem inventar credenciais);
 - infraestrutura de filas;
 - Redis;
-- mecanismo de busca;
+- mecanismo de busca (para serviços/profissionais já decidido: PostgreSQL com pg_trgm + unaccent, seção 5; motor externo só com nova decisão);
 - pagamentos online futuros (a primeira versão já está decidida: pagamento na entrega, sem pagamento dentro do Jaa; seção 3);
 - biblioteca de styling mobile;
 - infraestrutura final de rastreamento;

@@ -13,7 +13,11 @@ import { useConfirmacaoRecebimento } from "../hooks/use-confirmacao-recebimento"
 import { useDocumentoVisivel } from "../hooks/use-documento-visivel";
 import { useListaConversas } from "../hooks/use-lista-conversas";
 import { useNotificacoesInternas } from "../hooks/use-notificacoes-internas";
-import { abrirConversaDireta } from "../lib/api-conversas";
+import { EVENTO_CONVERSA_ESTADO_PESSOAL, eventoConversaEstadoPessoalSchema } from "@jaa/contratos";
+import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
+import { bloquearIdentidade, desbloquearIdentidade } from "../lib/api-bloqueios";
+import { abrirConversaDireta, apagarConversa, limparConversa } from "../lib/api-conversas";
+import type { AcaoConversa, AlvoAcaoConversa } from "./acoes-conversa";
 import { confirmarRecebimentos } from "../lib/confirmar-recebimentos";
 import {
   FILTROS_CONVERSAS,
@@ -46,6 +50,8 @@ export function MensageiroTecnico({
   pessoa,
   aoAlterarConversaAberta,
   aoAbrirPedidos,
+  abrirConversaCom,
+  aoAbrirConversaSolicitada,
 }: {
   identidadeId: string;
   tipoIdentidade?: TipoIdentidade;
@@ -63,6 +69,12 @@ export function MensageiroTecnico({
   aoAlterarConversaAberta?: (aberta: boolean) => void;
   // Abre a área de pedidos do aplicativo; ausente quando a identidade atual não tem essa área.
   aoAbrirPedidos?: (() => void) | undefined;
+  /*
+   * Outra área pediu para conversar com alguém (ex.: "Conversar" numa entrega): abre a conversa
+   * DIRETA de sempre com esse @usuario, na identidade atuante, e avisa o app que atendeu o pedido.
+   */
+  abrirConversaCom?: string | null | undefined;
+  aoAbrirConversaSolicitada?: (() => void) | undefined;
 }) {
   const lista = useListaConversas();
   const documentoVisivel = useDocumentoVisivel();
@@ -72,12 +84,49 @@ export function MensageiroTecnico({
   useEffect(() => {
     confirmarRecebimentos(
       identidadeId,
-      lista.itens.map((item) => item.ultimaMensagem),
+      lista.itens.flatMap((item) => (item.ultimaMensagem ? [item.ultimaMensagem] : [])),
     );
   }, [identidadeId, lista.itens]);
   const [conversaAberta, setConversaAberta] = useState<ConversaAberta | null>(
     null,
   );
+  // Muda quando a conversa aberta é LIMPA: remonta a conversa, que relê o histórico (já sem o limpo).
+  const [versaoLimpeza, setVersaoLimpeza] = useState(0);
+
+  // Limpar/apagar feito em OUTRA aba desta identidade: a conversa aberta aqui acompanha.
+  useEffect(() => {
+    const socket = obterClienteRealtime();
+    const aoMudar = (evento: unknown) => {
+      const lido = eventoConversaEstadoPessoalSchema.safeParse(evento);
+      if (!lido.success) return;
+      setConversaAberta((atual) => (atual?.id === lido.data.conversaId && lido.data.acao === "apagada" ? null : atual));
+      if (lido.data.acao === "limpa") setVersaoLimpeza((versao) => versao + 1);
+    };
+    socket.on(EVENTO_CONVERSA_ESTADO_PESSOAL, aoMudar);
+    return () => {
+      socket.off(EVENTO_CONVERSA_ESTADO_PESSOAL, aoMudar);
+    };
+  }, []);
+
+  /*
+   * Ações do menu da conversa — a MESMA função para o menu da lista, o botão direito e o cabeçalho.
+   * Limpar/apagar mexem SÓ no estado desta identidade; bloquear/desbloquear só existem com pessoa (o
+   * servidor confere tudo de novo). Devolve o erro para a confirmação mostrar.
+   */
+  async function executarAcaoConversa(acao: AcaoConversa, item: AlvoAcaoConversa): Promise<string | null> {
+    if (acao === "limpar" || acao === "apagar") {
+      const resposta = acao === "limpar" ? await limparConversa(item.id) : await apagarConversa(item.id);
+      if (!resposta.ok) return resposta.mensagem;
+      lista.registrarEstadoPessoal({ conversaId: item.id, acao: acao === "limpar" ? "limpa" : "apagada" });
+      if (acao === "apagar") setConversaAberta((atual) => (atual?.id === item.id ? null : atual));
+      else setVersaoLimpeza((versao) => versao + 1);
+      return null;
+    }
+    const resposta = acao === "bloquear" ? await bloquearIdentidade(item.outraIdentidade.identidadeId) : await desbloquearIdentidade(item.outraIdentidade.identidadeId);
+    if (!resposta.ok) return resposta.mensagem;
+    void lista.recarregarPrimeiraPagina();
+    return null;
+  }
   const conversaEmLeituraId = documentoVisivel
     ? (conversaAberta?.id ?? null)
     : null;
@@ -124,6 +173,17 @@ export function MensageiroTecnico({
     lista.itens,
     conversaEmLeituraId,
   );
+
+  useEffect(() => {
+    if (!abrirConversaCom) return;
+    // Fora do caminho síncrono do efeito: a abertura atualiza estado.
+    void Promise.resolve().then(async () => {
+      aoAbrirConversaSolicitada?.();
+      await abrirCom(abrirConversaCom);
+    });
+    // Só reage a um NOVO pedido de conversa.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirConversaCom]);
 
   async function abrirCom(nomeUsuario: string) {
     setErro(null);
@@ -179,6 +239,7 @@ export function MensageiroTecnico({
         <div className="flex shrink-0 flex-col gap-3 border-b border-borda p-4">
           {/* Uma busca só: pessoas e empresas, contatos primeiro. Tocar no resultado abre a conversa. */}
           <PesquisaJaa
+            comProfissionais
             aoAbrirConversa={(nomeUsuario) => void abrirCom(nomeUsuario)}
           />
 
@@ -238,6 +299,7 @@ export function MensageiroTecnico({
           carregandoMais={lista.carregandoMais}
           conversaAbertaId={conversaAberta?.id ?? null}
           conversaEmLeituraId={conversaEmLeituraId}
+          aoAcaoConversa={executarAcaoConversa}
           aoAbrir={(item) =>
             setConversaAberta({
               id: item.id,
@@ -254,7 +316,7 @@ export function MensageiroTecnico({
         {conversaAberta ? (
           // `key`: trocar de conversa recomeça o estado (histórico, envio pendente, atividade) do zero.
           <ConversaTecnica
-            key={conversaAberta.id}
+            key={`${conversaAberta.id}:${versaoLimpeza}`}
             identidadeId={identidadeId}
             tipoIdentidade={tipoIdentidade}
             conversa={conversaAberta}
@@ -263,6 +325,8 @@ export function MensageiroTecnico({
             aoMensagemConfirmada={lista.registrarMensagem}
             aoMensagemAtualizada={lista.registrarAtualizacao}
             aoMensagemExcluidaParaMim={lista.registrarExclusaoParaMim}
+            aoConversarCom={(nomeUsuario) => void abrirCom(nomeUsuario)}
+            aoAcaoConversa={executarAcaoConversa}
           />
         ) : (
           <div className="chat-wallpaper flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">

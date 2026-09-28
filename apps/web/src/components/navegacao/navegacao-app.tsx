@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { IconeConversa } from "@/components/ui/icones";
+import { rotuloTotalNaoLidas } from "@/features/conversas/lib/nao-lidas-globais";
 import type { AreaApp } from "./areas";
 
 /*
@@ -17,13 +18,15 @@ import type { AreaApp } from "./areas";
  * Item de navegação no padrão da referência: ícone de 20px com rótulo pequeno e em NEGRITO embaixo;
  * ativo em jade, inativo em texto suave. É a mesma linguagem nos dois lugares (coluna e barra).
  */
-function Item({ area, ativa, aoAbrir, compacto }: { area: AreaApp; ativa: boolean; aoAbrir: (id: string) => void; compacto: boolean }) {
+function Item({ area, ativa, aoAbrir, compacto, naoLidas = 0 }: { area: AreaApp; ativa: boolean; aoAbrir: (id: string) => void; compacto: boolean; naoLidas?: number }) {
   const { Icone } = area;
   return (
     <button
       type="button"
       data-area={area.id}
       aria-current={ativa ? "page" : undefined}
+      // O número também vai no nome acessível: o indicador não depende só da cor.
+      aria-label={naoLidas > 0 ? `${area.rotulo}, ${naoLidas} ${naoLidas === 1 ? "mensagem não lida" : "mensagens não lidas"}` : undefined}
       onClick={() => aoAbrir(area.id)}
       title={area.descricao}
       className={
@@ -34,7 +37,18 @@ function Item({ area, ativa, aoAbrir, compacto }: { area: AreaApp; ativa: boolea
             }`
       }
     >
-      <Icone className="h-5 w-5" />
+      <span className="relative">
+        <Icone className="h-5 w-5" />
+        {naoLidas > 0 && (
+          <span
+            data-nao-lidas-area={naoLidas}
+            aria-hidden="true"
+            className="absolute -right-2.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-perigo px-1 text-[9px] font-bold leading-none text-white ring-2 ring-superficie"
+          >
+            {rotuloTotalNaoLidas(naoLidas)}
+          </span>
+        )}
+      </span>
       <span className="max-w-full truncate">{area.rotulo}</span>
     </button>
   );
@@ -46,6 +60,7 @@ export function NavegacaoApp({
   aoAbrir,
   rodape,
   ocultarNoCelular = false,
+  naoLidasConversas = 0,
 }: {
   areas: AreaApp[];
   areaAtiva: string;
@@ -54,6 +69,8 @@ export function NavegacaoApp({
   rodape?: ReactNode;
   // Conversa aberta no celular ocupa a tela inteira: a barra sai do caminho.
   ocultarNoCelular?: boolean;
+  // Não lidas da identidade atuante: indicador no item Conversas, visível em qualquer área.
+  naoLidasConversas?: number;
 }) {
   return (
     <>
@@ -64,7 +81,7 @@ export function NavegacaoApp({
           <IconeConversa className="h-5 w-5" />
         </span>
         {areas.map((area) => (
-          <Item key={area.id} area={area} ativa={area.id === areaAtiva} aoAbrir={aoAbrir} compacto={false} />
+          <Item key={area.id} area={area} ativa={area.id === areaAtiva} aoAbrir={aoAbrir} compacto={false} naoLidas={area.id === "conversas" ? naoLidasConversas : 0} />
         ))}
         {rodape && <div className="mt-auto flex flex-col items-center gap-1">{rodape}</div>}
       </nav>
@@ -76,7 +93,7 @@ export function NavegacaoApp({
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
         {areas.map((area) => (
-          <Item key={area.id} area={area} ativa={area.id === areaAtiva} aoAbrir={aoAbrir} compacto />
+          <Item key={area.id} area={area} ativa={area.id === areaAtiva} aoAbrir={aoAbrir} compacto naoLidas={area.id === "conversas" ? naoLidasConversas : 0} />
         ))}
       </nav>
     </>

@@ -12,7 +12,20 @@ import { planejadorAproximadoLocal } from "./planejador-rota.js";
  * - OTIMIZAR: "em que ordem visitar estas paradas?" (sugestão);
  * - PERCURSO: "qual é o caminho real pelas ruas NESTA ordem?" (geometria, distância e duração).
  * Quem reordena é o entregador; o motor só recalcula o percurso da ordem que ele escolheu.
+ *
+ * DOIS TIPOS DE ROTA (`OpcoesRota.retorno`):
+ * - COM RETORNO (retorno = ponto da base): a volta faz parte da ORDEM e do PERCURSO — a otimização já
+ *   escolhe a sequência sabendo que termina na base, e distância/duração/traçado incluem a volta;
+ * - ABERTA (retorno null): a última entrega é o fim. LIMITAÇÃO do provedor atual (Optimization v1):
+ *   rota aberta com destino livre não existe; a ordem vem de uma viagem circular com a volta
+ *   descartada — uma APROXIMAÇÃO, e o percurso gravado é o aberto. Rota aberta otimizada de verdade
+ *   exige outro produto/custo (decisão de produto pendente).
  */
+
+// Opções do cálculo. `retorno` = onde a rota termina obrigatoriamente (a base); null = rota aberta.
+export interface OpcoesRota {
+  retorno?: Coordenadas | null | undefined;
+}
 
 export interface ParadaDeRota {
   pedidoId: string;
@@ -42,9 +55,9 @@ export interface ProvedorRoteamento {
    */
   readonly maximoParadasOtimizacao: number;
   readonly maximoParadasPercurso: number;
-  // Rota ABERTA: sai da origem e termina na última parada (o entregador não volta à empresa).
-  otimizarSequencia(origem: Coordenadas, paradas: ParadaDeRota[]): Promise<SequenciaOtimizada>;
-  calcularPercurso(origem: Coordenadas, paradas: ParadaDeRota[]): Promise<Percurso>;
+  // `retorno` presente: a sequência e o percurso terminam nele (a base); ausente: rota aberta.
+  otimizarSequencia(origem: Coordenadas, paradas: ParadaDeRota[], retorno?: Coordenadas | null): Promise<SequenciaOtimizada>;
+  calcularPercurso(origem: Coordenadas, paradas: ParadaDeRota[], retorno?: Coordenadas | null): Promise<Percurso>;
 }
 
 export interface RotaCalculada {
@@ -55,6 +68,8 @@ export interface RotaCalculada {
   origem: Coordenadas | null;
   sequenciaDoProvedor: boolean;
   percurso: Percurso | null;
+  // A rota termina na base (a volta está na ordem e, com provedor, no percurso).
+  comRetorno: boolean;
 }
 
 // Uma linha por chamada (ou recusa) — a base da observabilidade de consumo por empresa.
@@ -74,12 +89,12 @@ export interface ResultadoMotor {
 
 export interface MotorDeRotas {
   // Planejamento inicial: sugere a ordem e, quando possível, já devolve o percurso real dela.
-  planejar(origem: Coordenadas | null, paradas: ParadaDeRota[]): Promise<ResultadoMotor>;
+  planejar(origem: Coordenadas | null, paradas: ParadaDeRota[], opcoes?: OpcoesRota): Promise<ResultadoMotor>;
   /*
    * A ordem JÁ está decidida (o entregador reordenou): só calcula o caminho real dela.
    * Nunca reotimiza — a escolha de quem está na rua prevalece.
    */
-  recalcularPercurso(origem: Coordenadas | null, paradas: ParadaDeRota[]): Promise<ResultadoMotor>;
+  recalcularPercurso(origem: Coordenadas | null, paradas: ParadaDeRota[], opcoes?: OpcoesRota): Promise<ResultadoMotor>;
 }
 
 const SEM_PROVEDOR = "aproximacao-local";
@@ -92,10 +107,12 @@ async function ordemAproximada(origem: Coordenadas | null, paradas: ParadaDeRota
   return plano.ordem;
 }
 
-function fallback(ordem: string[], origem: Coordenadas | null, motivo: MotivoFallbackRota): RotaCalculada {
+function fallback(ordem: string[], origem: Coordenadas | null, motivo: MotivoFallbackRota, comRetorno: boolean): RotaCalculada {
   // Em fallback NÃO existem distância, duração ou traçado: nada é inventado para preencher a tela.
-  return { ordem, estado: "aproximacao_local", motivoFallback: motivo, provedor: null, origem, sequenciaDoProvedor: false, percurso: null };
+  return { ordem, estado: "aproximacao_local", motivoFallback: motivo, provedor: null, origem, sequenciaDoProvedor: false, percurso: null, comRetorno };
 }
+
+const mesmoPonto = (a: Coordenadas, b: Coordenadas) => a.latitude === b.latitude && a.longitude === b.longitude;
 
 function motivoDaFalha(erro: unknown): MotivoFallbackRota {
   return erro instanceof ErroRespostaProvedor ? "resposta_invalida" : "provedor_indisponivel";
@@ -113,6 +130,7 @@ export function criarMotorDeRotas(provedor: ProvedorRoteamento | null): MotorDeR
     operacao: "otimizacao" | "percurso",
     origem: Coordenadas | null,
     paradas: ParadaDeRota[],
+    retorno: Coordenadas | null,
     acao: (provedor: ProvedorRoteamento, origem: Coordenadas) => Promise<RotaCalculada>,
   ): Promise<ResultadoMotor> {
     const consumos: RegistroConsumoRota[] = [];
@@ -121,13 +139,18 @@ export function criarMotorDeRotas(provedor: ProvedorRoteamento | null): MotorDeR
 
     const recusar = async (motivo: MotivoFallbackRota): Promise<ResultadoMotor> => {
       registrar({ operacao, resultado: "nao_aplicavel", provedor: nome, paradas: paradas.length, motivo, duracaoMs: null });
-      return { rota: fallback(await ordemAproximada(origem, paradas), origem, motivo), consumos };
+      return { rota: fallback(await ordemAproximada(origem, paradas), origem, motivo, retorno !== null), consumos };
     };
 
     if (!provedor) return recusar("provedor_nao_configurado");
     // Sem o ponto da base não há de onde sair: a ordem continua, o percurso não.
     if (!origem) return recusar("sem_base_confirmada");
-    const capacidade = operacao === "otimizacao" ? provedor.maximoParadasOtimizacao : provedor.maximoParadasPercurso;
+    /*
+     * A volta à base ocupa UMA coordenada a mais quando precisa ser enviada à parte: sempre no percurso;
+     * na otimização, só quando a origem não é a própria base (saindo da base, a viagem circular basta).
+     */
+    const extra = retorno && (operacao === "percurso" || !mesmoPonto(origem, retorno)) ? 1 : 0;
+    const capacidade = (operacao === "otimizacao" ? provedor.maximoParadasOtimizacao : provedor.maximoParadasPercurso) - extra;
     // Capacidade excedida: nenhum pedido é descartado — a saída inteira segue, só sem percurso real.
     if (paradas.length > capacidade) return recusar("capacidade_excedida");
 
@@ -139,24 +162,25 @@ export function criarMotorDeRotas(provedor: ProvedorRoteamento | null): MotorDeR
     } catch (erro) {
       const motivo = motivoDaFalha(erro);
       registrar({ operacao, resultado: "falha", provedor: nome, paradas: paradas.length, motivo, duracaoMs: Date.now() - inicio });
-      return { rota: fallback(await ordemAproximada(origem, paradas), origem, motivo), consumos };
+      return { rota: fallback(await ordemAproximada(origem, paradas), origem, motivo, retorno !== null), consumos };
     }
   }
 
   return {
-    async planejar(origem, paradas) {
-      // Uma parada só não tem o que otimizar; o percurso dela ainda vale (origem → destino).
-      if (paradas.length === 1) return this.recalcularPercurso(origem, paradas);
+    async planejar(origem, paradas, opcoes = {}) {
+      const retorno = opcoes.retorno ?? null;
+      // Uma parada só não tem o que otimizar; o percurso dela ainda vale (origem → destino [→ base]).
+      if (paradas.length === 1) return this.recalcularPercurso(origem, paradas, opcoes);
 
-      return executar("otimizacao", origem, paradas, async (usado, pontoDeOrigem) => {
-        const otimizada = await usado.otimizarSequencia(pontoDeOrigem, paradas);
+      return executar("otimizacao", origem, paradas, retorno, async (usado, pontoDeOrigem) => {
+        const otimizada = await usado.otimizarSequencia(pontoDeOrigem, paradas, retorno);
         const ordenadas = otimizada.ordem
           .map((pedidoId) => paradas.find((parada) => parada.pedidoId === pedidoId))
           .filter((parada): parada is ParadaDeRota => parada !== undefined);
         // Ordem que perdeu ou inventou parada não é aproveitável: melhor cair no fallback.
         if (ordenadas.length !== paradas.length) throw new ErroRespostaProvedor("Sequência do provedor não cobre todas as paradas.");
 
-        const percurso = otimizada.percurso ?? (await usado.calcularPercurso(pontoDeOrigem, ordenadas));
+        const percurso = otimizada.percurso ?? (await usado.calcularPercurso(pontoDeOrigem, ordenadas, retorno));
         return {
           ordem: otimizada.ordem,
           estado: "percurso_real",
@@ -165,13 +189,15 @@ export function criarMotorDeRotas(provedor: ProvedorRoteamento | null): MotorDeR
           origem: pontoDeOrigem,
           sequenciaDoProvedor: true,
           percurso,
+          comRetorno: retorno !== null,
         };
       });
     },
 
-    async recalcularPercurso(origem, paradas) {
+    async recalcularPercurso(origem, paradas, opcoes = {}) {
+      const retorno = opcoes.retorno ?? null;
       const ordem = paradas.map((parada) => parada.pedidoId);
-      return executar("percurso", origem, paradas, async (usado, pontoDeOrigem) => ({
+      return executar("percurso", origem, paradas, retorno, async (usado, pontoDeOrigem) => ({
         ordem,
         estado: "percurso_real",
         motivoFallback: null,
@@ -179,7 +205,8 @@ export function criarMotorDeRotas(provedor: ProvedorRoteamento | null): MotorDeR
         origem: pontoDeOrigem,
         // A ordem é de quem pediu (entregador ou sequência já gravada): o provedor não a reescreve.
         sequenciaDoProvedor: false,
-        percurso: await usado.calcularPercurso(pontoDeOrigem, paradas),
+        percurso: await usado.calcularPercurso(pontoDeOrigem, paradas, retorno),
+        comRetorno: retorno !== null,
       }));
     },
   };

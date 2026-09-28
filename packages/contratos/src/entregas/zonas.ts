@@ -15,6 +15,15 @@ import { pedidoDaEmpresaSchema } from "../pedidos/gestao-pedidos.ts";
 export const MINIMO_VERTICES_ZONA = 3;
 export const MAXIMO_VERTICES_ZONA = 60;
 export const NOME_ZONA_TAMANHO_MAXIMO = 60;
+// Mesmo limite defensivo do CHECK `zonas_entrega_frete_valido`.
+export const FRETE_ZONA_MAXIMO_CENTAVOS = 999_999_999;
+
+/** Frete da zona em CENTAVOS inteiros (0 = frete grátis). Fração, negativo ou string são recusados. */
+export const freteZonaCentavosSchema = z
+  .number("Informe o frete em centavos.")
+  .int("O frete deve ser um valor inteiro em centavos.")
+  .min(0, "O frete não pode ser negativo.")
+  .max(FRETE_ZONA_MAXIMO_CENTAVOS, "Frete acima do limite permitido.");
 
 export const verticeZonaSchema = z.object({ latitude: latitudeSchema, longitude: longitudeSchema });
 
@@ -30,6 +39,8 @@ export const salvarZonaEntradaSchema = z.object({
   nome: z.string().trim().min(1, "Dê um nome à zona.").max(NOME_ZONA_TAMANHO_MAXIMO),
   vertices: poligonoZonaSchema,
   ativa: z.boolean().default(true),
+  // Opcional: ausente na criação = 0 (grátis); ausente na edição = mantém o frete atual.
+  freteCentavos: freteZonaCentavosSchema.optional(),
 });
 
 export type SalvarZonaEntrada = z.input<typeof salvarZonaEntradaSchema>;
@@ -44,6 +55,7 @@ export const zonaEntregaSchema = z.object({
   nome: z.string(),
   vertices: poligonoZonaSchema,
   ativa: z.boolean(),
+  freteCentavos: freteZonaCentavosSchema,
   // Zonas que a EMPRESA autorizou a combinar com esta quando houver pouco volume (simétrico).
   compativeisCom: z.array(z.uuid()),
   criadoEm: z.iso.datetime(),
@@ -70,6 +82,8 @@ export const configuracaoDespachoSchema = z.object({
   tempoFormacaoMinutos: z.number().int().min(TEMPO_FORMACAO_MINIMO_MINUTOS).max(TEMPO_FORMACAO_MAXIMO_MINUTOS),
   combinarZonas: z.boolean(),
   liberacaoAutomatica: z.boolean(),
+  // Padrão das saídas NOVAS da empresa: o entregador volta à base ao terminar (a volta entra na rota).
+  saidasExigemRetornoBase: z.boolean(),
 });
 
 export type ConfiguracaoDespacho = z.infer<typeof configuracaoDespachoSchema>;
@@ -83,6 +97,7 @@ export const CONFIGURACAO_DESPACHO_PADRAO: ConfiguracaoDespacho = {
   tempoFormacaoMinutos: TEMPO_FORMACAO_PADRAO_MINUTOS,
   combinarZonas: true,
   liberacaoAutomatica: true,
+  saidasExigemRetornoBase: false,
 };
 
 /**

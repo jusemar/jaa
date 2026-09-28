@@ -34,18 +34,28 @@ const APARENCIAS: Record<Aparencia, string> = {
 export function Botao({
   aparencia = "principal",
   larguraTotal = false,
+  carregando = false,
+  textoCarregando = "Salvando…",
   className = "",
   children,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { aparencia?: Aparencia; larguraTotal?: boolean }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  aparencia?: Aparencia;
+  larguraTotal?: boolean;
+  // Ação em andamento: mostra `textoCarregando`, fica desabilitado (sem clique duplo) e avisa o leitor de tela.
+  carregando?: boolean;
+  textoCarregando?: string;
+}) {
   return (
     <button
       {...props}
+      disabled={props.disabled || carregando}
+      aria-busy={carregando || undefined}
       type={props.type ?? "button"}
       // Cantos suaves (não pílula): é a forma dos botões na referência, e casa com os cards.
       className={`${ALTURA_TOQUE} inline-flex items-center justify-center gap-2 rounded-jaa-compacto px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${APARENCIAS[aparencia]} ${larguraTotal ? "w-full" : ""} ${className}`}
     >
-      {children}
+      {carregando ? textoCarregando : children}
     </button>
   );
 }
@@ -198,5 +208,56 @@ export function Carregando({ texto = "Carregando…" }: { texto?: string }) {
     <p role="status" aria-live="polite" className="px-1 py-4 text-sm text-conteudo-suave">
       {texto}
     </p>
+  );
+}
+
+/**
+ * Liga/desliga (switch). Botão nativo com role="switch" + aria-checked: teclado e leitor de tela de
+ * graça. O estado é dito em TEXTO ao lado ("Ligado"/"Desligado"), nunca só pela cor.
+ */
+export function Interruptor({
+  rotulo,
+  descricao,
+  ligado,
+  aoMudar,
+  disabled,
+  id,
+}: {
+  rotulo: string;
+  descricao?: string;
+  ligado: boolean;
+  aoMudar: (ligado: boolean) => void;
+  disabled?: boolean;
+  id: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span id={`${id}-rotulo`} className="text-sm font-medium text-conteudo">
+          {rotulo}
+        </span>
+        {descricao && (
+          <span id={`${id}-descricao`} className="text-xs text-conteudo-suave">
+            {descricao}
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        id={id}
+        role="switch"
+        aria-checked={ligado}
+        aria-labelledby={`${id}-rotulo`}
+        aria-describedby={descricao ? `${id}-descricao` : undefined}
+        disabled={disabled}
+        onClick={() => aoMudar(!ligado)}
+        className="flex min-h-11 shrink-0 items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-9"
+      >
+        <span className="text-xs text-conteudo-suave">{ligado ? "Ligado" : "Desligado"}</span>
+        <span className={`relative h-6 w-11 rounded-full transition-colors ${ligado ? "bg-marca" : "bg-borda"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-superficie shadow-suave transition-all ${ligado ? "left-[22px]" : "left-0.5"}`} />
+        </span>
+      </button>
+    </div>
   );
 }

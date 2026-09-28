@@ -3,6 +3,7 @@ import { buscarIdentidadeContatavelPorNomeUsuario } from "../../identidades/repo
 import {
   listarParticipantesDaConversa,
   obterOuCriarConversaDireta,
+  reabrirConversaPara,
   type ParticipanteRegistro,
 } from "../repositorios/repositorio-conversas.js";
 
@@ -32,6 +33,8 @@ export async function abrirConversaDireta(
   }
 
   const { conversaId, criada } = await obterOuCriarConversaDireta(banco, identidadeOrigemId, destino.id);
+  // Iniciar de novo uma conversa APAGADA a traz de volta para a lista de quem abriu (só dela).
+  if (!criada) await reabrirConversaPara(banco, conversaId, identidadeOrigemId);
   const participantes = await listarParticipantesDaConversa(banco, conversaId);
 
   return { tipo: criada ? "criada" : "existente", conversaId, participantes };

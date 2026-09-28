@@ -45,7 +45,7 @@ export function ResumoPercurso({ saida }: { saida: SaidaEntrega }) {
       atualizada &&
       rota.distanciaMetros !== null &&
       rota.duracaoSegundos !== null
-        ? `${formatarDistanciaRota(rota.distanciaMetros)} · aprox. ${formatarDuracaoPercurso(rota.duracaoSegundos)} de trajeto`
+        ? `${formatarDistanciaRota(rota.distanciaMetros)} · aprox. ${formatarDuracaoPercurso(rota.duracaoSegundos)} de trajeto${rota.comRetorno ? " (com retorno à base)" : ""}`
         : rotuloRota(rota, saida.versaoSequencia)}
       {rota &&
         atualizada &&

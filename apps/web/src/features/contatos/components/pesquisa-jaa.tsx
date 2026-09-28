@@ -2,11 +2,15 @@
 
 import {
   TERMO_BUSCA_TAMANHO_MINIMO,
+  type IntencaoProfissional,
   type ResultadoBusca,
 } from "@jaa/contratos";
 import { useEffect, useRef, useState } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
 import { IconeBusca } from "@/components/ui/icones";
+import { BuscaProfissionais } from "@/features/busca-profissionais/components/busca-profissionais";
+import { listarIntencoesProfissionais } from "@/features/busca-profissionais/lib/api-busca-profissionais";
+import { modoDaPesquisa } from "@/features/busca-profissionais/lib/apresentacao-busca";
 import { pesquisarNoJaa, salvarContato } from "../lib/api-contatos";
 
 /**
@@ -17,15 +21,21 @@ import { pesquisarNoJaa, salvarContato } from "../lib/api-contatos";
  * não existe botão "Abrir conversa".
  *
  * O telefone nunca aparece nos resultados; por telefone só é encontrado quem optou por isso.
+ *
+ * Com `comProfissionais` (Conversas): "@joao" é só a busca de pessoas/empresas; SEM @ a busca de
+ * pessoas continua igual e, se o texto for uma atividade do catálogo ("motoboy"), aparece também
+ * "Procurar profissionais". Texto ambíguo ("moto") lista as opções: quem escolhe é a pessoa.
  */
 const ESPERA_DIGITACAO_MS = 300;
 
 export function PesquisaJaa({
   aoAbrirConversa,
   aoSalvarContato,
+  comProfissionais = false,
 }: {
   aoAbrirConversa: (nomeUsuario: string) => void;
   aoSalvarContato?: () => void;
+  comProfissionais?: boolean;
 }) {
   const [termo, setTermo] = useState("");
   const [resultado, setResultado] = useState<{
@@ -35,17 +45,21 @@ export function PesquisaJaa({
   const [buscando, setBuscando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState<string | null>(null);
+  const [intencoes, setIntencoes] = useState<IntencaoProfissional[]>([]);
+  const [intencaoAberta, setIntencaoAberta] = useState<IntencaoProfissional | null>(null);
   const requisicaoAtual = useRef(0);
 
   // Debounce: digitar não vira uma consulta por tecla.
   const termoProcurado = termo.trim();
   const termoValido = termoProcurado.length >= TERMO_BUSCA_TAMANHO_MINIMO;
+  const procurarProfissionais = comProfissionais && modoDaPesquisa(termoProcurado) === "livre";
 
   useEffect(() => {
     if (!termoValido) {
       // Limpar fora do caminho síncrono do efeito evita renderizações em cascata.
       const limpeza = setTimeout(() => {
         setResultado(null);
+        setIntencoes([]);
         setBuscando(false);
       }, 0);
       return () => clearTimeout(limpeza);
@@ -63,10 +77,17 @@ export function PesquisaJaa({
           setErro(null);
         } else setErro(resposta.mensagem);
       });
+      // Intenções profissionais: pedido separado, com seu próprio resultado (não mexe no limite de pessoas).
+      if (procurarProfissionais) {
+        void listarIntencoesProfissionais(termoProcurado).then((resposta) => {
+          if (marca !== requisicaoAtual.current) return;
+          setIntencoes(resposta.ok ? resposta.dados.intencoes : []);
+        });
+      } else setIntencoes([]);
     }, ESPERA_DIGITACAO_MS);
 
     return () => clearTimeout(temporizador);
-  }, [termoProcurado, termoValido]);
+  }, [termoProcurado, termoValido, procurarProfissionais]);
 
   async function salvar(item: ResultadoBusca) {
     setSalvando(item.identidade.identidadeId);
@@ -107,7 +128,9 @@ export function PesquisaJaa({
     resultado !== null &&
     resultado.contatos.length === 0 &&
     resultado.externos.length === 0 &&
+    intencoes.length === 0 &&
     !buscando;
+  const algumaExata = intencoes.some((intencao) => intencao.exata);
 
   return (
     <search className="flex flex-col gap-2">
@@ -135,6 +158,39 @@ export function PesquisaJaa({
         <p className="px-1 text-xs text-conteudo-suave">
           Nada encontrado para “{termo.trim()}”.
         </p>
+      )}
+
+      {intencoes.length > 0 && (
+        <div data-intencoes-profissionais className="flex flex-col gap-1">
+          <p className="px-1 text-xs font-semibold uppercase tracking-wide text-conteudo-suave">
+            {algumaExata && intencoes.length === 1 ? "Profissionais" : "Você procura:"}
+          </p>
+          <ul className="flex flex-col divide-y divide-borda overflow-hidden rounded-xl border border-borda bg-superficie">
+            {intencoes.map((intencao) => (
+              <li key={`${intencao.servicoId}|${intencao.especialidadeId ?? ""}|${intencao.opcaoId ?? ""}`}>
+                <button
+                  type="button"
+                  data-intencao-profissional={intencao.rotulo}
+                  onClick={() => setIntencaoAberta(intencao)}
+                  className="flex min-h-12 w-full items-center gap-2 px-3 text-left text-sm hover:bg-superficie-suave focus-visible:bg-superficie-suave focus-visible:outline-2"
+                >
+                  <IconeBusca className="h-4 w-4 shrink-0 text-marca" />
+                  <span className="min-w-0 flex-1 truncate">
+                    Procurar <strong className="font-semibold">{intencao.rotulo}</strong> perto de um local
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {intencaoAberta && (
+        <BuscaProfissionais
+          intencao={intencaoAberta}
+          aoFechar={() => setIntencaoAberta(null)}
+          aoAbrirConversa={aoAbrirConversa}
+        />
       )}
 
       {resultado && resultado.contatos.length > 0 && (

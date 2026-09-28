@@ -100,7 +100,9 @@ export function registrarRotasContatos(servidor: FastifyInstance, dependencias: 
   servidor.get("/busca", { preHandler }, async (requisicao, resposta) => {
     const { identidadeId } = obterIdentidadeExigida(requisicao);
     const consulta = z.object({ termo: z.string().optional() }).safeParse(requisicao.query);
-    const termo = consulta.success ? (consulta.data.termo ?? "").trim() : "";
+    const digitado = consulta.success ? (consulta.data.termo ?? "").trim() : "";
+    // "@joao" procura o @usuario joao: o @ é só a forma de dizer "pessoa/empresa", não faz parte do nome.
+    const termo = digitado.startsWith("@") ? digitado.slice(1).trim() : digitado;
     if (termo.length < TERMO_BUSCA_TAMANHO_MINIMO) {
       const vazia: RespostaBusca = { contatos: [], externos: [] };
       return vazia;

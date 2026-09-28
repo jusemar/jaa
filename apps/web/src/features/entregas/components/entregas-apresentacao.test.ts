@@ -479,6 +479,7 @@ describe("mapa da rota do entregador", () => {
       zonaPrincipal: null,
       zonasCombinadas: [],
       automatica: false,
+      exigeRetornoBase: false,
       criadoEm: "2026-09-16T12:00:00.000Z",
       formacaoIniciadaEm: null,
       prazoFormacaoEm: null,

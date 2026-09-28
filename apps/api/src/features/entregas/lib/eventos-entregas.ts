@@ -58,6 +58,14 @@ export interface FilaAtualizada {
   fila: FilaDoPedido;
 }
 
+/** A entrega do cliente virou a PRÓXIMA: aviso único (já gravado na parada) só para o dono do pedido. */
+export interface EntregaProxima {
+  tipo: "entrega-proxima";
+  destinatariosIdentidadeIds: string[];
+  pedidoId: string;
+  avisoId: string;
+}
+
 /**
  * Quadro operacional da base (fila, fora da base, indisponíveis) para a identidade da EMPRESA.
  * Só estados derivados: a empresa nunca recebe posição, mapa ou trajeto de ninguém.
@@ -122,6 +130,7 @@ export type EventoDominioEntregas =
   | DisponibilidadeAtualizada
   | SaidaAtualizada
   | FilaAtualizada
+  | EntregaProxima
   | PainelOperacionalAtualizado
   | SituacaoOperacionalAtualizada
   | DespachoAtualizado

@@ -171,7 +171,16 @@ export const pedidoSchema = z.object({
   formaPagamentoNaEntrega: formaPagamentoEntregaSchema,
   // Só no dinheiro com troco; sempre > total. Cartão nunca tem troco.
   trocoParaCentavos: z.number().int().nullable(),
+  // total = subtotal + freteFinal. Pedidos anteriores ao frete: subtotal = total e frete 0.
   totalCentavos: z.number().int(),
+  subtotalCentavos: z.number().int(),
+  // Frete em SNAPSHOT (valor da zona na compra): final = original − desconto.
+  freteOriginalCentavos: z.number().int(),
+  descontoFreteCentavos: z.number().int(),
+  freteFinalCentavos: z.number().int(),
+  // Zona que classificou o destino: o nome é snapshot; o id some (null) se a zona deixar de existir.
+  zonaEntregaId: z.uuid().nullable(),
+  zonaEntregaNome: z.string().nullable(),
   itens: z.array(itemPedidoSchema).min(1),
   // null só em pedidos criados antes desta etapa (legados), nunca em pedidos novos de entrega.
   destino: destinoPedidoSchema.nullable(),
@@ -190,6 +199,9 @@ export const resumoPedidoSchema = z.object({
   status: statusPedidoSchema,
   formaPagamentoNaEntrega: formaPagamentoEntregaSchema,
   trocoParaCentavos: z.number().int().nullable(),
+  // total = subtotal + freteFinal (o card mostra itens, taxa de entrega e total sem recalcular nada).
+  subtotalCentavos: z.number().int(),
+  freteFinalCentavos: z.number().int(),
   totalCentavos: z.number().int(),
   itens: z.array(
     z.object({

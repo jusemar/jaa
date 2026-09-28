@@ -155,6 +155,45 @@ describe("formulário de endereço", () => {
     // Sem alteração ainda, nenhum aviso de perda da confirmação.
     assert.equal(html.includes("data-aviso-confirmacao"), false);
   });
+
+  it("apelido é OPCIONAL: sem `required`, rotulado como opcional, e endereço sem apelido abre vazio", () => {
+    const html = formulario();
+    const campoApelido = html.match(/<input[^>]*name="apelido"[^>]*>/)?.[0] ?? "";
+    assert.ok(campoApelido, "campo de apelido existe");
+    assert.equal(/\brequired\b/.test(campoApelido), false);
+    assert.ok(texto(html).includes("Apelido (opcional)"));
+    // Os campos essenciais continuam obrigatórios.
+    assert.ok(/<input[^>]*name="logradouro"[^>]*required/.test(html) || /<input[^>]*required[^>]*name="logradouro"/.test(html));
+
+    const semApelido = formulario({ ...confirmado, apelido: null });
+    assert.match(semApelido, /<input[^>]*name="apelido"[^>]*value=""/);
+    for (const proibido of ["null", "undefined"]) assert.equal(texto(semApelido).includes(proibido), false, proibido);
+  });
+});
+
+describe("endereço sem apelido na apresentação", () => {
+  it("lista, confirmação do ponto e rótulos acessíveis nunca mostram 'null' e usam o endereço", () => {
+    const semApelido: EnderecoCliente = { ...confirmado, apelido: null };
+    const html = lista([semApelido]);
+    for (const proibido of ["null", "undefined"]) assert.equal(html.includes(proibido), false, proibido);
+    assert.ok(html.includes("Usar este endereço: Rua das Flores, 150 — Apto 302"));
+
+    const confirmacao = renderToStaticMarkup(
+      createElement(ConfirmarPontoEntrega, {
+        empresaIdentidadeId: "cccccccc-0000-4000-8000-000000000000",
+        endereco: semApelido,
+        chaveMapa: semApelido.id,
+        sugestao: null,
+        enviando: false,
+        erro: null,
+        aoConfirmar: () => {},
+        aoCancelar: () => {},
+      }),
+    );
+    const linha = texto(confirmacao.match(/<p data-endereco-confirmacao[^>]*>[\s\S]*?<\/p>/)?.[0] ?? "");
+    assert.ok(linha.startsWith("Rua das Flores, 150"), linha);
+    assert.equal(linha.includes("null"), false);
+  });
 });
 
 describe("sugestão no mapa de entrega", () => {

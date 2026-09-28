@@ -42,6 +42,7 @@ export function ConfiguracaoAutomacao({
           tempoFormacaoMinutos: Number(dados.get("tempoFormacaoMinutos")),
           combinarZonas: dados.get("combinarZonas") === "sim",
           liberacaoAutomatica: dados.get("liberacaoAutomatica") === "sim",
+          saidasExigemRetornoBase: dados.get("saidasExigemRetornoBase") === "sim",
         });
       }}
       className="flex flex-col gap-2 rounded-jaa border border-borda p-2 text-sm"
@@ -76,6 +77,11 @@ export function ConfiguracaoAutomacao({
       <label className="flex items-center gap-2 text-xs">
         <input type="checkbox" name="liberacaoAutomatica" value="sim" defaultChecked={configuracao.liberacaoAutomatica} />
         Liberação automática
+      </label>
+      {/* Regra da OPERAÇÃO (não do pagamento): a volta à base entra na escolha da ordem e no trajeto. */}
+      <label className="flex items-center gap-2 text-xs">
+        <input type="checkbox" name="saidasExigemRetornoBase" value="sim" defaultChecked={configuracao.saidasExigemRetornoBase} />
+        Entregador volta à base ao terminar a saída
       </label>
       <p className="text-xs text-conteudo-suave">
         A quantidade OU o tempo conclui a montagem. Com liberação automática ativa, a retirada também é liberada nesse momento.

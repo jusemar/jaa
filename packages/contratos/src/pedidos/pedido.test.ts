@@ -17,12 +17,18 @@ const uuid = "01a0a394-6225-75f2-b809-b2690993c512";
 const base = { idCliente: uuid, empresaIdentidadeId: uuid, conversaId: uuid, enderecoId: uuid, itens: [{ produtoId: uuid, quantidade: 2 }] };
 
 describe("criarPedidoEntradaSchema", () => {
-  it("cliente envia só produto e quantidade: preço, subtotal, total, status e identidade do cliente são descartados", () => {
+  it("cliente envia só produto e quantidade: preço, subtotal, frete, zona, total, status e identidade do cliente são descartados", () => {
     const entrada = criarPedidoEntradaSchema.parse({
       ...base,
       pagamento: { forma: "dinheiro", trocoParaCentavos: 10000 },
       itens: [{ produtoId: uuid, quantidade: 2, precoCentavos: 1, subtotalCentavos: 1 }],
       totalCentavos: 1,
+      // Frete forjado (R$ 7,00 → R$ 0,00) e zona escolhida pelo cliente também são descartados.
+      freteCentavos: 0,
+      freteOriginalCentavos: 0,
+      freteFinalCentavos: 0,
+      descontoFreteCentavos: 700,
+      zonaEntregaId: uuid,
       status: "entregue",
       clienteIdentidadeId: uuid,
       empresaId: uuid,
@@ -96,6 +102,12 @@ describe("pedido e card na conversa", () => {
       formaPagamentoNaEntrega: "dinheiro",
       trocoParaCentavos: 10000,
       totalCentavos: 9180,
+      subtotalCentavos: 9180,
+      freteOriginalCentavos: 0,
+      descontoFreteCentavos: 0,
+      freteFinalCentavos: 0,
+      zonaEntregaId: null,
+      zonaEntregaNome: null,
       itens: [{ id: uuid, produtoId: uuid, nomeProduto: "Pizza Calabresa", precoUnitarioCentavos: 3990, quantidade: 2, subtotalCentavos: 7980, escolhas: [], observacao: null }],
       criadoEm: "2026-09-15T12:00:00.000Z",
       atualizadoEm: "2026-09-15T12:00:00.000Z",
@@ -111,9 +123,49 @@ describe("pedido e card na conversa", () => {
     // O pedido público não expõe a empresa por id interno nem dados de cartão.
     assert.deepEqual(Object.keys(pedidoSchema.parse(pedido).empresa).sort(), ["identidadeId", "nome", "nomeUsuario", "slug"]);
 
-    const card = { id: uuid, conversaId: uuid, remetenteIdentidadeId: uuid, tipo: "pedido", conteudo: "", criadoEm: "2026-09-15T12:00:00.000Z", estado: "enviada", mensagemRespondida: null, editadaEm: null, excluidaEm: null, pedido: { id: uuid, numero: 3, status: "recebido", formaPagamentoNaEntrega: "cartao", trocoParaCentavos: null, totalCentavos: 1200, itens: [{ nomeProduto: "Refrigerante", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null }] } };
+    const card = { id: uuid, conversaId: uuid, remetenteIdentidadeId: uuid, tipo: "pedido", conteudo: "", criadoEm: "2026-09-15T12:00:00.000Z", estado: "enviada", mensagemRespondida: null, editadaEm: null, excluidaEm: null, pedido: { id: uuid, numero: 3, status: "recebido", formaPagamentoNaEntrega: "cartao", trocoParaCentavos: null, subtotalCentavos: 1000, freteFinalCentavos: 200, totalCentavos: 1200, itens: [{ nomeProduto: "Refrigerante", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null }] } };
     assert.equal(mensagemSchema.safeParse(card).success, true);
     assert.equal(mensagemSchema.safeParse({ ...card, tipo: "audio" }).success, false);
+  });
+
+  it("representa subtotal, frete em snapshot e zona do pedido", () => {
+    const pedido = pedidoSchema.parse({
+      id: uuid,
+      numero: 7,
+      origem: "conversa",
+      conversaId: uuid,
+      empresa: { identidadeId: uuid, nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh" },
+      cliente: { identidadeId: uuid, tipo: "pessoal", nomeExibicao: "Junior", nomeUsuario: "junior" },
+      status: "recebido",
+      motivoCancelamento: null,
+      historico: [{ id: uuid, status: "recebido", ocorridoEm: "2026-09-15T12:00:00.000Z", motivo: null }],
+      destino: null,
+      formaPagamentoNaEntrega: "cartao",
+      trocoParaCentavos: null,
+      totalCentavos: 8480,
+      subtotalCentavos: 7980,
+      freteOriginalCentavos: 500,
+      descontoFreteCentavos: 0,
+      freteFinalCentavos: 500,
+      zonaEntregaId: uuid,
+      zonaEntregaNome: "Zona C",
+      itens: [{ id: uuid, produtoId: uuid, nomeProduto: "Pizza Calabresa", precoUnitarioCentavos: 3990, quantidade: 2, subtotalCentavos: 7980, escolhas: [], observacao: null }],
+      criadoEm: "2026-09-15T12:00:00.000Z",
+      atualizadoEm: "2026-09-15T12:00:00.000Z",
+    });
+    assert.equal(pedido.totalCentavos, pedido.subtotalCentavos + pedido.freteFinalCentavos);
+    assert.equal(pedido.freteFinalCentavos, pedido.freteOriginalCentavos - pedido.descontoFreteCentavos);
+    assert.equal(pedido.zonaEntregaNome, "Zona C");
+
+    // Zona apagada depois: o id vira null, o NOME continua como snapshot histórico.
+    assert.equal(pedidoSchema.safeParse({ ...pedido, zonaEntregaId: null }).success, true);
+    // Pedido sem zona aplicada (legado ou sem zonas configuradas).
+    assert.equal(pedidoSchema.safeParse({ ...pedido, zonaEntregaId: null, zonaEntregaNome: null }).success, true);
+    // Campo financeiro é obrigatório e inteiro (centavos).
+    const { subtotalCentavos: _removido, ...semSubtotal } = pedido;
+    assert.equal(pedidoSchema.safeParse(semSubtotal).success, false);
+    assert.equal(pedidoSchema.safeParse({ ...pedido, freteFinalCentavos: 5.5 }).success, false);
+    assert.equal(pedidoSchema.safeParse({ ...pedido, zonaEntregaId: "zona-c" }).success, false);
   });
 
   it("item MONTADO guarda o snapshot das escolhas; `escolhas` é obrigatório (vazio no produto comum)", () => {

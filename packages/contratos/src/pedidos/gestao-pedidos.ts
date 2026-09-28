@@ -47,6 +47,10 @@ export const pedidoDaEmpresaSchema = z.object({
   cliente: participanteConversaSchema,
   conversaId: z.uuid().nullable(),
   quantidadeItens: z.number().int().min(1),
+  // total = subtotal + freteFinal; a zona é o snapshot do pedido (null sem zona aplicada).
+  subtotalCentavos: z.number().int(),
+  freteFinalCentavos: z.number().int(),
+  zonaEntregaNome: z.string().nullable(),
   totalCentavos: z.number().int(),
   formaPagamentoNaEntrega: formaPagamentoEntregaSchema,
   trocoParaCentavos: z.number().int().nullable(),

@@ -5,6 +5,7 @@ import {
   formatarCep,
   formatarEnderecoResumido,
   type EnderecoCliente,
+  rotuloEndereco,
 } from "@jaa/contratos";
 
 // "Entregar em": endereços salvos do cliente. O selo diz se o ponto de entrega já foi confirmado.
@@ -82,7 +83,7 @@ export function ListaEnderecos({
               <button
                 type="button"
                 data-usar-endereco
-                aria-label={`Usar este endereço: ${endereco.apelido}`}
+                aria-label={`Usar este endereço: ${rotuloEndereco(endereco)}`}
                 onClick={() => aoUsar(endereco)}
                 className="min-h-9 rounded-jaa-compacto bg-marca px-3 text-xs font-medium text-marca-conteudo transition-colors hover:bg-marca/90"
               >
@@ -90,7 +91,7 @@ export function ListaEnderecos({
               </button>
               <button
                 type="button"
-                aria-label={`${confirmado ? "Ajustar ponto no mapa" : "Confirmar no mapa"}: ${endereco.apelido}`}
+                aria-label={`${confirmado ? "Ajustar ponto no mapa" : "Confirmar no mapa"}: ${rotuloEndereco(endereco)}`}
                 onClick={() => aoAjustarPonto(endereco)}
                 className="min-h-9 rounded-jaa-compacto border border-borda px-3 text-xs font-medium transition-colors hover:bg-realce"
               >
@@ -98,7 +99,7 @@ export function ListaEnderecos({
               </button>
               <button
                 type="button"
-                aria-label={`Editar ${endereco.apelido}`}
+                aria-label={`Editar ${rotuloEndereco(endereco)}`}
                 onClick={() => aoEditar(endereco)}
                 className="min-h-9 rounded-jaa-compacto border border-borda px-3 text-xs font-medium transition-colors hover:bg-realce"
               >
@@ -107,7 +108,7 @@ export function ListaEnderecos({
               {aoRemover && (
                 <button
                   type="button"
-                  aria-label={`Remover ${endereco.apelido}`}
+                  aria-label={`Remover ${rotuloEndereco(endereco)}`}
                   onClick={() => aoRemover(endereco)}
                   className="min-h-9 rounded-jaa-compacto px-3 text-xs font-medium text-conteudo-suave transition-colors hover:bg-perigo/10 hover:text-perigo"
                 >

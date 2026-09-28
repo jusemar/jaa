@@ -6,7 +6,7 @@ import { and, asc, count, desc, eq, isNull } from "drizzle-orm";
 export type EnderecoRegistro = typeof enderecosCliente.$inferSelect;
 
 export interface DadosEndereco {
-  apelido: string;
+  apelido: string | null;
   cep: string;
   logradouro: string;
   numero: string;

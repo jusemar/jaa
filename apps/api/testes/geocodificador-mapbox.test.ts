@@ -162,6 +162,16 @@ describe("geocodificação Mapbox v6", () => {
     assert.deepEqual(await aproximado.sugerir(endereco), { longitude: -43.95, latitude: -19.95 });
   });
 
+  it("aceita CEP declarado só pelo PREFIXO de 5 dígitos compatível (caso real da Rua Pico do Rola Moça)", async () => {
+    const prefixo = feature({ longitude: -44.01, latitude: -19.98, cep: "30880", confianca: "low" });
+    const geocodificador = criarGeocodificadorMapbox({ token: "segredo", buscar: async () => resposta([prefixo]) });
+    assert.deepEqual(await geocodificador.sugerir(endereco), { latitude: -19.98, longitude: -44.01 });
+    // Prefixo de OUTRA região continua recusado.
+    const outroPrefixo = feature({ longitude: -43, latitude: -19, cep: "30881" });
+    const recusa = criarGeocodificadorMapbox({ token: "segredo", buscar: async () => resposta([outroPrefixo]) });
+    assert.equal(await recusa.sugerir(endereco), null);
+  });
+
   it("recusa cidade, UF ou CEP conflitantes e falha externa sem inventar coordenada", async () => {
     for (const candidato of [
       feature({ longitude: -43, latitude: -19, cep: "30123000", cidade: "Contagem" }),

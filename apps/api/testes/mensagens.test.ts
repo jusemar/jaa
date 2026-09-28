@@ -1,3 +1,4 @@
+import "./apoio/exigir-banco-de-teste.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";

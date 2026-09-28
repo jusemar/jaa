@@ -1,4 +1,5 @@
 import type { Banco } from "@jaa/banco";
+import { existeBloqueioCom } from "../../bloqueios/repositorios/repositorio-bloqueios.js";
 import { listarIdsParticipantesPorConversa } from "../../conversas/repositorios/repositorio-conversas.js";
 import type { CanalEventosMensagens } from "../lib/eventos-mensagens.js";
 import {
@@ -26,7 +27,17 @@ export async function confirmarRecebimento(
     return { tipo: "mensagem-nao-encontrada" };
   }
 
-  const novas = await registrarRecebimentos(banco, destinatarioIdentidadeId, recebidas);
+  /*
+   * BLOQUEIO: "entregue" (✓✓) também é sinal social. Mensagens de quem tem bloqueio com o destinatário
+   * (qualquer sentido) não geram recebimento novo nem evento — em silêncio: a resposta é a mesma, então
+   * a fila do cliente não fica reenviando, e um cliente alterado também não passa.
+   */
+  const remetentes = [...new Set(recebidas.map((recebida) => recebida.remetenteIdentidadeId))];
+  const bloqueados = new Set<string>();
+  for (const remetente of remetentes) if (await existeBloqueioCom(banco, destinatarioIdentidadeId, [remetente])) bloqueados.add(remetente);
+  const permitidas = recebidas.filter((recebida) => !bloqueados.has(recebida.remetenteIdentidadeId));
+
+  const novas = await registrarRecebimentos(banco, destinatarioIdentidadeId, permitidas);
 
   if (novas.length > 0) {
     const novasPorConversa = new Map<string, string[]>();

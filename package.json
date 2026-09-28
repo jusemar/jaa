@@ -13,6 +13,7 @@
     "banco:verificar": "npm run verificar-conexao -w @jaa/banco",
     "banco:gerar-migration": "npm run gerar-migration -w @jaa/banco",
     "banco:migrar": "npm run migrar -w @jaa/banco",
-    "banco:verificar-migrations": "npm run verificar-migrations -w @jaa/banco"
+    "banco:verificar-migrations": "npm run verificar-migrations -w @jaa/banco",
+    "ibge:importar-malha": "npm run ibge:importar-malha -w @jaa/banco --"
   }
 }

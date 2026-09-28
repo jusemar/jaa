@@ -11,8 +11,12 @@ import {
 } from "@jaa/contratos";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
+import { avisar } from "@/components/ui/avisos";
 import { Aviso, Botao, CampoSelecao, CampoTexto, CampoTextoLongo, Cartao, Carregando, Secao } from "@/components/ui/primitivos";
+import { executarComFeedback } from "@/features/profissional/lib/feedback";
 import { buscarMeuPerfil, enviarFotoPerfil, removerFoto, salvarPerfil, salvarPrivacidade } from "../lib/api-perfil";
+import { AreaPerfilProfissional } from "@/features/profissional/components/area-perfil-profissional";
+import { EntradaPerfilProfissional } from "@/features/profissional/components/entrada-perfil-profissional";
 import { FormularioSenha } from "./formulario-senha";
 
 /*
@@ -28,6 +32,8 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // Perfil profissional abre DENTRO de Perfil (sem item novo no menu); só para a pessoa.
+  const [profissionalAberto, setProfissionalAberto] = useState(false);
 
   useEffect(() => {
     let ativo = true;
@@ -51,26 +57,34 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
     }
   }
 
+  // Toast (mesmo sistema do resto do Jaa) + o aviso inline de sempre, que continua na tela.
   function enviarDados(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
+    if (salvando) return;
     const dados = new FormData(evento.currentTarget);
     setSalvando(true);
-    void salvarPerfil({
-      nomeExibicao: String(dados.get("nomeExibicao") ?? ""),
-      fraseStatus: String(dados.get("fraseStatus") ?? ""),
-      cidade: String(dados.get("cidade") ?? ""),
-      sobre: String(dados.get("sobre") ?? ""),
-    })
+    void executarComFeedback(
+      salvarPerfil({
+        nomeExibicao: String(dados.get("nomeExibicao") ?? ""),
+        fraseStatus: String(dados.get("fraseStatus") ?? ""),
+        cidade: String(dados.get("cidade") ?? ""),
+        sobre: String(dados.get("sobre") ?? ""),
+      }),
+      "Perfil salvo",
+      avisar,
+    )
       .then((resposta) => aplicar(resposta, "Perfil salvo."))
       .finally(() => setSalvando(false));
   }
 
   function mudarPrivacidade(campo: string, valor: string) {
     setSalvando(true);
-    void salvarPrivacidade({ [campo]: valor } as never)
+    void executarComFeedback(salvarPrivacidade({ [campo]: valor } as never), "Preferência salva", avisar)
       .then((resposta) => aplicar(resposta, "Preferência salva."))
       .finally(() => setSalvando(false));
   }
+
+  if (profissionalAberto && !ehEmpresa) return <AreaPerfilProfissional aoVoltar={() => setProfissionalAberto(false)} />;
 
   if (!perfil) return erro ? <Aviso tom="erro">{erro}</Aviso> : <Carregando />;
 
@@ -139,7 +153,7 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
               checked={perfil.privacidade.buscavelPorTelefone}
               onChange={(evento) => {
                 setSalvando(true);
-                void salvarPrivacidade({ buscavelPorTelefone: evento.target.checked })
+                void executarComFeedback(salvarPrivacidade({ buscavelPorTelefone: evento.target.checked }), "Preferência salva", avisar)
                   .then((resposta) => aplicar(resposta, "Preferência salva."))
                   .finally(() => setSalvando(false));
               }}
@@ -152,6 +166,8 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
           </label>
         </Cartao>
       </Secao>
+
+      {!ehEmpresa && <EntradaPerfilProfissional aoAbrir={() => setProfissionalAberto(true)} />}
 
       {!ehEmpresa && (
         <Secao titulo="Conta" descricao="Sua senha para entrar sem esperar código.">

@@ -1,3 +1,4 @@
+import { buscarAtribuicaoAtual } from "../repositorios/repositorio-atribuicoes.js";
 import type { Banco } from "@jaa/banco";
 import {
   POLITICA_RASTREAMENTO,
@@ -136,17 +137,21 @@ export async function montarAcompanhamento(dependencias: DependenciasRastreament
   const { banco } = dependencias;
   const agora = dependencias.agora?.() ?? new Date();
   const fila = await calcularFilaDoPedido(banco, pedidoId);
-  if (fila.situacao !== "indo_ate_voce") return { fila, posicaoEntregador: null };
+  // Identidade PÚBLICA de quem está com a entrega agora. Não depende de bloqueio de mensagens: bloquear
+  // corta a conversa, nunca a operação — o cliente continua sabendo quem vem.
+  const atribuicao = await buscarAtribuicaoAtual(banco, pedidoId);
+  const entregador = atribuicao ? atribuicao.pessoa : null;
+  if (fila.situacao !== "indo_ate_voce") return { fila, entregador, posicaoEntregador: null };
 
   const parada = await buscarSaidaAtivaDoPedido(banco, pedidoId);
-  if (!parada) return { fila, posicaoEntregador: null };
+  if (!parada) return { fila, entregador, posicaoEntregador: null };
   const registro = await buscarPosicaoDaSaida(banco, parada.saidaId);
-  if (!registro) return { fila, posicaoEntregador: null };
+  if (!registro) return { fila, entregador, posicaoEntregador: null };
 
   const posicao = serializarPosicao(registro);
-  if (!posicaoEstaRecente(posicao, agora)) return { fila, posicaoEntregador: null };
-  // Só o ponto e quando foi capturado: nem saída, nem entregador, nem paradas.
-  return { fila, posicaoEntregador: { latitude: posicao.latitude, longitude: posicao.longitude, capturadaEm: posicao.capturadaEm } };
+  if (!posicaoEstaRecente(posicao, agora)) return { fila, entregador, posicaoEntregador: null };
+  // Só o ponto e quando foi capturado: nem saída nem paradas.
+  return { fila, entregador, posicaoEntregador: { latitude: posicao.latitude, longitude: posicao.longitude, capturadaEm: posicao.capturadaEm } };
 }
 
 /** Reconexão do ENTREGADOR ou da EMPRESA: a última posição permitida, sem depender do último evento. */

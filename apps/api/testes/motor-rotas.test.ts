@@ -185,6 +185,55 @@ describe("provedor Mapbox (fetch fake)", () => {
     assert.equal(urlPercurso?.includes("roundtrip"), false, "o percurso é aberto: não volta à empresa");
   });
 
+  it("COM RETORNO saindo da base: viagem circular (a volta é parte da escolha) e percurso que TERMINA na base", async () => {
+    const urls: string[] = [];
+    const provedor = criarProvedorMapbox({
+      token: "token-de-teste",
+      buscar: fakeFetch(
+        {
+          otimizacao: { code: "Ok", waypoints: [{ waypoint_index: 0 }, { waypoint_index: 1 }, { waypoint_index: 2 }, { waypoint_index: 3 }] },
+          percurso: { code: "Ok", routes: [{ distance: 8000, duration: 1200, geometry: { coordinates: [[-43.9386, -19.9191], [-43.9386, -19.9191]] } }] },
+        },
+        urls,
+      ),
+    });
+    await provedor.otimizarSequencia(BASE, PARADAS, BASE);
+    const percurso = await provedor.calcularPercurso(BASE, PARADAS, BASE);
+    const [urlOtimizacao, urlPercurso] = urls;
+    assert.ok(urlOtimizacao?.includes("roundtrip=true") && urlOtimizacao.includes("source=first"));
+    assert.ok(urlPercurso?.includes(";-43.938600,-19.919100?"), "a última coordenada do percurso é a base");
+    assert.equal(percurso.distanciaMetros, 8000, "a distância inclui a volta");
+  });
+
+  it("COM RETORNO saindo de outro ponto (entregador na rua): destino FIXO na base — roundtrip=false&destination=last", async () => {
+    const urls: string[] = [];
+    const NA_RUA = { latitude: -19.925, longitude: -43.935 };
+    const provedor = criarProvedorMapbox({
+      token: "token-de-teste",
+      buscar: fakeFetch({ otimizacao: { code: "Ok", waypoints: [{ waypoint_index: 0 }, { waypoint_index: 2 }, { waypoint_index: 1 }, { waypoint_index: 3 }, { waypoint_index: 4 }] } }, urls),
+    });
+    const otimizada = await provedor.otimizarSequencia(NA_RUA, PARADAS, BASE);
+    assert.deepEqual(otimizada.ordem, ["b", "a", "c"]);
+    const [url] = urls;
+    assert.ok(url?.includes("roundtrip=false") && url.includes("destination=last") && url.includes("source=first"));
+    assert.ok(url?.includes("driving/-43.935000,-19.925000;") && url.includes(";-43.938600,-19.919100?"), "começa onde está e termina na base");
+  });
+
+  it("capacidade: a volta ocupa uma coordenada quando precisa ir à parte", async () => {
+    const onze = Array.from({ length: 11 }, (_, indice) => parada(`p${indice}`, -19.9 - indice / 100));
+    const semProvedorReal = criarMotorDeRotas({
+      nome: "fake",
+      maximoParadasOtimizacao: 11,
+      maximoParadasPercurso: 24,
+      otimizarSequencia: async (_origem, paradas) => ({ ordem: paradas.map((item) => item.pedidoId) }),
+      calcularPercurso: async (origem) => ({ geometria: [origem, origem], distanciaMetros: 1, duracaoSegundos: 1 }),
+    });
+    // Da base com retorno: circular, cabe 11. Da rua com retorno: base vai à parte, cabe só 10.
+    assert.equal((await semProvedorReal.planejar(BASE, onze, { retorno: BASE })).consumos[0]?.resultado, "sucesso");
+    const naRua = await semProvedorReal.planejar({ latitude: -19.925, longitude: -43.935 }, onze, { retorno: BASE });
+    assert.deepEqual([naRua.rota.estado, naRua.rota.motivoFallback, naRua.rota.comRetorno], ["aproximacao_local", "capacidade_excedida", true]);
+  });
+
   it("limites do fornecedor viram capacidade do provedor (12 e 25 coordenadas)", () => {
     const provedor = criarProvedorMapbox({ token: "token-de-teste", buscar: fakeFetch({}) });
     assert.equal(provedor.maximoParadasOtimizacao, 11);

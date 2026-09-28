@@ -48,7 +48,7 @@ export function FormularioEndereco({
   const [dados, setDados] = useState<DadosFormularioEndereco>(
     endereco
       ? {
-          apelido: endereco.apelido,
+          apelido: endereco.apelido ?? "",
           cep: formatarCep(endereco.cep),
           logradouro: endereco.logradouro,
           numero: endereco.numero,
@@ -99,13 +99,12 @@ export function FormularioEndereco({
       className="grid gap-2 rounded-jaa border border-borda p-3 text-sm sm:grid-cols-6"
     >
       <Campo
-        rotulo="Apelido"
+        rotulo="Apelido (opcional)"
         nome="apelido"
-        valor={dados.apelido}
+        valor={dados.apelido ?? ""}
         maximo={APELIDO_ENDERECO_TAMANHO_MAXIMO}
         aoMudar={alterar("apelido")}
         classe="sm:col-span-2"
-        requerido
         placeholder="Casa"
       />
       <Campo

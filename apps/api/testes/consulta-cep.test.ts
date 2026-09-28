@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { criarConsultaViaCep } from "../src/features/enderecos/lib/consulta-cep.js";
+import {
+  criarConsultaBrasilApi,
+  criarConsultaCepComReserva,
+  criarConsultaViaCep,
+  type ConsultaCep,
+  type ResultadoConsultaCep,
+} from "../src/features/enderecos/lib/consulta-cep.js";
 
 /*
  * ViaCEP com `fetch` FALSO: nenhum teste do Jaa chama a internet.
@@ -21,7 +27,7 @@ describe("consulta de CEP (ViaCEP)", () => {
   it("preenche logradouro, bairro, cidade e UF", async () => {
     const urls: string[] = [];
     const consulta = comResposta(
-      () => resposta({ cep: "30130-010", logradouro: "Avenida Afonso Pena", bairro: "Centro", localidade: "Belo Horizonte", uf: "MG" }),
+      () => resposta({ cep: "30130-010", logradouro: "Avenida Afonso Pena", bairro: "Centro", localidade: "Belo Horizonte", uf: "MG", ibge: "3106200" }),
       urls,
     );
 
@@ -34,6 +40,7 @@ describe("consulta de CEP (ViaCEP)", () => {
       bairro: "Centro",
       cidade: "Belo Horizonte",
       uf: "MG",
+      codigoIbge: "3106200",
     });
     assert.equal(urls[0], "https://viacep.com.br/ws/30130010/json/", "o CEP vai normalizado, só com dígitos");
     // CEP não traz (nem confirma) coordenada: isso continua sendo a confirmação no mapa.
@@ -80,5 +87,100 @@ describe("consulta de CEP (ViaCEP)", () => {
       },
     });
     assert.equal((await semRede.consultar("30130010")).tipo, "indisponivel");
+  });
+});
+
+describe("consulta de CEP (BrasilAPI, provedor de reserva)", () => {
+  it("normaliza para o MESMO formato do ViaCEP, com o código IBGE", async () => {
+    const urls: string[] = [];
+    const consulta = criarConsultaBrasilApi({
+      buscar: async (url) => {
+        urls.push(url);
+        return resposta({
+          cep: "30668835",
+          state: "MG",
+          city: "Belo Horizonte",
+          neighborhood: "Distrito Industrial do Jatobá (Eliana Silva)",
+          street: "Rua Alameda Gabriel Pimenta",
+          service: "open-cep",
+          ibge: { city: "3106200", state: "31" },
+        });
+      },
+    });
+    assert.deepEqual(await consulta.consultar("30668-835"), {
+      tipo: "encontrado",
+      endereco: {
+        cep: "30668835",
+        logradouro: "Rua Alameda Gabriel Pimenta",
+        bairro: "Distrito Industrial do Jatobá (Eliana Silva)",
+        cidade: "Belo Horizonte",
+        uf: "MG",
+        codigoIbge: "3106200",
+      },
+    });
+    assert.equal(urls[0], "https://brasilapi.com.br/api/cep/v1/30668835");
+  });
+
+  it("404 é 'não encontrado'; erro HTTP, corpo estranho ou sem rede é 'indisponível'", async () => {
+    const com = (devolver: () => Promise<Response>) => criarConsultaBrasilApi({ buscar: devolver });
+    assert.equal((await com(async () => resposta({ message: "CEP não encontrado" }, false, 404)).consultar("99999999")).tipo, "nao-encontrado");
+    assert.equal((await com(async () => resposta({}, false, 500)).consultar("30130010")).tipo, "indisponivel");
+    assert.equal((await com(async () => resposta("texto")).consultar("30130010")).tipo, "indisponivel");
+    assert.equal(
+      (
+        await com(async () => {
+          throw new Error("sem rede");
+        }).consultar("30130010")
+      ).tipo,
+      "indisponivel",
+    );
+  });
+});
+
+describe("consulta de CEP com reserva", () => {
+  const fixo = (resultado: ResultadoConsultaCep, chamadas: string[], nome: string): ConsultaCep => ({
+    consultar: async () => {
+      chamadas.push(nome);
+      return resultado;
+    },
+  });
+  const encontrado: ResultadoConsultaCep = {
+    tipo: "encontrado",
+    endereco: { cep: "30668835", logradouro: "Rua A", bairro: "B", cidade: "Belo Horizonte", uf: "MG", codigoIbge: "3106200" },
+  };
+
+  it("principal respondeu (encontrado ou não encontrado): a reserva NÃO é consultada", async () => {
+    for (const resultado of [encontrado, { tipo: "nao-encontrado" } as const]) {
+      const chamadas: string[] = [];
+      const consulta = criarConsultaCepComReserva(fixo(resultado, chamadas, "viacep"), fixo(encontrado, chamadas, "brasilapi"));
+      assert.deepEqual(await consulta.consultar("30668835"), resultado);
+      assert.deepEqual(chamadas, ["viacep"]);
+    }
+  });
+
+  it("principal INDISPONÍVEL: a reserva responde no mesmo formato", async () => {
+    const chamadas: string[] = [];
+    const consulta = criarConsultaCepComReserva(fixo({ tipo: "indisponivel" }, chamadas, "viacep"), fixo(encontrado, chamadas, "brasilapi"));
+    assert.deepEqual(await consulta.consultar("30668835"), encontrado);
+    assert.deepEqual(chamadas, ["viacep", "brasilapi"]);
+  });
+
+  it("os dois fora: continua 'indisponível' (o formulário segue no preenchimento manual)", async () => {
+    const chamadas: string[] = [];
+    const consulta = criarConsultaCepComReserva(fixo({ tipo: "indisponivel" }, chamadas, "viacep"), fixo({ tipo: "indisponivel" }, chamadas, "brasilapi"));
+    assert.equal((await consulta.consultar("30668835")).tipo, "indisponivel");
+  });
+
+  it("ViaCEP sem conexão (o caso real do ambiente) cai na BrasilAPI de verdade, pelo fetch falso", async () => {
+    const urls: string[] = [];
+    const buscar = async (url: string) => {
+      urls.push(url);
+      if (url.includes("viacep")) throw new TypeError("fetch failed");
+      return resposta({ cep: "30668835", state: "MG", city: "Belo Horizonte", neighborhood: "Jatobá", street: "Rua Alameda Gabriel Pimenta", ibge: { city: "3106200" } });
+    };
+    const consulta = criarConsultaCepComReserva(criarConsultaViaCep({ buscar }), criarConsultaBrasilApi({ buscar }));
+    const resultado = await consulta.consultar("30668835");
+    assert.equal(resultado.tipo, "encontrado");
+    assert.equal(urls.length, 2);
   });
 });
