@@ -3,8 +3,11 @@ import { after, before, describe, it } from "node:test";
 import { EVENTO_CONVERSA_OBSERVAR, type RespostaObservarConversa } from "@jaa/contratos";
 import sharp from "sharp";
 import type { Socket } from "socket.io-client";
+import { randomUUID } from "node:crypto";
 import { criarAmbienteIntegracao, como, type Pessoa } from "./apoio/integracao.js";
 import type { ArmazenamentoDeArquivos } from "../src/lib/armazenamento/armazenamento-arquivos.js";
+import { LIMITE_ENVIO_FOTO_PERFIL } from "../src/lib/armazenamento/receber-imagem.js";
+import { consumirLimiteDeUso } from "../src/lib/limite-de-uso.js";
 
 /*
  * PERFIL, STATUS ESCOLHIDO e PRIVACIDADE.
@@ -16,9 +19,12 @@ import type { ArmazenamentoDeArquivos } from "../src/lib/armazenamento/armazenam
 const TELEFONES = ["+5531987663001", "+5531987663002", "+5531987663003"];
 
 const guardados = new Map<string, { conteudo: Buffer; tipoConteudo: string }>();
+// Toda chamada a `salvar`, aceita ou não: prova que pedido recusado nunca chega ao storage.
+let gravacoes = 0;
 const armazenamentoFake: ArmazenamentoDeArquivos = {
   nome: "teste",
   async salvar({ chave, conteudo, tipoConteudo }) {
+    gravacoes += 1;
     guardados.set(chave, { conteudo, tipoConteudo });
     return { chave };
   },
@@ -139,8 +145,77 @@ describe("foto do perfil", () => {
   it("a logo da empresa usa a mesma rota e o mesmo pipeline", async () => {
     const envio = await ctx.enviarArquivo(como(ana, identidadeEmpresa), "/perfil/foto", { nome: "logo.jpg", tipo: "image/jpeg", conteudo: await imagemJpeg(700) });
     assert.equal(envio.statusCode, 200, envio.body);
-    assert.match(envio.json().chave, /^logo-empresa\//);
+    assert.match(envio.json().chave, new RegExp(`^logo-empresa/${identidadeEmpresa}/`));
     assert.ok((await ctx.api(como(ana, identidadeEmpresa), "GET", "/perfil")).json().fotoUrl);
+    // A logo é da EMPRESA: o avatar pessoal da Ana não muda por isso.
+    assert.equal((await ctx.api(ana, "GET", "/perfil")).json().fotoUrl, null);
+  });
+
+  it("quem não opera a empresa não troca a logo dela, e nada chega ao storage", async () => {
+    const antes = gravacoes;
+    const envio = await ctx.enviarArquivo(como(bruno, identidadeEmpresa), "/perfil/foto", { nome: "logo.jpg", tipo: "image/jpeg", conteudo: await imagemJpeg(300) });
+    assert.equal(envio.statusCode, 403, envio.body);
+    assert.equal(envio.json().codigo, "IDENTIDADE_NAO_AUTORIZADA");
+    assert.equal((await ctx.api(como(bruno, identidadeEmpresa), "DELETE", "/perfil/foto")).statusCode, 403);
+    assert.equal(gravacoes, antes);
+    assert.ok((await ctx.api(como(ana, identidadeEmpresa), "GET", "/perfil")).json().fotoUrl, "a logo continua lá");
+  });
+
+  it("sem sessão não envia nem remove foto", async () => {
+    const antes = gravacoes;
+    const anonimo = { ...ana, cookie: "" };
+    const envio = await ctx.enviarArquivo(anonimo, "/perfil/foto", { nome: "eu.jpg", tipo: "image/jpeg", conteudo: await imagemJpeg(300) });
+    assert.equal(envio.statusCode, 401, envio.body);
+    assert.equal((await ctx.api(anonimo, "DELETE", "/perfil/foto")).statusCode, 401);
+    assert.equal(gravacoes, antes);
+  });
+
+  it("arquivo acima do limite e corpo que não é multipart viram erro claro, sem gravar nada", async () => {
+    const antes = gravacoes;
+    const grande = await ctx.enviarArquivo(bruno, "/perfil/foto", { nome: "grande.jpg", tipo: "image/jpeg", conteudo: Buffer.alloc(8 * 1024 * 1024 + 1, 1) });
+    assert.equal(grande.statusCode, 413, grande.body);
+    assert.equal(grande.json().codigo, "ARQUIVO_INVALIDO");
+
+    const json = await ctx.api(bruno, "POST", "/perfil/foto", { arquivo: "não é arquivo" });
+    assert.equal(json.statusCode, 400, json.body);
+    assert.equal(json.json().codigo, "DADOS_INVALIDOS");
+    assert.equal(gravacoes, antes);
+  });
+
+  it("limita envios seguidos por conta, antes de processar a imagem", async () => {
+    // Envios inválidos também contam: cada um custou leitura e tentativa de decodificação.
+    for (let envio = 0; envio < LIMITE_ENVIO_FOTO_PERFIL.maximo; envio += 1) {
+      const recusado = await ctx.enviarArquivo(carla, "/perfil/foto", { nome: "x.png", tipo: "image/png", conteudo: Buffer.from("nada") });
+      assert.equal(recusado.statusCode, 400, recusado.body);
+    }
+    const antes = gravacoes;
+    const excedido = await ctx.enviarArquivo(carla, "/perfil/foto", { nome: "eu.jpg", tipo: "image/jpeg", conteudo: await imagemJpeg(300) });
+    assert.equal(excedido.statusCode, 429, excedido.body);
+    assert.equal(excedido.json().codigo, "LIMITE_DE_ENVIOS_ATINGIDO");
+    assert.ok(Number(excedido.headers["retry-after"]) > 0);
+    assert.equal(gravacoes, antes, "envio acima do limite não chega ao storage");
+
+    // O limite é da CONTA de Carla, não de todo mundo.
+    const outro = await ctx.enviarArquivo(bruno, "/perfil/foto", { nome: "eu.jpg", tipo: "image/jpeg", conteudo: await imagemJpeg(300) });
+    assert.equal(outro.statusCode, 200, outro.body);
+  });
+});
+
+describe("limite de uso", () => {
+  it("conta numa janela fixa, recusa o excedente e libera quando a janela vence", async () => {
+    const chave = `teste:${randomUUID()}`;
+    const regra = { janelaSegundos: 60, maximo: 2 };
+    const inicio = 1_000_000;
+    assert.deepEqual(await consumirLimiteDeUso(ctx.banco, chave, regra, inicio), { permitido: true });
+    assert.deepEqual(await consumirLimiteDeUso(ctx.banco, chave, regra, inicio + 1_000), { permitido: true });
+    assert.deepEqual(await consumirLimiteDeUso(ctx.banco, chave, regra, inicio + 2_000), { permitido: false, tenteNovamenteEmSegundos: 58 });
+    assert.deepEqual(await consumirLimiteDeUso(ctx.banco, chave, regra, inicio + 60_000), { permitido: true }, "janela nova");
+  });
+
+  it("requisições simultâneas não passam juntas pela mesma vaga", async () => {
+    const chave = `teste:${randomUUID()}`;
+    const resultados = await Promise.all(Array.from({ length: 10 }, () => consumirLimiteDeUso(ctx.banco, chave, { janelaSegundos: 60, maximo: 3 })));
+    assert.equal(resultados.filter((resultado) => resultado.permitido).length, 3);
   });
 });
 

@@ -130,22 +130,23 @@ function ImagemDoProduto({
   aoRemoverImagem?: () => Promise<void>;
 }) {
   const entrada = useRef<HTMLInputElement | null>(null);
-  const [ocupado, setOcupado] = useState(false);
+  const [ocupado, setOcupado] = useState<"enviando" | "removendo" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   if (!produto || !aoEnviarImagem) {
-    return <Aviso>Crie o produto primeiro para poder enviar a foto dele.</Aviso>;
+    return <Aviso>A foto é adicionada logo depois de criar o produto: toque em “Criar produto” e esta área libera o envio da imagem.</Aviso>;
   }
 
-  async function executar(acao: () => Promise<void>) {
-    setOcupado(true);
+  async function executar(acao: () => Promise<void>, tipo: "enviando" | "removendo") {
+    setOcupado(tipo);
     setErro(null);
     try {
       await acao();
-    } catch {
-      setErro("Não foi possível alterar a imagem.");
+    } catch (falha) {
+      // A mensagem vem do servidor (arquivo grande, tipo inválido, limite de envios, storage fora do ar).
+      setErro(falha instanceof Error && falha.message ? falha.message : "Não foi possível alterar a imagem.");
     } finally {
-      setOcupado(false);
+      setOcupado(null);
     }
   }
 
@@ -168,17 +169,17 @@ function ImagemDoProduto({
           aria-label="Escolher imagem do produto"
           onChange={(evento) => {
             const arquivo = evento.target.files?.[0];
-            if (arquivo && aoEnviarImagem) void executar(() => aoEnviarImagem(arquivo));
+            if (arquivo && aoEnviarImagem) void executar(() => aoEnviarImagem(arquivo), "enviando");
             evento.target.value = "";
           }}
         />
         <div className="flex flex-wrap gap-2">
-          <Botao aparencia="secundario" disabled={ocupado} onClick={() => entrada.current?.click()}>
-            {ocupado ? "Enviando…" : produto.imagemUrl ? "Trocar imagem" : "Adicionar imagem"}
+          <Botao aparencia="secundario" disabled={ocupado !== null} aria-busy={ocupado === "enviando" || undefined} onClick={() => entrada.current?.click()}>
+            {ocupado === "enviando" ? "Enviando…" : produto.imagemUrl ? "Trocar imagem" : "Adicionar imagem"}
           </Botao>
           {produto.imagemUrl && aoRemoverImagem && (
-            <Botao aparencia="discreto" disabled={ocupado} onClick={() => void executar(aoRemoverImagem)}>
-              Remover
+            <Botao aparencia="discreto" disabled={ocupado !== null} aria-busy={ocupado === "removendo" || undefined} onClick={() => void executar(aoRemoverImagem, "removendo")}>
+              {ocupado === "removendo" ? "Removendo…" : "Remover"}
             </Botao>
           )}
         </div>

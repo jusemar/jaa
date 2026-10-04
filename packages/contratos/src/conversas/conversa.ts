@@ -21,10 +21,22 @@ export const participanteConversaSchema = z.object({
 
 export type ParticipanteConversa = z.infer<typeof participanteConversaSchema>;
 
+/**
+ * Identidade pública EXIBIDA com avatar (lista de conversas, conversa aberta, contatos, busca).
+ * `fotoUrl` já vem decidida pelo SERVIDOR com a privacidade do dono (`visibilidadeFoto` + exceções):
+ * null = sem foto OU não é para você ver — o cliente não distingue e mostra as iniciais.
+ * Nunca carrega a chave do arquivo no storage.
+ */
+export const identidadeVisivelSchema = participanteConversaSchema.extend({
+  fotoUrl: z.url().nullable(),
+});
+
+export type IdentidadeVisivel = z.infer<typeof identidadeVisivelSchema>;
+
 export const conversaDiretaSchema = z.object({
   id: z.uuid(),
   tipo: z.literal("direta"),
-  participantes: z.array(participanteConversaSchema).length(2),
+  participantes: z.array(identidadeVisivelSchema).length(2),
 });
 
 export type ConversaDireta = z.infer<typeof conversaDiretaSchema>;

@@ -235,9 +235,11 @@ function FotoDoPerfil({ perfil, aoTrocar, aoErrar }: { perfil: MeuPerfil; aoTroc
               disabled={enviando}
               onClick={() => {
                 setEnviando(true);
+                aoErrar(null);
                 void removerFoto()
-                  .then(() => buscarMeuPerfil())
-                  .then((atualizado) => {
+                  .then(async (remocao) => {
+                    if (!remocao.ok) return aoErrar(remocao.mensagem);
+                    const atualizado = await buscarMeuPerfil();
                     if (atualizado.ok) aoTrocar(atualizado.dados);
                   })
                   .finally(() => setEnviando(false));

@@ -43,7 +43,7 @@ describe("agenda de contatos", () => {
     assert.equal(contato.identidade.nomeExibicao, "Maria Silva");
     assert.equal(contato.apelido, "Maria do trabalho");
     // Identidade pública apenas: nada de telefone, conta ou e-mail.
-    assert.deepEqual(Object.keys(contato.identidade).sort(), ["identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
+    assert.deepEqual(Object.keys(contato.identidade).sort(), ["fotoUrl", "identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
     assert.equal(JSON.stringify(contato).includes("+55"), false);
 
     const minha: ListaContatos = (await ctx.api(A, "GET", "/contatos")).json();

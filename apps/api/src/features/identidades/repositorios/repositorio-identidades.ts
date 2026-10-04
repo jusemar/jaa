@@ -1,6 +1,6 @@
 import type { Banco } from "@jaa/banco";
 import { empresas, identidades } from "@jaa/banco/schema";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 
 export type IdentidadeRegistro = typeof identidades.$inferSelect;
 
@@ -115,4 +115,14 @@ export async function buscarIdentidadeContatavelPorNomeUsuario(banco: Banco, nom
     .where(and(eq(identidades.nomeUsuario, nomeUsuario), or(isNull(identidades.empresaId), eq(empresas.status, "ativa"))))
     .limit(1);
   return linha?.identidade ?? null;
+}
+
+/** Chave da foto (avatar/logo) das identidades informadas que têm foto. Uso interno do servidor. */
+export async function buscarChavesDeFoto(banco: Banco, identidadeIds: readonly string[]): Promise<Map<string, string>> {
+  if (identidadeIds.length === 0) return new Map();
+  const linhas = await banco
+    .select({ id: identidades.id, fotoChave: identidades.fotoChave })
+    .from(identidades)
+    .where(and(inArray(identidades.id, [...identidadeIds]), isNotNull(identidades.fotoChave)));
+  return new Map(linhas.flatMap((linha) => (linha.fotoChave ? [[linha.id, linha.fotoChave] as const] : [])));
 }

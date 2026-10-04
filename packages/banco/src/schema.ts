@@ -50,6 +50,7 @@ export * from "./tabelas/conversas/participantes-conversa.js";
 export * from "./tabelas/conversas/relacoes.js";
 
 export * from "./tabelas/mensagens/mensagens.js";
+export * from "./tabelas/mensagens/anexos-mensagem.js";
 export * from "./tabelas/mensagens/recebimentos-mensagem.js";
 export * from "./tabelas/mensagens/mensagens-excluidas-para-identidade.js";
 export * from "./tabelas/mensagens/relacoes.js";

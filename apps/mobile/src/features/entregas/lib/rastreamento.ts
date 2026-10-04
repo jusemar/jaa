@@ -1,4 +1,5 @@
 import { POLITICA_RASTREAMENTO, decidirEnvioDePosicao, type EnviarPosicaoEntrada, type LeituraGps, type SituacaoRastreamento } from "@jaa/contratos";
+import { isRunningInExpoGo } from "expo";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { enviarPosicao } from "./api-entregas";
@@ -21,6 +22,13 @@ import { lerFilaLocal, gravarFilaLocal, lerSaidaRastreada, gravarSaidaRastreada 
  */
 
 export const TAREFA_RASTREAMENTO = "jaa-rastreamento-entrega";
+
+/*
+ * No Expo Go a localização em BACKGROUND não existe (no Android, de jeito nenhum): chamar essas APIs lá
+ * só produz um aviso do sistema por cima da tela. O app então nem tenta — o acompanhamento fica "só com
+ * o app aberto", que é exatamente o que a interface já sabe dizer.
+ */
+const BACKGROUND_DISPONIVEL = !isRunningInExpoGo();
 
 /** Configuração do coletor. Centralizada para ajuste com teste em aparelho real. */
 const OPCOES_LOCALIZACAO: Location.LocationTaskOptions = {
@@ -122,6 +130,7 @@ export async function pedirPermissoes(): Promise<PermissoesRastreamento> {
   const primeiroPlano = await Location.requestForegroundPermissionsAsync();
   if (!primeiroPlano.granted) return { situacao: "permissao_negada", background: false };
 
+  if (!BACKGROUND_DISPONIVEL) return { situacao: "somente_primeiro_plano", background: false };
   const background = await Location.requestBackgroundPermissionsAsync();
   return background.granted ? { situacao: "ativo", background: true } : { situacao: "somente_primeiro_plano", background: false };
 }
@@ -145,14 +154,14 @@ export async function iniciarRastreamento(saidaId: string): Promise<SituacaoRast
 
 /** Desliga o rastreamento: saída concluída, cancelada, perdida ou recusada pelo servidor. */
 export async function pararRastreamento(): Promise<void> {
-  if (await Location.hasStartedLocationUpdatesAsync(TAREFA_RASTREAMENTO)) {
+  if (BACKGROUND_DISPONIVEL && (await Location.hasStartedLocationUpdatesAsync(TAREFA_RASTREAMENTO))) {
     await Location.stopLocationUpdatesAsync(TAREFA_RASTREAMENTO);
   }
   await gravarSaidaRastreada(null);
 }
 
 export async function rastreamentoEstaAtivo(): Promise<boolean> {
-  return Location.hasStartedLocationUpdatesAsync(TAREFA_RASTREAMENTO);
+  return BACKGROUND_DISPONIVEL && Location.hasStartedLocationUpdatesAsync(TAREFA_RASTREAMENTO);
 }
 
 /**

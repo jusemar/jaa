@@ -22,10 +22,13 @@ type Montagem = { produto: ProdutoPublico; grupos: GrupoOpcoesPublico[]; chave: 
 export function CatalogoDaEmpresa({
   identidadeEmpresaId,
   aoFechar,
+  aoCarregarCatalogo,
   aoAdicionarAoCarrinho,
 }: {
   identidadeEmpresaId: string;
   aoFechar: () => void;
+  // Catálogo recém-carregado do servidor (ex.: para o carrinho atualizar a imagem dos itens).
+  aoCarregarCatalogo?: (catalogo: CatalogoPublico) => void;
   // Ausente quando quem olha é a própria empresa (não faz pedido de si mesma).
   aoAdicionarAoCarrinho?: (
     empresa: CatalogoPublico["empresa"],
@@ -54,12 +57,16 @@ export function CatalogoDaEmpresa({
     let ativo = true;
     void obterCatalogo(identidadeEmpresaId).then((resultado) => {
       if (!ativo) return;
-      if (resultado.ok) setCatalogo(resultado.dados);
-      else setErro(resultado.mensagem);
+      if (resultado.ok) {
+        setCatalogo(resultado.dados);
+        aoCarregarCatalogo?.(resultado.dados);
+      } else setErro(resultado.mensagem);
     });
     return () => {
       ativo = false;
     };
+    // Só a empresa decide recarregar: o callback muda de identidade a cada render de quem chama.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identidadeEmpresaId]);
 
   /*

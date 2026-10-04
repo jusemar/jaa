@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { participanteConversaSchema } from "../conversas/conversa.ts";
+import { identidadeVisivelSchema } from "../conversas/conversa.ts";
 
 /*
  * CONTATOS e BUSCA.
@@ -14,8 +14,8 @@ import { participanteConversaSchema } from "../conversas/conversa.ts";
 export const APELIDO_CONTATO_TAMANHO_MAXIMO = 40;
 
 export const contatoSchema = z.object({
-  // Identidade pública de quem foi salvo (nome, @usuario) — nunca telefone, conta ou e-mail.
-  identidade: participanteConversaSchema,
+  // Identidade pública de quem foi salvo (nome, @usuario, foto se a privacidade dela permitir) — nunca telefone, conta ou e-mail.
+  identidade: identidadeVisivelSchema,
   // Como EU chamo essa pessoa na minha agenda; não altera o nome público dela.
   apelido: z.string().nullable(),
   favorito: z.boolean(),
@@ -47,7 +47,7 @@ export const TERMO_BUSCA_TAMANHO_MINIMO = 2;
  * por telefone.
  */
 export const resultadoBuscaSchema = z.object({
-  identidade: participanteConversaSchema,
+  identidade: identidadeVisivelSchema,
   // true quando já está na minha agenda (a interface separa "meus contatos" de "no Jaa").
   ehContato: z.boolean(),
   apelido: z.string().nullable(),

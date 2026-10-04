@@ -33,7 +33,9 @@ O Jaa **não deve nascer como marketplace com um chat anexado**. O núcleo do pr
 
 A Fase 1 (Mensageria) tem o núcleo implementado (seção 14). A **Fase 2 — Comércio** tem implementadas: **EMPRESAS + IDENTIDADE EMPRESARIAL** (seções 7 e 8), **CATÁLOGO/PRODUTOS com administração Web** (seção 7, "Produtos da empresa"), **CONVERSA Pessoa ↔ Empresa + catálogo para o cliente** (seção 7, "Conversas com empresa"), **CARRINHO + CRIAÇÃO DO PEDIDO JAA na conversa** (seção 7, "Carrinho e Pedido Jaa"), **GESTÃO DO PEDIDO PELA EMPRESA + ACOMPANHAMENTO PELO CLIENTE** (seção 7, "Operação do pedido"), **ENDEREÇOS DO CLIENTE + PONTO DE ENTREGA CONFIRMADO** (seção 7, "Endereço e ponto de entrega") **ENTREGADORES DA EMPRESA + ATRIBUIÇÃO DAS ENTREGAS** (seção 7, "Entregadores e atribuição") **SAÍDA DE ENTREGA com sequência sugerida e reordenação** (seção 7, "Saída de entrega"), **BASE DA EMPRESA + PRESENÇA + FILA AUTOMÁTICA** (seção 7, "Base, presença e fila automática") **ZONAS + FORMAÇÃO AUTOMÁTICA DE SAÍDAS + DESPACHO PELO PRIMEIRO APTO DA FILA** (seção 7, "Zonas e despacho automático") e **MOTOR DE ROTAS REAL com Mapbox como primeiro provedor** (seção 7, "Motor de rotas real").
 
-Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, imagens de produto, pagamento dentro do Jaa, **rastreamento GPS durante a entrega, mapa do entregador em movimento, ETA do cliente, push real e frete** (o mapa existe para o cliente confirmar o ponto e para o entregador abrir o destino), loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
+Também já existe **RASTREAMENTO DO ENTREGADOR DURANTE A SAÍDA EM ANDAMENTO** (seção 7, "Rastreamento durante a saída"), com as limitações registradas lá.
+
+Continuam proibidos até serem explicitamente iniciados: categorias/variações/estoque, **múltiplas** imagens por produto (a imagem principal já existe, seção 23), pagamento dentro do Jaa, **ETA do cliente, push real e frete**, loja pública funcional, administração de produtos no Mobile, avaliação de pedido, RBAC completo de funcionários e "Encontrar" definitivo. A lista "NÃO implementar ainda" abaixo segue valendo para eles.
 
 **MOTOR PROFISSIONAL (Camada 1) — fundação de infraestrutura e de DADOS implementadas** (Bloco 1: PostGIS + busca textual, seção 5 "Banco"; Bloco 2: taxonomia, Perfil Profissional, base, áreas, matching e busca de serviços no domínio/banco — seção 14 "Motor Profissional"). Bloco 3: API e tela do PRÓPRIO profissional (Perfil → Perfil profissional). Busca pública de profissionais, oportunidades, Agenda real, desenho de área no mapa e a integração com entregadores **continuam proibidos até cada bloco ser explicitamente iniciado**; as decisões de produto já aprovadas para eles estão registradas na seção 14.
 
@@ -175,6 +177,15 @@ jaa/
 
 Não criar pacotes apenas para preencher essa estrutura. Pacotes devem surgir quando houver necessidade real.
 
+## Aplicativo mobile ÚNICO — DECISÃO ESTRUTURAL
+
+Existe **um único aplicativo mobile: o Jaa** (`apps/mobile`). Não existirão aplicativos separados como "Jaa Cliente", "Jaa Entregador", "Jaa Profissional" ou "Jaa Empresa", nem arquiteturas mobile separadas por "aplicativo".
+
+- o app libera funcionalidades conforme **identidade, permissões e capacidades** decididas pelo servidor;
+- a **identidade pessoal** é uma só e acumula capacidades: pessoa comum (conversas, contatos, pedidos, acompanhamento, perfil) + capacidade de **entregador** (vínculo com empresa, seção 7) + **Perfil Profissional** (seção 14). Nenhuma delas é outra conta, outro login ou outro aplicativo;
+- a **identidade empresarial** continua SEPARADA da pessoal (seções 7 e 8); recursos empresariais poderão futuramente ser operados dentro do mesmo app Jaa, sem misturar inbox nem dados;
+- o **Web** continua especialmente importante para atendimento e administração das empresas.
+
 ---
 
 # 5. Stack Oficial
@@ -280,14 +291,16 @@ Produção: **Neon, região São Paulo** (decidido com o Motor Profissional). Ne
 
 ## Autenticação
 
-Adotado: **Better Auth**, integrado à API dedicada. A integração com Expo/React Native deve seguir o suporte oficial do Better Auth quando o mobile for autenticado.
+Adotado: **Better Auth**, integrado à API dedicada. O Mobile usa o suporte oficial do Better Auth para Expo (plugin `expo()` na API; `expoClient` com sessão no `expo-secure-store` no app, scheme confiável em `trustedOrigins`), com a mesma conta e sessão do Web.
 
 Não duplicar sistemas de autenticação entre web e mobile.
 
-Decisões da Fase 1:
+Fluxos existentes:
 
-- autenticação principal: **celular + OTP**; não há senha;
-- Better Auth é responsável por conta, sessão e OTP (geração, expiração, tentativas e validação);
+- **celular + OTP**: cadastro e entrada (`/api/auth/phone-number/send-otp` e `/verify`, com `signUpOnVerification`); é o único fluxo implementado no Mobile hoje;
+- **identificador + senha** (opcional): `emailAndPassword` do Better Auth habilitado com as rotas de e-mail desativadas (o e-mail da conta é técnico e opaco). `POST /autenticacao/entrar` aceita celular **ou** @usuario (identidade pessoal) + senha, traduz para o telefone da conta e delega a `/sign-in/phone-number`; identificador inexistente, conta sem senha e senha errada têm a mesma resposta (`CREDENCIAIS_INVALIDAS`). `GET|POST /conta/senha` informa/define a primeira senha (depois do cadastro por OTP) ou troca a atual, exigindo a senha atual. Conta sem senha continua entrando por OTP;
+- pendência: **recuperação de senha por OTP** não está funcional — o hook normaliza o telefone de `/phone-number/request-password-reset`, mas `sendPasswordResetOTP` não está configurado e nenhum cliente tem esse fluxo;
+- Better Auth é responsável por conta, sessão, senha (hash) e OTP (geração, expiração, tentativas e validação);
 - a entrega do OTP fica atrás de `EntregadorOtp`: trocar o mecanismo de entrega não pode exigir reescrever a autenticação;
 - entrega atual: somente local/desenvolvimento, proibida em produção;
 - provedor de SMS comercial ainda não definido (seção 32).
@@ -453,7 +466,7 @@ API administrativa (conta autorizada; toda operação passa por `autorizarEmpres
 
 Não públicos: a futura loja `/loja/<slug>`, o app e o chat terão **consulta pública própria** (empresa pública → produtos disponíveis), com contrato só de dados permitidos, sem proprietário, conta, vínculos ou permissões.
 
-Web (técnico): "Minhas empresas" → Abrir → **Produtos** (lista com preço formatado e disponibilidade, novo/editar, marcar disponível/indisponível). **Imagem do produto aparece desabilitada ("Em breve")**: sem upload, storage ou fornecedor escolhido (seção 32).
+Web (técnico): "Minhas empresas" → Abrir → **Produtos** (lista com preço formatado e disponibilidade, novo/editar, marcar disponível/indisponível). **Imagem principal do produto** (uma por produto: enviar, trocar, remover) pela própria tela de edição, só para produto já salvo — regras na seção 23.
 
 ## @usuario
 
@@ -895,9 +908,41 @@ Pendências conhecidas:
 - entrega atual: realtime `notificacao:nova-mensagem` às conexões do destinatário. O Web exibe aviso in-app (máx. 3, um por conversa, deduplicado por id) **exceto** para a conversa aberta e visível; clicar abre a conversa;
 - pendente: **push Web e mobile reais** (provedor, service worker, tokens de dispositivo, preferências e horário de silêncio) serão outro assinante do mesmo fato de domínio, provavelmente só para destinatários sem conexão ativa. A Notification API do navegador não foi ativada: exige decisão de UX para pedir permissão.
 
-## Mídias (ainda não implementadas)
+## Imagens no chat (API, Web e Mobile)
 
-O compositor mostra Foto, Vídeo, Áudio e Documento **desabilitados** ("Em breve"), só como lembrete visual. Não há seletor de arquivo, upload, endpoint, tabela, storage ou fornecedor; a decisão de storage continua aberta (seção 32).
+**Contratos, API, interface WEB e MOBILE implementados.** Vídeo e documento não existem; áudio é a seção seguinte ("Mensagens de voz").
+
+- **Mobile** (`apps/mobile/src/features/conversas`): o clipe abre Galeria/Câmera (`expo-image-picker`, uma imagem, sem recorte; permissão de câmera só ao escolher Câmera), a imagem é normalizada no aparelho para JPEG de até 1600 px (`expo-image-manipulator`) e vai pela MESMA rota, com as mesmas regras da Web copiadas em `lib/imagem-conversa.ts` e `lib/urls-imagens.ts` (os apps não importam código um do outro): prévia + legenda, uma tentativa com idCliente fixo, balão pendente com Reenviar/Descartar, URLs privadas só em memória (`expo-image` com `cachePolicy="memory"`), foto ampliada em Modal (Voltar fecha). **Multipart no Mobile sai por `XMLHttpRequest`** (`buscarMultipart` em `src/lib/api.ts`): o `fetch` global do Expo não aceita arquivo local `{ uri, name, type }` no FormData ("Unsupported FormDataPart implementation"); vale também para a foto do perfil. Formatadores de horário (`Intl.DateTimeFormat`) são criados a cada uso, nunca no carregamento do módulo (guardariam o fuso antigo do aparelho);
+
+- **Web** (`apps/web/src/features/conversas`): o clipe abre o seletor (uma imagem, JPEG/PNG/WebP até 8 MB, conferência prévia; sem compressão no navegador), com prévia local e o campo de texto como legenda. Enviar cria UMA mensagem de imagem pelo multipart compartilhado (`enviarMultipart` em `src/lib/api.ts`, campos na ordem do contrato e arquivo por último, sem `Content-Type` manual). A foto aparece na hora como balão PENDENTE (prévia local); a tentativa guarda idCliente, arquivo, legenda e resposta, e "Reenviar" repete a MESMA tentativa (rede, 5xx e 429 mantêm; recusa definitiva descarta). Balão com espaço reservado pela proporção do anexo, legenda abaixo, lightbox (X, Esc, clique no fundo; rolagem travada e restaurada). URLs privadas só em MEMÓRIA por conversa aberta (`lib/urls-imagens.ts` + `hooks/use-urls-imagens.ts`): pedidas em lote de até 100, reaproveitadas enquanto válidas (margem de 1 min), renovadas uma vez quando a imagem falha, esquecidas quando a mensagem é excluída. Lista de conversas e resposta mostram "Foto" (ou a legenda, na resposta); object URLs locais são sempre revogadas (`lib/urls-locais.ts`);
+
+- **Envio**: `POST /conversas/:conversaId/mensagens/imagem`, multipart, identidade ATUANTE (pessoa ou empresa operada). ORDEM DOS CAMPOS (`ORDEM_CAMPOS_ENVIO_IMAGEM`): `idCliente`, `legenda?`, `mensagemRespondidaId?`, `arquivo` POR ÚLTIMO — a API lê as partes na ordem (`abrirArquivoComCampos`, iterador de `parts()`) e para no arquivo; campo depois do arquivo não existe para ela. Ordem do caso de uso (`enviar-mensagem-imagem.ts`): participação → idempotência (retry do mesmo `idCliente` devolve a existente SEM ler o arquivo) → limite (30 / 10 min por conta) → resposta → bloqueio → pipeline `imagem-conversa` (bytes, EXIF fora, 1600 px, WebP) → PUT no bucket privado (chave `imagem-conversa/<conversaId>/<uuid>.webp`, do servidor) → transação (trava do par + bloqueio + mensagem + anexo) → `mensagem:nova` após o commit. Qualquer falha depois do PUT, ou tentativa concorrente perdedora, remove o arquivo novo;
+- **Mensagem**: `tipo: "imagem"`, `conteudo` = legenda ("" sem legenda), `anexo: { id, tipo: "imagem", largura, altura } | null` (null em texto, pedido e tombstone). NUNCA chave, bucket ou URL em mensagem, histórico, evento ou notificação. Imagem não é editável (`MENSAGEM_NAO_EDITAVEL`);
+- **Leitura**: `POST /conversas/:conversaId/imagens/urls { mensagemIds (1–100) }` → `{ imagens: [{ mensagemId, url, expiraEm }] }`, URL GET assinada de 20 min gerada na hora (nunca gravada). Só volta o que a identidade atuante vê (desta conversa, imagem, anexo ativo, não excluída para todos, não oculta/limpa para ela); o resto simplesmente não aparece;
+- **Prévias**: resposta a imagem = legenda, senão `PREVIA_IMAGEM` ("Foto"); notificação = sempre "Foto";
+- **Exclusão**: "para todos" (autor) marca tombstone + `anexos_mensagem.removido_em` na MESMA transação e apaga o arquivo DEPOIS do commit (falha → log só com a chave, órfão para varredura; nada é revertido). "Para mim" não toca no arquivo;
+
+Modelo de banco (migration `0043_mensagens_com_anexo`):
+
+- `tipo_mensagem` ganhou `imagem`; em imagem, `conteudo` é LEGENDA opcional (vazia, ou as regras do texto). Texto, pedido e tombstone não mudaram (`mensagens_conteudo_texto_valido` reescrita);
+- `anexos_mensagem` (`tipo_anexo` = só `imagem`): `chave` do objeto privado (nunca URL; única, 1–300), `tipo_conteudo` (imagem = `image/webp`), `tamanho_bytes` (bigint > 0), `largura`/`altura` (> 0, para reservar o balão), `removido_em`. FK composta `(conversa_id, mensagem_id) → mensagens(conversa_id, id)` com RESTRICT (mensagem não se apaga; exclusão é tombstone). UM anexo por mensagem (índice único `anexos_mensagem_um_por_mensagem`, removível para álbum no futuro);
+- coerência conferida no COMMIT por triggers de constraint diferidos que existem SÓ na migration (padrão da `0007`): imagem tem exatamente um anexo de imagem; anexo só em mensagem do mesmo tipo; anexo não pode estar removido enquanto a mensagem é visível. Tombstone pode manter o anexo ativo (limpeza depois) ou removido; a linha e a chave nunca são apagadas;
+- testes que apagam mensagens precisam apagar antes os anexos (RESTRICT);
+- banco LOCAL de desenvolvimento já está na `0043`; produção/Neon ainda não.
+
+## Mensagens de voz — áudio assíncrono (API, Web e Mobile)
+
+**Só mensagem de áudio gravada e enviada.** Chamada de voz/vídeo, WebRTC, transcrição, forma de onda, envio de arquivo de áudio arbitrário e múltiplos áudios por mensagem **não existem**.
+
+- **Modelo** (migration `0044_mensagens_de_audio`): `tipo_mensagem` e `tipo_anexo` ganharam `audio`; mensagem `audio` tem `conteudo` sempre vazio (sem legenda) e exatamente UM anexo `audio`. Em `anexos_mensagem`, `largura`/`altura` viraram opcionais e existe `duracao_ms`; a CHECK `anexos_mensagem_metadados_por_tipo` exige dimensões só na imagem e duração só no áudio (com `is not null` explícito: CHECK que dá NULL é aceita), e `anexos_mensagem_audio_formato` limita o `tipo_conteudo`. Os triggers diferidos da `0043` passaram a cobrir os dois tipos (`mensagens_audio_exige_anexo`; os tipos não se misturam). Banco LOCAL de desenvolvimento na `0044`; produção/Neon ainda não;
+- **Formatos**: só os que os clientes gravam — `audio/webm` (Opus; MediaRecorder de Chrome/Edge/Firefox) e `audio/mp4` (AAC; Safari e o app, `.m4a`). O servidor decide pelos BYTES (`lib/armazenamento/validar-audio.ts`: cabeçalho EBML com DocType webm; caixa `ftyp` do MP4), exige que o MIME declarado concorde e guarda o ORIGINAL — sem ffmpeg e sem reencodar;
+- **Limites** (`@jaa/contratos`): 10 minutos (`DURACAO_MAXIMA_AUDIO_MS`), mínimo 0,5 s, 10 MB (`TAMANHO_MAXIMO_AUDIO_BYTES`, aplicado só nesta rota). **Duração**: no MP4 vem do próprio arquivo (`moov/mvhd`) e ignora o cliente; no WebM do MediaRecorder o cabeçalho não traz duração, então vale `duracaoMs` do cliente, conferida contra os limites e contra o tamanho (taxa de bits plausível). Limitação aceita: um cliente adulterado pode declarar duração errada de um WebM dentro dessa faixa (afeta só o tempo exibido);
+- **Envio**: `POST /conversas/:conversaId/mensagens/audio`, multipart na ordem `idCliente`, `mensagemRespondidaId?`, `duracaoMs`, `arquivo` POR ÚLTIMO (`ORDEM_CAMPOS_ENVIO_AUDIO`). Mesma sequência da imagem (`enviar-mensagem-audio.ts`): participação → idempotência (retry não lê o arquivo) → limite (40 / 10 min por conta, chave própria) → resposta → bloqueio → validar → PUT no bucket privado (`audio-conversa/<conversaId>/<uuid>.webm|m4a`) → transação → `mensagem:nova`. Falha depois do PUT e tentativa concorrente perdedora removem o arquivo novo;
+- **Mensagem**: `tipo: "audio"`, `anexo: { id, tipo: "audio", duracaoMs }` (o anexo virou união discriminada por `tipo`). Nunca chave, MIME, bucket ou URL. Não é editável; responde e é respondida; prévia sempre `PREVIA_AUDIO` ("Áudio") em resposta, notificação e lista;
+- **Leitura**: `POST /conversas/:conversaId/audios/urls` → `{ audios: [{ mensagemId, url, expiraEm }] }`, mesma regra e mesmo código das imagens (`gerarUrlsAnexos(tipo)`); cada rota só entrega o seu tipo. Exclusão já era por anexo: "para todos" marca tombstone + `removido_em` e apaga o arquivo depois do commit;
+- **Web**: microfone no lugar do "enviar" quando o campo está vazio; `getUserMedia` + `MediaRecorder` (`lib/gravador-audio.ts`, Opus a 32 kbps); gravar → parar → OUVIR a prévia → enviar ou descartar (parar não envia); para sozinho em 10 min. Um modo de compositor por vez (`modoDoCompositor`). Player próprio (`player-audio.tsx`): tocar/pausar, barra com busca, tempo e 1x/1,5x/2x, um áudio por vez, duração vinda do anexo. Balão pendente com Reenviar/Descartar e o mesmo `idCliente`;
+- **Mobile**: `expo-audio` (SDK 57), carregado SOB DEMANDA e protegido (`lib/audio-nativo.ts`) — build sem o módulo nativo avisa "atualize o app" em vez de quebrar a conversa. Grava MP4/AAC mono a 64 kbps; permissão do microfone só ao tocar no botão; sair do app ou da conversa durante a gravação CANCELA (nada grava em segundo plano; `enableBackgroundRecording: false`). Mesmo fluxo e mesmas regras da Web. **Exige Development Build com o `expo-audio`**. Três cuidados que não podem ser desfeitos: (1) as opções de gravação vão ACHATADAS para o gravador nativo (`opcoesDeGravacaoNativas`) — com `android: {...}` aninhado o Android ignora container/codificador e grava 3GPP/AMR-NB, que a API agora recusa e os navegadores não tocam; (2) no FIM da faixa o player PAUSA antes de voltar ao início (`lib/controle-reproducao.ts`) — só `seekTo(0)` faz o ExoPlayer recomeçar sozinho; fim normal não é erro e não renova URL; (3) `RECORD_AUDIO` é declarada no `app.json` e NENHUM plugin pode ter `microphonePermission: false` (o do `expo-image-picker` removia a permissão do manifesto gerado);
+- **pendências**: varredura de órfãos também para áudios; validação de duração do WebM no servidor; indicador "ouvido"; reprodução do WebM/Opus no Safari/iOS antigo não verificada.
 
 ## Conversas com empresa e catálogo do cliente (Fase 2)
 
@@ -917,7 +962,7 @@ O compositor mostra Foto, Vídeo, Áudio e Documento **desabilitados** ("Em brev
 - mesmo domínio Produto da administração (nada é copiado para "produto do chat"); a futura `/loja/<slug>` reusa a mesma consulta, resolvendo a empresa pelo slug;
 - `GET /descoberta/empresas?busca=` é uma descoberta TÉCNICA autenticada e temporária (não é o "Encontrar"); lista só empresas ativas. Pendente antes de abrir ao público: rate limit e cache.
 
-Web: "Agindo como" passou a guiar o mensageiro; na conversa com empresa há **Ver produtos** (lista → detalhe, com **imagem "Em breve" desabilitada**) e, para o cliente, **Adicionar ao carrinho** (seção "Carrinho e Pedido Jaa"). **Mobile**: o fluxo de cliente (conversar com empresa e ver catálogo) depende da autenticação mobile, que ainda não existe; contratos e API já são reutilizáveis por ele, e o Mobile continua sem qualquer administração de produtos.
+Web: "Agindo como" passou a guiar o mensageiro; na conversa com empresa há **Ver produtos** (lista → detalhe, com a imagem principal do produto quando houver) e, para o cliente, **Adicionar ao carrinho** (seção "Carrinho e Pedido Jaa"). **Mobile**: a autenticação mobile já existe (seção 5), mas as telas do fluxo de cliente (conversar com empresa e ver catálogo) ainda não; contratos e API já são reutilizáveis por ele, e o Mobile continua sem qualquer administração de produtos.
 
 ## Carrinho e Pedido Jaa (Fase 2 — criação do pedido na conversa)
 
@@ -950,7 +995,7 @@ Modelagem e garantias:
 - **idempotência** igual à das mensagens: `id_cliente` único por identidade (`pedidos_id_cliente_por_identidade_unico`). Repetir a mesma tentativa devolve **200** com o mesmo pedido (sem segundo card, sem segundo evento); a mesma chave com conteúdo diferente é **409 `ID_CLIENTE_REUTILIZADO`**;
 - **card na conversa sem duplicar dados**: `mensagens.tipo` ganhou `pedido` e a coluna `pedido_id` (CHECK `mensagens_pedido_por_tipo`: tipo `pedido` ⇔ `pedido_id` presente, conteúdo vazio). O card lê o Pedido real (resumo em subconsulta JSON), então realtime, não lidas, notificações e exclusão continuam valendo sem regra nova. Card não é texto: não se edita nem responde;
 - **API**: `POST /pedidos` (só identidade **pessoal**; empresarial = 403) e `GET /pedidos/:pedidoId`, visível **apenas** ao cliente dono e a quem opera a empresa do pedido — qualquer outra identidade recebe 404 (não revela existência);
-- Web (técnica): "Adicionar" na lista/detalhe do catálogo, painel **Carrinho** (quantidade, remover, total, forma de pagamento, troco), confirmação, **card do pedido** no balão e **Ver pedido**. **Mobile**: nada de carrinho/pedido ainda (depende da autenticação mobile); contratos e API são reutilizáveis por ele.
+- Web (técnica): "Adicionar" na lista/detalhe do catálogo, painel **Carrinho** (quantidade, remover, total, forma de pagamento, troco), confirmação, **card do pedido** no balão e **Ver pedido**. **Mobile**: nada de carrinho/pedido ainda (a autenticação mobile existe; faltam as telas); contratos e API são reutilizáveis por ele.
 
 ## Operação do pedido: empresa conduz, cliente acompanha (Fase 2)
 
@@ -981,7 +1026,7 @@ recebido → confirmado → em_preparacao → pronto → saiu_para_entrega → e
 
 **Realtime**: `pedido:status-atualizado` (após o commit) vai só para o cliente dono e a identidade da empresa — nunca broadcast, nunca para terceiros. **Não é mensagem**: não cria mensagem, não reordena a conversa e **não incrementa não lidas**; o MESMO card da conversa passa a mostrar o novo status. Detalhe e timeline são relidos da API (o evento avisa, o banco é a verdade).
 
-Web (técnica): agindo como a empresa surge a área **Pedidos** (filtros por status, lista com cliente/itens/total/pagamento/status, detalhe com timeline e a próxima ação); o cliente abre **Ver pedido** no card e vê a timeline (concluídas ✓, atual ●, futuras ○) e, se cancelado, o motivo. **Mobile**: nada de administração empresarial; o contrato de acompanhamento já é reutilizável quando a autenticação mobile existir.
+Web (técnica): agindo como a empresa surge a área **Pedidos** (filtros por status, lista com cliente/itens/total/pagamento/status, detalhe com timeline e a próxima ação); o cliente abre **Ver pedido** no card e vê a timeline (concluídas ✓, atual ●, futuras ○) e, se cancelado, o motivo. **Mobile**: nada de administração empresarial; o contrato de acompanhamento já é reutilizável (a autenticação mobile existe; faltam as telas).
 
 ## Endereço e ponto de entrega (Fase 2)
 
@@ -1004,7 +1049,7 @@ Web (técnica): agindo como a empresa surge a área **Pedidos** (filtros por sta
 
 **Fronteiras com fornecedores** (o domínio não conhece nenhum): `GeocodificadorEndereco` na API (implementação compatível com Nominatim/OpenStreetMap, ativada só por `GEOCODIFICACAO_URL`; sem ela nada externo é chamado e o mapa abre sem palpite) e `CriarMapaPonto` na Web (implementação Leaflet + tiles OSM, livre e sem chave, com URL configurável). Trocar de fornecedor — ou usar mapa nativo no Mobile — é escrever outra implementação.
 
-**Preparado para o futuro, sem implementar agora**: a coordenada confirmada é a base de navegação do entregador, múltiplas entregas, ordenação/reordenação de rota, ETA e fila do cliente. Nada disso existe nesta etapa. Web: etapa "Entregar em" no carrinho (antes do pagamento) e "Ver ponto no mapa" no detalhe do pedido; latitude/longitude cruas não são exibidas para pessoas. **Mobile**: sem telas ainda (depende da autenticação mobile); contratos e API já servem a ele.
+**Preparado para o futuro, sem implementar agora**: a coordenada confirmada é a base de navegação do entregador, múltiplas entregas, ordenação/reordenação de rota, ETA e fila do cliente. Nada disso existia nesta etapa; múltiplas entregas, reordenação e fila vieram depois ("Saída de entrega"), e ETA continua fora. Web: etapa "Entregar em" no carrinho (antes do pagamento) e "Ver ponto no mapa" no detalhe do pedido; latitude/longitude cruas não são exibidas para pessoas. **Mobile**: sem telas de endereço ainda (a autenticação mobile existe); contratos e API já servem a ele.
 
 ## Entregadores e atribuição das entregas (Fase 2)
 
@@ -1022,11 +1067,11 @@ Web (técnica): agindo como a empresa surge a área **Pedidos** (filtros por sta
 
 **O que o entregador vê** (`GET /entregas` e `/entregas/:pedidoId`, só o que está atribuído a ele AGORA): empresa, destino **snapshot** com o ponto que o CLIENTE confirmou (o entregador **nunca geocodifica de novo**), nome público do cliente, itens e como receber na entrega (dinheiro com "Troco para R$ X", ou cartão). Nada além disso: sem telefone do cliente, sem outros endereços, sem outras conversas, sem outros pedidos, sem histórico do cliente. Um entregador pode ter **várias entregas ativas ao mesmo tempo** (a rota com várias paradas vem depois). Entregue e cancelado saem da lista ativa.
 
-**Máquina de estados continua da EMPRESA**: o entregador não confirma, prepara, marca pronto nem cancela — nesta etapa ele consulta suas entregas. Ações próprias dele virão com o fluxo de rota/GPS.
+**Máquina de estados continua única**: o entregador não confirma, prepara, marca pronto nem cancela. As ações próprias dele acontecem pela SAÍDA (seção "Saída de entrega": recusar, iniciar, reordenar, recalcular rota e concluir a próxima parada) e movem o pedido pela mesma máquina de estados, com os mesmos efeitos.
 
 **Realtime** (`entrega:atualizada`, após o commit, só para as conexões do entregador envolvido — nunca broadcast): atribuição, mudança de status, reatribuição, cancelamento e revogação chegam sem F5; `entrega: null` significa "saiu da sua lista" e a tela remove o que ele não pode mais ver. O cliente não recebe nada disso: **trocas internas de entregador não são exibidas para ele** nesta etapa.
 
-Web (técnica): agindo como a empresa há **Entregadores** (convidar por @usuario, ativar/desativar) e, no detalhe do pedido pronto, **Atribuir/Trocar entregador** com o histórico; a pessoa com vínculo vê **Minhas entregas**, separada da administração, com "Abrir no mapa" usando o ponto do pedido. **Mobile**: o entregador será principalmente móvel — contratos, API e autorização já são independentes do Next.js; as telas dependem da autenticação mobile, que ainda não existe.
+Web (técnica): agindo como a empresa há **Entregadores** (convidar por @usuario, ativar/desativar) e, no detalhe do pedido pronto, **Atribuir/Trocar entregador** com o histórico; a pessoa com vínculo vê **Minhas entregas**, separada da administração, com "Abrir no mapa" usando o ponto do pedido. **Mobile**: o entregador será principalmente móvel — contratos, API e autorização já são independentes do Next.js. Hoje o app tem login (OTP), a aba "Entrega" com a saída em andamento e o rastreamento (seção "Rastreamento durante a saída"); as demais ações do entregador existem na API e no Web, ainda sem tela no Mobile.
 
 ### Disponibilidade operacional (por empresa)
 
@@ -1043,13 +1088,17 @@ Web (técnica): agindo como a empresa há **Entregadores** (convidar por @usuari
 
 Web: a pessoa vê **"Empresas em que trabalho"** (uma linha por empresa, com 🟢/⚪ e o botão inverso) dentro da sua área; a empresa vê, por entregador, **Vínculo** e **Disponibilidade** separados.
 
-Sequência das paradas, fila do cliente e reordenação estão implementadas na seção "Saída de entrega". **Continuam fora**: motor de roteamento real, ETA, GPS e push.
+Sequência das paradas, fila do cliente e reordenação estão implementadas na seção "Saída de entrega"; motor de rotas e rastreamento, nas seções "Motor de rotas real" e "Rastreamento durante a saída". **Continuam fora**: ETA e push.
 
 ## Saída de entrega (Fase 2)
 
 **SaídaEntrega agrupa VÁRIOS pedidos de UMA empresa para UM entregador** (`saidas_entrega` + `paradas_saida`): é a operação real de sair com 5 pedidos, e a base da sequência e da fila. Uma saída **nunca mistura empresas** — se a mesma pessoa também leva pedidos de outra, aquilo é outra saída, invisível para esta. Uma empresa não sabe que ele tem saída em outra, quantas entregas são nem para onde.
 
-**Duas máquinas de estado, sem concorrência**: o PEDIDO continua com a sua (recebido → … → entregue/cancelado) e a SAÍDA tem a dela (`preparada → em_andamento → concluida`). Iniciar a saída não é atalho: cada pedido PRONTO avança para `saiu_para_entrega` **pela máquina existente**, com histórico e realtime. `em_rota` e `entregue` continuam avançando pedido a pedido.
+**Duas máquinas de estado, sem concorrência**: o PEDIDO continua com a sua (recebido → … → entregue/cancelado) e a SAÍDA tem a dela (`statusSaidaSchema`: `em_formacao → aguardando_entregador → preparada → liberada_retirada → em_andamento → concluida`; os dois primeiros são da automação, seção "Zonas e despacho automático"). Iniciar a saída não é atalho: cada pedido PRONTO avança para `saiu_para_entrega` **pela máquina existente**, com histórico e realtime; `entregue` avança pedido a pedido.
+
+**LIBERAÇÃO PARA RETIRADA**: a saída `preparada` (com entregador) vira `liberada_retirada` quando a empresa libera (`POST /empresas/:id/saidas/:saidaId/liberar`, permissão `gerenciar-logistica`; `.../fechar` é alias temporário) ou pela regra automática (`configuracoes_despacho.liberacao_automatica`, padrão ligada). Liberada ainda sem entregador, a saída guarda `liberada_em` e nasce `liberada_retirada` quando o despacho a atribuir.
+
+**Ações do ENTREGADOR na própria saída** (identidade pessoal da sessão, só o entregador ATUAL; saída alheia = 404): `GET /entregas/saidas` e `/entregas/saidas/:id`; **recusar** (`POST .../recusar`, só em `liberada_retirada`: volta para `aguardando_entregador`, registra em `recusas_saida`, encerra as atribuições e o despacho tenta o próximo da fila); **iniciar** (`POST .../iniciar`, só em `liberada_retirada` → `em_andamento`); **reordenar** (abaixo); **recalcular rota** (seção "Motor de rotas real"); **concluir a próxima parada** (`POST .../paradas/:pedidoId/concluir`, só com a saída `em_andamento` e só a PRIMEIRA parada ativa; o pedido vai de `saiu_para_entrega`/`em_rota` para `entregue` pela máquina de estados). Não existe ação de "finalizar saída": ela se conclui sozinha (abaixo).
 
 **Quem monta é a EMPRESA** (permissão `gerenciar-entregadores`), escolhendo pedidos elegíveis — desta empresa, **PRONTOS**, com destino confirmado e fora de qualquer saída ativa — e um entregador **ATIVO + DISPONÍVEL**. É tudo ou nada: se um pedido não pode entrar, nada é montado. A criação grava, **numa transação**, saída + paradas + a atribuição de cada pedido — a **atribuição continua sendo a fonte única** de "quem é o entregador atual"; a saída só agrupa e ordena. Índice único parcial garante **um pedido em no máximo uma saída ativa** (dois gestores disputando: um vence).
 
@@ -1057,9 +1106,13 @@ Sequência das paradas, fila do cliente e reordenação estão implementadas na 
 
 **O ENTREGADOR reordena a própria sequência** (quem conhece a região é quem está na rua): só o entregador ATUAL da saída, e a nova ordem precisa conter **exatamente as paradas ativas, uma vez cada**. A reordenação é **versionada** (`versao_sequencia`): salvar com versão antiga devolve 409 `SEQUENCIA_DESATUALIZADA` e **nada é sobrescrito**. As paradas encerradas não são tocadas. A empresa **acompanha** a sequência (e vê a mudança sem F5), mas não reordena.
 
-**Paradas e conclusão**: pedido entregue ou cancelado **encerra a parada** (sai da sequência ativa, continua no histórico com o motivo); quando não resta parada ativa, a **saída se conclui sozinha**. Pedido dentro de saída ativa **não é reatribuído individualmente** (409 `SAIDA_EM_ANDAMENTO`) — senão o pedido diria Carlos e a saída, Paulo; **transferir uma saída inteira para outro entregador é pendência**. Ficar indisponível depois **não desfaz** a saída recebida: só impede saídas e atribuições novas.
+**Paradas e conclusão**: pedido entregue ou cancelado **encerra a parada** (sai da sequência ativa, continua no histórico com o motivo); quando não resta parada ativa, a **saída se conclui sozinha** (e a última posição rastreada dela é apagada).
 
-**"Atual/próxima" é posição operacional, não localização**: a primeira parada ativa da sequência. Sem GPS, o Jaa nunca afirma onde o entregador está — a tela da empresa é "Acompanhamento da saída", não "localização em tempo real".
+**RETORNO À BASE** existe só como regra de PLANEJAMENTO: `exige_retorno_base` da saída (padrão da empresa em `configuracoes_despacho`, ou informado na montagem manual) faz a volta à base entrar na otimização, na distância/duração e no traçado (`rota.comRetorno`). **Não existe ação "cheguei à base"** e a saída não espera o retorno para concluir; voltar à fila acontece pela presença na base (seção "Base, presença e fila automática").
+
+Pedido dentro de saída ativa **não é reatribuído individualmente** (409 `SAIDA_EM_ANDAMENTO`) — senão o pedido diria Carlos e a saída, Paulo; **transferir uma saída inteira para outro entregador é pendência**. Ficar indisponível depois **não desfaz** a saída recebida: só impede saídas e atribuições novas.
+
+**"Atual/próxima" é posição operacional, não localização**: a primeira parada ativa da sequência. Ela não depende de GPS; a posição do entregador, quando existe, vem do rastreamento (seção "Rastreamento durante a saída") e é exibida com a idade da leitura, nunca como certeza.
 
 **FILA DO CLIENTE (derivada, nunca a rota)**: o dono do pedido recebe apenas `situacao` + `entregasAntes` (`GET /pedidos/:id/fila` e evento `pedido:fila`). Ele **nunca** recebe a saída, a sequência, os endereços, os nomes ou os ids dos outros pedidos. Reordenar muda a fila de todos automaticamente, porque ela é derivada. **"Indo até você"** só quando a saída está **em andamento** e o pedido é a **primeira parada ativa** — é sequência, não GPS; antes da saída sair, o cliente vê "separado para a entrega".
 
@@ -1077,7 +1130,7 @@ Sequência das paradas, fila do cliente e reordenação estão implementadas na 
 
 **Estabilização (histerese)**: são precisas **2 leituras consecutivas** dentro do raio para entrar e **2 além de 1,3× o raio** para sair. Uma única leitura ligeiramente fora **não** remove ninguém — oscilação de GPS perto da borda não pode tirar alguém da fila.
 
-**PRIVACIDADE — a localização serve SOMENTE para presença.** Nenhuma coordenada de entregador é persistida (só `na_base`, o horário da última leitura e o contador da histerese) nem trafega no realtime. A empresa recebe **"Na base"/"Fora da base"**, nunca posição, mapa, trajeto ou histórico de percurso; o cliente **não** recebe nada disso. Continuam **não implementados**: rastreamento durante a entrega, background tracking, ETA e mapa do entregador (seção 16).
+**PRIVACIDADE — a localização serve SOMENTE para presença.** Nenhuma coordenada de entregador é persistida (só `na_base`, o horário da última leitura e o contador da histerese) nem trafega no realtime. A empresa recebe **"Na base"/"Fora da base"**, nunca posição, mapa, trajeto ou histórico de percurso; o cliente **não** recebe nada disso. (Isto vale para a PRESENÇA; o rastreamento durante a saída em andamento é outro fluxo, com regras próprias — seção "Rastreamento durante a saída". ETA continua não implementado.)
 
 **FILA AUTOMÁTICA por empresa**, ordenada pelo **momento de entrada** (`filaEntrouEm` = `now()` do banco, desempate por id): entra sozinho quem fica elegível, **sem o gestor confirmar chegada**, sem drag-and-drop e sem reordenação manual. Sai ao **receber/iniciar uma saída**, parar de aceitar, ter o vínculo inativado, sair da base ou ficar inapto. Concluir a saída **não obriga retorno nem desliga "aceitando"**; quem volta à base entra no **FINAL** da fila (a posição anterior não volta). A invariante é do BANCO (CHECK `entregadores_empresa_fila_exige_presenca`), então toda mudança operacional passa por **uma transação única** que muda o campo, reavalia a fila e grava o **histórico mínimo** (`historico_fila_entregador`: entrada, saída e motivo — sem localização).
 
@@ -1095,7 +1148,7 @@ Sequência das paradas, fila do cliente e reordenação estão implementadas na 
 
 **Configuração por EMPRESA** (`configuracoes_despacho`): **máximo de pedidos por saída** (padrão 5, entre 1 e 15) e **tempo máximo de formação** (padrão 15 min, entre 1 e 180), além de **permitir combinar zonas**. Nada disso é regra universal do Jaa: 5 e 15 são só padrões.
 
-**SAÍDA EM FORMAÇÃO** é o novo primeiro estado da saída (`em_formacao → aguardando_entregador → preparada → em_andamento → concluida`; a saída montada à mão continua nascendo **preparada**). Só a saída EM FORMAÇÃO aceita pedido, e existe **no máximo uma por zona** (índice único parcial): o próximo pedido da zona entra na que já está aberta. Ela **fecha quando ocorrer primeiro** a quantidade máxima **OU** o tempo máximo — nunca as duas condições juntas. O relógio começa no PRIMEIRO pedido e o **prazo é persistido** (`prazo_formacao_em`).
+**SAÍDA EM FORMAÇÃO** é o novo primeiro estado da saída (`em_formacao → aguardando_entregador → preparada → liberada_retirada → em_andamento → concluida`; a saída montada à mão continua nascendo **preparada**). Só a saída EM FORMAÇÃO aceita pedido, e existe **no máximo uma por zona** (índice único parcial): o próximo pedido da zona entra na que já está aberta. Ela **fecha quando ocorrer primeiro** a quantidade máxima **OU** o tempo máximo — nunca as duas condições juntas. O relógio começa no PRIMEIRO pedido e o **prazo é persistido** (`prazo_formacao_em`).
 
 **REGRA ABSOLUTA**: depois de FECHADA — e muito mais depois de INICIADA — a saída **nunca** recebe pedido novo, nem da mesma zona, nem "no caminho", nem segundos depois. O pedido seguinte abre a próxima formação. Entrar em formação **não avança o status do pedido**: ele continua PRONTO até o início real da saída, que segue usando a máquina de estados existente.
 
@@ -1103,7 +1156,7 @@ Sequência das paradas, fila do cliente e reordenação estão implementadas na 
 
 **DESPACHO pelo PRIMEIRO APTO DA FILA**: a fila automática da base (seção "Base, presença e fila automática") é a autoridade — entra na conta só quem está **ATIVO + ACEITANDO + NA BASE + APTO** e sem saída em aberto. **Ninguém fora da base é escolhido.** A atribuição acontece numa transação com **trava por empresa** (`pg_advisory_xact_lock`), então duas saídas fechando ao mesmo tempo nunca ficam com a mesma pessoa; a atribuição da saída continua gravando `atribuicoes_entrega` (fonte única de "quem está com o pedido") e o entregador sai da fila. **Sem ninguém elegível a saída fica "aguardando entregador"** — nada é cancelado, nenhum pedido volta atrás — e quando alguém entra na fila o despacho acontece **na hora**, priorizando a saída cujo **pedido espera há mais tempo** (desempate estável), para nenhuma zona ficar sempre atrás.
 
-**ATRIBUIR ≠ INICIAR**: a saída atribuída fica reservada para aquela pessoa; "Iniciar saída" continua sendo o evento operacional explícito que avança cada pedido para `saiu_para_entrega`.
+**ATRIBUIR ≠ INICIAR**: a saída atribuída fica reservada para aquela pessoa; "Iniciar saída" continua sendo o evento operacional explícito — feito pelo ENTREGADOR, depois da liberação para retirada — que avança cada pedido para `saiu_para_entrega`.
 
 **O TEMPO É DO SERVIDOR**: o prazo vive no banco e uma **rotina periódica da API** (`rotina-despacho.ts`, ~15 s) processa o que venceu; a reconciliação também roda em pontos naturais (pedido ficando pronto, entregador entrando na fila, gestor abrindo o painel). Nada depende de navegador aberto, `setTimeout` na tela ou F5 — e **reiniciar a API não perde vencimento**. Não foi preciso introduzir fila, worker ou agendador externo (seção 22).
 
@@ -1117,23 +1170,42 @@ Sequência das paradas, fila do cliente e reordenação estão implementadas na 
 
 **Duas operações separadas, de propósito**: OTIMIZAR ("em que ordem visitar?") e PERCURSO ("qual o caminho real NESTA ordem?"). Elas não são a mesma coisa e nunca são chamadas juntas por engano.
 
-**ORIGEM = base confirmada da EMPRESA**, nunca a localização do navegador ou do usuário. A origem é **snapshot na saída** (`saidas_entrega.origem_latitude/longitude`): mudar a base depois não reescreve uma saída já planejada, em andamento ou histórica. **PARADAS = pontos snapshot dos pedidos** — nada é geocodificado de novo e o texto do endereço nunca muda.
+**ORIGEM = base confirmada da EMPRESA**, nunca a localização do navegador ou do usuário. Única exceção: no "recalcular rota" pedido pelo entregador com a saída `em_andamento`, o percurso parte da **última posição rastreada** se ela tiver no máximo 60 s e precisão informada de até 50 m (`origemDoRecalculo`); senão, da base. `rota.origem` guarda a base histórica e `rota.inicio`, de onde partiu o cálculo atual. A origem é **snapshot na saída** (`saidas_entrega.origem_latitude/longitude`): mudar a base depois não reescreve uma saída já planejada, em andamento ou histórica. **PARADAS = pontos snapshot dos pedidos** — nada é geocodificado de novo e o texto do endereço nunca muda.
 
-**Limitação REAL do Mapbox, tratada e documentada** (`provedor-mapbox.ts`): a Optimization API v1 só resolve "destino final livre" com viagem CIRCULAR; com `roundtrip=false` ela exige um destino escolhido, e no Jaa o entregador **não volta à empresa**. Estratégia: pedir a ORDEM com `roundtrip=true&source=first&destination=any`, **descartar a volta** e calcular o percurso **ABERTO** dessa ordem na Directions API. O Jaa não finge que o Mapbox otimizou uma rota aberta — por isso a interface diz "sequência sugerida" e "percurso calculado pelas ruas", nunca "melhor rota" ou "rota mais rápida".
+**Limitação REAL do Mapbox, tratada e documentada** (`provedor-mapbox.ts`): a Optimization API v1 só resolve "destino final livre" com viagem CIRCULAR; com `roundtrip=false` ela exige um destino escolhido, e no Jaa o entregador, por padrão, **não volta à empresa** (quando a saída exige retorno, a volta à base entra no cálculo — seção "Saída de entrega"). Estratégia: pedir a ORDEM com `roundtrip=true&source=first&destination=any`, **descartar a volta** e calcular o percurso **ABERTO** dessa ordem na Directions API. O Jaa não finge que o Mapbox otimizou uma rota aberta — por isso a interface diz "sequência sugerida" e "percurso calculado pelas ruas", nunca "melhor rota" ou "rota mais rápida".
 
 **Capacidade do fornecedor é limite do motor**: Optimization aceita 12 coordenadas (origem + 11 paradas) e Directions 25 (origem + 24). Acima disso o motor **nem chama**: nenhum pedido é truncado, nenhuma parada some e a saída fica em fallback com o motivo `capacidade_excedida`.
 
-**A ordem do ENTREGADOR prevalece**: quando ele reordena, o motor só **recalcula o percurso** daquela ordem — nunca reotimiza, o que desfaria a escolha de quem está na rua. O versionamento/conflito da sequência continua igual, e `rota.versaoSequencia` diz para qual ordem o percurso vale (reordenou → o percurso envelhece e a tela avisa em vez de desenhar traçado errado).
+**A ordem do ENTREGADOR prevalece**: quando ele reordena, o motor só **recalcula o percurso** daquela ordem — nunca reotimiza, o que desfaria a escolha de quem está na rua. A reotimização só acontece quando o PRÓPRIO entregador pede **"recalcular rota"** (`POST /entregas/saidas/:id/recalcular-rota { versaoSequencia }`, em `preparada`, `liberada_retirada` ou `em_andamento` e com pelo menos 2 paradas ativas): o Jaa escolhe de novo a ordem das paradas ativas e **substitui** a sequência atual, inclusive a manual, com a versão conferida antes de chamar o provedor e de novo ao gravar. O versionamento/conflito da sequência continua igual, e `rota.versaoSequencia` diz para qual ordem o percurso vale (reordenou → o percurso envelhece e a tela avisa em vez de desenhar traçado errado).
 
 **Fallback: o provedor não é ponto único de falha.** Timeout, erro HTTP, resposta inválida, capacidade excedida, token ausente ou base sem ponto confirmado → a operação **continua** com a aproximação local determinística, o estado vira `aproximacao_local` e o motivo fica registrado. Em fallback **não existem distância, duração nem geometria**: o Jaa não inventa número nem desenha linha reta fingindo ser rua (CHECK no banco garante isso).
 
-**Custo sob controle**: o provedor é chamado em **dois momentos operacionais** e só neles — ao **planejar a saída** (fechamento automático ou criação manual) e ao **recalcular o percurso** depois da reordenação do entregador. Ler a saída, listar, renderizar tela, dar F5 ou receber evento de realtime **nunca** chama rota. Cada chamada (ou recusa) vira uma linha em `consumos_roteamento` (empresa, saída, provedor, operação, resultado, nº de paradas, duração) — observabilidade para responder "quanto a Empresa X consumiu no período?", sem faturamento nesta etapa.
+**Custo sob controle**: o provedor é chamado só em **momentos operacionais** — ao **planejar a saída** (fechamento automático ou criação manual), ao **recalcular o percurso** depois da reordenação do entregador e quando o entregador toca em **"recalcular rota"**. Posição de GPS chegando **nunca** chama o provedor. Ler a saída, listar, renderizar tela, dar F5 ou receber evento de realtime **nunca** chama rota. Cada chamada (ou recusa) vira uma linha em `consumos_roteamento` (empresa, saída, provedor, operação, resultado, nº de paradas, duração) — observabilidade para responder "quanto a Empresa X consumiu no período?", sem faturamento nesta etapa.
 
 **Segurança e multiempresa** continuam valendo: o token do provedor é **segredo de servidor** (`MAPBOX_TOKEN`), nunca vai ao Web/Mobile e não aparece em log; rota, percurso e consumo são escopados por empresa; o **cliente não recebe rota, geometria nem nada das outras paradas** (para ele segue existindo só a fila derivada); o **entregador mantém** acesso à própria saída e sequência.
 
 **Mapa**: a geometria só é desenhada quando existe percurso real ATUAL **e** os tiles são do mesmo provedor que calculou (`podeDesenharPercurso`), para respeitar os termos de uso — misturar traçado de um fornecedor com mapa de outro não é feito em silêncio. Em fallback nenhuma linha é desenhada. A biblioteca de visualização continua Leaflet: adotar Mapbox como provedor de ROTA não obriga a trocar o mapa.
 
-**Duração ≠ ETA.** A duração é do TRAJETO, sempre rotulada assim: não inclui preparo, espera na porta nem a fila de entregas. O ETA do cliente (GPS + rota restante + paradas anteriores) é etapa futura, assim como rastreamento em tempo real — a arquitetura está pronta para recebê-los, mas nada disso existe hoje.
+**Duração ≠ ETA.** A duração é do TRAJETO, sempre rotulada assim: não inclui preparo, espera na porta nem a fila de entregas. O ETA do cliente (GPS + rota restante + paradas anteriores) é etapa futura e não existe hoje; o rastreamento durante a saída já existe (seção abaixo), mas não produz ETA.
+
+## Rastreamento durante a saída (Fase 2)
+
+**Só DENTRO da operação**: o servidor aceita posição apenas do entregador ATUAL de uma saída **`em_andamento`** (`POST /entregas/saidas/:saidaId/posicao`, identidade pessoal da sessão; a empresa vem da saída, nunca do cliente). Saída alheia = 404; saída não iniciada ou encerrada = 409 `SAIDA_NAO_ESTA_EM_ANDAMENTO` (sinal para o aparelho parar); leitura velha, futura ou imprecisa = 409 `LOCALIZACAO_IMPRECISA`; leitura mais antiga que a atual = 202 `{ aplicada: false }`. O aparelho envia só o que MEDIU (`enviarPosicaoEntradaSchema`), nunca "estou entregando".
+
+**Política compartilhada** (`POLITICA_RASTREAMENTO` + `decidirEnvioDePosicao` em `@jaa/contratos`, iguais no aparelho e no servidor): uma atualização útil a cada 10–20 s, descarta leitura com precisão pior que 100 m, ignora deslocamento menor que 30 m, envia "sinal de vida" no intervalo máximo e mantém no aparelho uma fila offline de no máximo 5 posições.
+
+**Posição ATUAL, não trilha**: `posicoes_saida` guarda **uma linha por saída** (a última válida, com `capturada_em` do aparelho e `recebida_em` do servidor); não há histórico de percurso. Quando a saída se conclui, a posição é apagada.
+
+**Quem recebe** (evento `entrega:posicao`, após gravar): a EMPRESA daquela saída e o próprio ENTREGADOR. Reconexão: `GET /entregas/saidas/:id/posicao`, `GET /empresas/:id/saidas/:saidaId/posicao` e `GET /empresas/:id/posicoes` (só saídas em andamento). O CLIENTE recebe, em `GET /pedidos/:id/acompanhamento` e no evento `pedido:acompanhamento`, a fila derivada, a identidade pública do entregador atual e **a posição dele somente quando a entrega do cliente é a parada atual** — nunca rota, destinos ou dados das outras paradas. A interface mostra a idade da posição (`rotuloUltimaPosicao`) e o Web desenha, para o cliente, só dois pontos: entregador e destino dele.
+
+**Mobile** (`apps/mobile/src/features/entregas`): `expo-location` + `expo-task-manager`, com background (foreground service no Android, indicador azul no iOS) quando a pessoa concede "sempre", e coleta em primeiro plano quando só concede "durante o uso"; a interface mostra a situação real (`SituacaoRastreamento`). Liga só com saída em andamento e para quando ela termina ou quando o servidor responde 409/404.
+
+**Pendências conhecidas**:
+
+- o estado local do rastreamento no Mobile (saída rastreada, última posição enviada e fila offline) fica **em memória**: se o sistema encerrar o processo, a tarefa de background perde a saída e **deixa de enviar posições sem avisar**. Precisa de persistência;
+- background exige development build (o Expo Go não representa o comportamento real) e ainda não foi validado em aparelho real;
+- a situação `degradado` existe no contrato, mas o Mobile ainda não a produz;
+- sem ETA, sem push e sem histórico de percurso (decisões mantidas).
 
 ## Motor Profissional (Camada 1) — decisões aprovadas
 
@@ -1249,7 +1321,7 @@ O rastreamento deverá ser tratado como infraestrutura crítica e considerar:
 
 Nunca rastrear continuamente uma pessoa fora do contexto autorizado de entrega ativa.
 
-Não implementar esse módulo agora.
+Estado atual: a primeira versão existe em JavaScript com `expo-location`/`expo-task-manager`, sem código nativo próprio (seção 7, "Rastreamento durante a saída", com as pendências). Módulo nativo (Kotlin/Swift) só entra se a validação em aparelho real mostrar necessidade.
 
 ---
 
@@ -1396,6 +1468,23 @@ Ao escalar realtime horizontalmente, introduzir o mecanismo de coordenação/ada
 # 23. Uploads e Mídia
 
 Na Fase 1, texto é prioridade.
+
+## Estado atual: imagens públicas (foto de perfil, logo da empresa, imagem principal do produto)
+
+- **Storage: Cloudflare R2**, atrás da interface `ArmazenamentoDeArquivos` (`apps/api/src/lib/armazenamento/`). O domínio nunca conhece o provedor; R2 é falado por SigV4 próprio (`assinatura-s3.ts`, sem AWS SDK). Variáveis só da API: `R2_CONTA_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (as quatro juntas), `R2_URL_PUBLICA` e `R2_ENDPOINT` (opcional; derivado da conta). Sem elas o armazenamento fica "indisponível" e o upload responde 503 `ARMAZENAMENTO_INDISPONIVEL`; configuração parcial impede a API de subir **em produção**. Web e Mobile nunca recebem credencial do R2: recebem só a URL pública pronta;
+- **o banco guarda a CHAVE, nunca a URL** (`identidades.foto_chave`, `produtos.imagem_chave`); a URL é montada na leitura a partir de `R2_URL_PUBLICA`. A chave é gerada pelo servidor: `<tipo>/<donoId>/<uuid>.webp` (chave nova a cada envio — nada é sobrescrito e cache de CDN não mostra a imagem velha);
+- **upload passa pela API** (multipart, campo `arquivo`, 1 arquivo, máx. 8 MB): `POST|DELETE /perfil/foto` (identidade ATUANTE: avatar da pessoa ou logo da empresa) e `POST|DELETE /empresas/:empresaId/produtos/:produtoId/imagem` (permissão `gerenciar-produtos`, produto escopado pela empresa). Mesmas rotas para Web e Mobile; muda só o transporte da sessão. **Não há URL pré-assinada** nesta etapa;
+- **ordem obrigatória**: autorizar → limite de envios → ler e processar → gravar → trocar a referência. Quem não pode alterar o alvo não chega a consumir CPU nem a gravar no storage;
+- **pipeline** (`pipeline-imagem.ts`, `sharp`): o tipo é decidido pelos BYTES (JPEG/PNG/WebP), EXIF (inclusive geolocalização) é descartado, a imagem é redimensionada (avatar/logo 512 px, produto 1024 px) e reencodada em WebP. Arquivo grande → 413, inválido → 400 `ARQUIVO_INVALIDO`;
+- **limite de envios por CONTA** (`lib/limite-de-uso.ts`, janela fixa persistida na tabela `rate_limits` do Better Auth com chaves `jaa:*`, sem mudar a estrutura dela): foto de perfil 10 / 10 min, imagem de produto 60 / 10 min. Excedente → 429 `LIMITE_DE_ENVIOS_ATINGIDO` com `Retry-After`. Tentativas inválidas também contam;
+- **troca e remoção**: grava a nova → troca a chave no banco com a linha travada (`for update`), recebendo a anterior → só então remove a anterior. Se a troca falhar ou for recusada, remove-se a NOVA. Remover: banco primeiro, arquivo depois. Assim o banco nunca aponta para arquivo inexistente; no pior caso sobra um objeto **órfão**;
+- **foto fora do perfil**: identidades exibidas com avatar usam `identidadeVisivelSchema` (participante + `fotoUrl`) — lista de conversas, conversa aberta, contatos e busca — e as identidades operáveis ("Agindo como", contexto da conta) também trazem `fotoUrl`. A decisão é do SERVIDOR, num único ponto (`features/perfil/lib/visibilidade-foto.ts`, em lote por página, sem N+1), com a mesma regra do perfil público (`podeVer`: `visibilidadeFoto` do dono + agenda DO DONO + exceções; a própria identidade sempre vê a sua): sem permissão ou sem foto → `null`, e o cliente mostra as iniciais. `participanteConversaSchema` puro (pedidos, entregas, eventos) continua sem foto;
+- **imagem do produto para o cliente**: o catálogo público (`imagemUrl`) alimenta card, detalhe e o carrinho. O carrinho do navegador guarda a URL do momento em que o item entrou; ao abrir o catálogo, ela é atualizada com a imagem ATUAL (`atualizarImagensDoCarrinho`), e URL que não carrega cai no marcador neutro. O card do PEDIDO não mostra imagem (itens são snapshot de nome/preço);
+- **Mobile (foto do perfil)**: câmera e galeria via `expo-image-picker` (recorte quadrado), normalização no aparelho para JPEG ≤ 1024 px com `expo-image-manipulator` (HEIC/HEIF e tipos declarados incorretos pelo Android nunca chegam à API) e envio multipart pela MESMA rota (`src/lib/envio-arquivo.ts`, sem `Content-Type` manual). Permissão de câmera só ao tocar em "Tirar foto"; armazenamento e microfone bloqueados no manifesto. Imagem de produto continua sem administração no Mobile;
+- **bucket PRIVADO (imagens e áudios de conversa — seção 14, "Imagens no chat" e "Mensagens de voz")**: `jaa-privado`, na mesma conta (reaproveita `R2_CONTA_ID` e `R2_ENDPOINT`) com token próprio: `R2_BUCKET_PRIVADO`, `R2_ACCESS_KEY_ID_PRIVADO`, `R2_SECRET_ACCESS_KEY_PRIVADO`. Interface `ArmazenamentoPrivado` (salvar, remover, `urlAssinadaLeitura`) **sem** `urlPublica`; criado por `criarArmazenamentoPrivado` e injetado em `criarAplicacao` (`armazenamentoPrivado`). Leitura = URL GET assinada SigV4 pela query (`assinarUrlS3`, `UNSIGNED-PAYLOAD`, só `host` assinado), validade padrão 20 min, limite do Jaa 1 min–1 h; gerada só depois de autorizar, nunca persistida. Público e privado são validados SEPARADAMENTE (`situacaoArmazenamentoPublico/Privado`: ausente/parcial/completo; parcial é proibido em produção). Não existe URL assinada de escrita;
+- **pendências**: varredura de órfãos no storage; foto no aviso `notificacao:nova-mensagem` (o Web usa a identidade da lista de conversas); foto com privacidade "ninguém" continua acessível a quem já tem a URL (bucket público); o domínio `r2.dev` é de desenvolvimento — produção exige domínio próprio no bucket.
+
+## Regras gerais
 
 Quando mídia for iniciada:
 
@@ -1625,7 +1714,7 @@ Não inventar decisão para os itens abaixo. Eles serão definidos quando necess
 
 - ~~provedor de PostgreSQL em produção~~ — decidido: Neon, região São Paulo (seção 5, "Banco");
 - hospedagem final da API;
-- storage de arquivos;
+- ~~storage de arquivos privados~~ — decidido: Cloudflare R2, bucket `jaa-privado` com leitura por URL assinada (seção 23); o modelo de anexos de mensagem ainda será definido na etapa de mídia;
 - push notification provider/configuração final;
 - **plano/contrato comercial do provedor de rotas em produção** (Mapbox é o primeiro provedor implementado, com token opcional e fallback local; falta decidir limites, custo e os termos para exibir o traçado sobre mapas de outro fornecedor), e a compatibilidade manual entre zonas ainda não é enriquecida por análise real de percurso;
 - provedor de mapas/geocodificação para PRODUÇÃO (hoje: Leaflet + tiles OSM na Web e geocodificação opcional compatível com Nominatim, ambos livres e sem chave; a política de uso do OSM não cobre volume de produção, então o serviço definitivo será escolhido quando houver escala — sem inventar credenciais);

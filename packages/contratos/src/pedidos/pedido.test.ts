@@ -123,9 +123,9 @@ describe("pedido e card na conversa", () => {
     // O pedido público não expõe a empresa por id interno nem dados de cartão.
     assert.deepEqual(Object.keys(pedidoSchema.parse(pedido).empresa).sort(), ["identidadeId", "nome", "nomeUsuario", "slug"]);
 
-    const card = { id: uuid, conversaId: uuid, remetenteIdentidadeId: uuid, tipo: "pedido", conteudo: "", criadoEm: "2026-09-15T12:00:00.000Z", estado: "enviada", mensagemRespondida: null, editadaEm: null, excluidaEm: null, pedido: { id: uuid, numero: 3, status: "recebido", formaPagamentoNaEntrega: "cartao", trocoParaCentavos: null, subtotalCentavos: 1000, freteFinalCentavos: 200, totalCentavos: 1200, itens: [{ nomeProduto: "Refrigerante", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null }] } };
+    const card = { id: uuid, conversaId: uuid, remetenteIdentidadeId: uuid, tipo: "pedido", conteudo: "", criadoEm: "2026-09-15T12:00:00.000Z", estado: "enviada", mensagemRespondida: null, editadaEm: null, excluidaEm: null, anexo: null, pedido: { id: uuid, numero: 3, status: "recebido", formaPagamentoNaEntrega: "cartao", trocoParaCentavos: null, subtotalCentavos: 1000, freteFinalCentavos: 200, totalCentavos: 1200, itens: [{ nomeProduto: "Refrigerante", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null }] } };
     assert.equal(mensagemSchema.safeParse(card).success, true);
-    assert.equal(mensagemSchema.safeParse({ ...card, tipo: "audio" }).success, false);
+    assert.equal(mensagemSchema.safeParse({ ...card, tipo: "video" }).success, false);
   });
 
   it("representa subtotal, frete em snapshot e zona do pedido", () => {

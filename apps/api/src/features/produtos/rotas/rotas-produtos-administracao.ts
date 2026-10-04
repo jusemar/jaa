@@ -9,13 +9,21 @@ import {
 } from "@jaa/contratos";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as z from "zod";
-import { ArmazenamentoNaoConfiguradoErro, type ArmazenamentoDeArquivos } from "../../../lib/armazenamento/armazenamento-arquivos.js";
-import { ImagemInvalidaErro, montarChave, processarImagem } from "../../../lib/armazenamento/pipeline-imagem.js";
+import type { ArmazenamentoDeArquivos } from "../../../lib/armazenamento/armazenamento-arquivos.js";
+import {
+  FALHA_ARMAZENAMENTO_INDISPONIVEL,
+  LIMITE_ENVIO_IMAGEM_PRODUTO,
+  falhaLimiteDeEnvios,
+  gravarESubstituir,
+  lerImagemEnviada,
+} from "../../../lib/armazenamento/receber-imagem.js";
+import { consumirLimiteDeUso } from "../../../lib/limite-de-uso.js";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
 import { exigirIdentidadeAutenticada, obterIdentidadeExigida } from "../../autenticacao/lib/exigir-identidade-autenticada.js";
 import {
   alterarDisponibilidadeProduto,
   atualizarProduto,
+  autorizarImagemProduto,
   criarProduto,
   definirImagemProduto,
   listarProdutosAdministrados,
@@ -122,8 +130,9 @@ export function registrarRotasProdutosAdministracao(
   });
 
   /**
-   * IMAGEM DO PRODUTO. Os bytes passam pelo mesmo pipeline do avatar: o tipo é conferido nos BYTES,
-   * os metadados são descartados e a imagem é redimensionada antes de sair do servidor.
+   * IMAGEM DO PRODUTO. Ordem obrigatória: autorização (permissão + produto desta empresa) → limite de
+   * envios → leitura e pipeline (tipo conferido nos BYTES, metadados descartados, redimensionamento)
+   * → gravação com chave gerada pelo servidor → troca da referência → remoção da imagem anterior.
    */
   servidor.post("/empresas/:empresaId/produtos/:produtoId/imagem", { preHandler }, async (requisicao, resposta) => {
     const { usuarioId } = obterIdentidadeExigida(requisicao);
@@ -131,29 +140,28 @@ export function registrarRotasProdutosAdministracao(
     if (!parametros.success) return responderDadosInvalidos(resposta, "Produto inválido.");
     const { empresaId, produtoId } = parametros.data;
 
-    const arquivo = await requisicao.file();
-    if (!arquivo) return responderDadosInvalidos(resposta, "Envie uma imagem.");
+    const autorizacao = await autorizarImagemProduto(banco, usuarioId, empresaId, produtoId);
+    if (autorizacao.tipo !== "autorizado") return responderNaoEncontrado(resposta, autorizacao.tipo);
 
-    try {
-      const imagem = await processarImagem(await arquivo.toBuffer(), "imagem-produto", arquivo.mimetype);
-      const chave = montarChave("imagem-produto", produtoId);
-      // Autorização primeiro? Não: o caso de uso confere permissão e existência ANTES de trocar a
-      // chave. Se ele recusar, o objeto recém-gravado é removido logo abaixo.
-      await armazenamento.salvar({ chave, conteudo: imagem.conteudo, tipoConteudo: imagem.tipoConteudo });
-      const resultado = await definirImagemProduto(banco, usuarioId, empresaId, produtoId, chave);
-      if (resultado.tipo !== "atualizado") {
-        await armazenamento.remover(chave).catch(() => undefined);
-        return responderNaoEncontrado(resposta, resultado.tipo);
-      }
-      if (resultado.chaveAnterior && resultado.chaveAnterior !== chave) await armazenamento.remover(resultado.chaveAnterior).catch(() => undefined);
-      return { chave, url: armazenamento.urlPublica(chave) };
-    } catch (erro) {
-      if (erro instanceof ImagemInvalidaErro) return resposta.code(400).send({ codigo: "ARQUIVO_INVALIDO", mensagem: erro.message } satisfies ErroApi);
-      if (erro instanceof ArmazenamentoNaoConfiguradoErro) {
-        return resposta.code(503).send({ codigo: "ARMAZENAMENTO_INDISPONIVEL", mensagem: "O envio de imagens ainda não está configurado neste ambiente." } satisfies ErroApi);
-      }
-      throw erro;
+    const limite = await consumirLimiteDeUso(banco, `envio-imagem-produto:${usuarioId}`, LIMITE_ENVIO_IMAGEM_PRODUTO);
+    if (!limite.permitido) {
+      const falha = falhaLimiteDeEnvios(limite.tenteNovamenteEmSegundos);
+      return resposta.code(falha.status).header("retry-after", String(limite.tenteNovamenteEmSegundos)).send(falha.erro);
     }
+
+    const leitura = await lerImagemEnviada(requisicao, "imagem-produto");
+    if (!leitura.ok) return resposta.code(leitura.status).send(leitura.erro);
+
+    const gravacao = await gravarESubstituir(armazenamento, { tipo: "imagem-produto", donoId: produtoId, imagem: leitura.imagem }, async (chave) => {
+      // A permissão é conferida de novo na troca: ela pode ter sido revogada durante o envio.
+      const resultado = await definirImagemProduto(banco, usuarioId, empresaId, produtoId, chave);
+      return resultado.tipo === "atualizado" ? { trocada: true, anterior: resultado.chaveAnterior } : { trocada: false, recusa: resultado.tipo };
+    });
+    if (!gravacao.ok) {
+      if ("indisponivel" in gravacao) return resposta.code(FALHA_ARMAZENAMENTO_INDISPONIVEL.status).send(FALHA_ARMAZENAMENTO_INDISPONIVEL.erro);
+      return responderNaoEncontrado(resposta, gravacao.recusa);
+    }
+    return { chave: gravacao.chave, url: armazenamento.urlPublica(gravacao.chave) };
   });
 
   servidor.delete("/empresas/:empresaId/produtos/:produtoId/imagem", { preHandler }, async (requisicao, resposta) => {

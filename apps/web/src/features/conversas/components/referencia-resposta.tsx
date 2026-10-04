@@ -4,8 +4,9 @@ import { textoDaPrevia } from "../lib/respostas";
  * Referência compacta à mensagem respondida (autor + trecho), usada dentro do balão e acima do
  * compositor. A prévia é limitada a duas linhas e nunca alarga o layout.
  *
- * Dentro de um balão PRÓPRIO (fundo jade) as cores se invertem: usar o jade da marca sobre o jade do
- * balão deixaria a citação ilegível, então ali ela vira um bloco translúcido claro.
+ * O texto citado é sempre ESCURO e legível, no balão próprio (verde claro) e no recebido (branco): o
+ * bloco só se diferencia do balão por um fundo levemente mais escuro e pela barra lateral da marca.
+ * O nome de quem foi citado mantém o destaque da marca.
  */
 export function ReferenciaResposta({
   nomeAutor,
@@ -25,20 +26,20 @@ export function ReferenciaResposta({
       data-referencia-resposta
       className={`min-w-0 rounded-[0.2rem] border-l-2 px-2 py-1 text-left ${
         emBalaoProprio
-          ? "border-marca-conteudo/70 bg-marca-conteudo/15"
+          ? "border-marca bg-mensagem-enviada-conteudo/[0.08]"
           : "border-marca bg-marca/[0.07]"
       }`}
     >
       <p
         data-autor-referencia
-        className={`truncate text-xs font-semibold ${emBalaoProprio ? "text-marca-conteudo" : "text-marca"}`}
+        className="truncate text-xs font-semibold text-marca"
       >
         {nomeAutor}
       </p>
       <p
         data-previa-referencia
         data-excluida={excluida || undefined}
-        className={`line-clamp-2 whitespace-pre-wrap text-xs [overflow-wrap:anywhere] ${emBalaoProprio ? "text-marca-conteudo/85" : "text-conteudo-suave"} ${excluida ? "italic" : ""}`}
+        className={`line-clamp-2 whitespace-pre-wrap text-xs [overflow-wrap:anywhere] ${emBalaoProprio ? "text-mensagem-enviada-conteudo/80" : "text-conteudo-suave"} ${excluida ? "italic" : ""}`}
       >
         {excluida
           ? "Mensagem excluída"

@@ -32,6 +32,7 @@ function mensagem(conversa: string, n: number, conteudo = `m${n}`): Mensagem {
     editadaEm: null,
     excluidaEm: null,
     pedido: null,
+    anexo: null,
   };
 }
 
@@ -39,7 +40,7 @@ function item(conversa: string, n: number): ItemListaConversas {
   return {
     id: idConversa(conversa),
     tipo: "direta",
-    outraIdentidade: { identidadeId: idConversa("e"), tipo: "pessoal", nomeExibicao: conversa, nomeUsuario: conversa },
+    outraIdentidade: { identidadeId: idConversa("e"), tipo: "pessoal", nomeExibicao: conversa, nomeUsuario: conversa, fotoUrl: null },
     ultimaMensagem: mensagem(conversa, n),
     atividadeId: mensagem(conversa, n).id,
     naoLidas: 0,

@@ -16,8 +16,7 @@ import {
   type Produto,
 } from "@jaa/contratos";
 import * as z from "zod";
-import { requisitarApi, type ResultadoApi } from "@/lib/api";
-import { enviarArquivo } from "@/features/perfil/lib/api-perfil";
+import { enviarArquivo, requisitarApi, type ResultadoApi } from "@/lib/api";
 
 // API administrativa; a empresa é autorizada no servidor a partir da sessão (a rota não é credencial).
 const rotaProdutos = (empresaId: string) => `/empresas/${encodeURIComponent(empresaId)}/produtos`;

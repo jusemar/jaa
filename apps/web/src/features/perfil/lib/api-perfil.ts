@@ -1,5 +1,4 @@
 import {
-  arquivoEnviadoSchema,
   listaExcecoesPrivacidadeSchema,
   meuPerfilSchema,
   perfilPublicoSchema,
@@ -14,9 +13,8 @@ import {
   type SituacaoSenha,
 } from "@jaa/contratos";
 import * as z from "zod";
-import { requisitarApi, type ResultadoApi } from "@/lib/api";
+import { enviarArquivo, requisitarApi, type ResultadoApi } from "@/lib/api";
 import { cabecalhosIdentidadeAtuante } from "@/lib/identidade-atuante";
-import { URL_API } from "@/lib/configuracao";
 
 /*
  * Perfil da identidade ATUANTE. O cabeçalho de identidade vai em tudo: agindo como a empresa, "meu
@@ -61,28 +59,9 @@ export function removerFoto(): Promise<ResultadoApi<{ removida: boolean }>> {
   return requisitarApi("/perfil/foto", z.object({ removida: z.boolean() }), { method: "DELETE", ...comIdentidade() });
 }
 
-/**
- * Envio de arquivo: multipart, sem `content-type` manual (o navegador precisa escrever o boundary).
- * Não passa por `requisitarApi` justamente porque lá todo corpo é JSON.
- */
-export async function enviarFotoPerfil(arquivo: File): Promise<ResultadoApi<ArquivoEnviado>> {
-  return enviarArquivo("/perfil/foto", arquivo);
-}
-
-export async function enviarArquivo(caminho: string, arquivo: File): Promise<ResultadoApi<ArquivoEnviado>> {
-  const corpo = new FormData();
-  corpo.append("arquivo", arquivo);
-  try {
-    const resposta = await fetch(`${URL_API}${caminho}`, { method: "POST", credentials: "include", headers: cabecalhosIdentidadeAtuante(), body: corpo });
-    const dados: unknown = await resposta.json().catch(() => null);
-    if (!resposta.ok) {
-      const erro = dados as { codigo?: string; mensagem?: string } | null;
-      return { ok: false, status: resposta.status, codigo: null, mensagem: erro?.mensagem ?? "Não foi possível enviar a imagem." };
-    }
-    return { ok: true, status: resposta.status, dados: arquivoEnviadoSchema.parse(dados) };
-  } catch {
-    return { ok: false, status: 0, codigo: null, mensagem: "Sem conexão com o servidor." };
-  }
+// Foto da identidade ATUANTE (avatar ou logo). O multipart compartilhado vive em `@/lib/api`.
+export function enviarFotoPerfil(arquivo: File): Promise<ResultadoApi<ArquivoEnviado>> {
+  return enviarArquivo("/perfil/foto", arquivo, cabecalhosIdentidadeAtuante());
 }
 
 export function buscarSituacaoSenha(): Promise<ResultadoApi<SituacaoSenha>> {

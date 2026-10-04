@@ -1,6 +1,7 @@
 import type { Banco } from "@jaa/banco";
 import type { EscopoExclusaoMensagem } from "@jaa/contratos";
 import { listarIdsParticipantesDaConversa } from "../../conversas/repositorios/repositorio-conversas.js";
+import { armazenamentoPrivadoIndisponivel, type ArmazenamentoPrivado } from "../../../lib/armazenamento/armazenamento-arquivos.js";
 import type { CanalEventosMensagens } from "../lib/eventos-mensagens.js";
 import {
   buscarMensagemNaConversa,
@@ -26,9 +27,25 @@ type ResultadoExcluirMensagem =
  * - "mim": qualquer participante; só ela deixa de ver (outras conexões dela recebem
  *   `mensagem-excluida-para-mim` com a nova última mensagem visível). Repetir é idempotente.
  * Mensagem já excluída "para mim" não existe mais para quem a excluiu (404 para "todos").
+ *
+ * IMAGEM: "todos" marca o anexo como removido na MESMA transação do tombstone e, DEPOIS do commit,
+ * apaga o arquivo do bucket privado. Falha ao apagar não desfaz nada (a mensagem já é tombstone e a
+ * URL não é mais gerada): o arquivo fica órfão para a varredura futura e a falha é avisada.
+ * "mim" nunca toca no arquivo: os outros participantes continuam vendo a imagem.
  */
 export async function excluirMensagem(
-  { banco, eventosMensagens }: { banco: Banco; eventosMensagens: CanalEventosMensagens },
+  {
+    banco,
+    eventosMensagens,
+    armazenamentoPrivado = armazenamentoPrivadoIndisponivel,
+    aoFalharRemocaoArquivo = () => undefined,
+  }: {
+    banco: Banco;
+    eventosMensagens: CanalEventosMensagens;
+    armazenamentoPrivado?: ArmazenamentoPrivado;
+    // Só a CHAVE e o erro do storage (sem credencial) — para registrar o órfão.
+    aoFalharRemocaoArquivo?: (chave: string, erro: unknown) => void;
+  },
   identidadeId: string,
   conversaId: string,
   mensagemId: string,
@@ -60,6 +77,9 @@ export async function excluirMensagem(
   if (!tombstone) return { tipo: "mensagem-nao-encontrada" };
 
   if (excluiu) {
+    for (const chave of excluiu.chavesRemovidas) {
+      await armazenamentoPrivado.remover(chave).catch((erro: unknown) => aoFalharRemocaoArquivo(chave, erro));
+    }
     const ocultaram = await listarIdentidadesQueOcultaram(banco, mensagemId);
     eventosMensagens.publicar({
       tipo: "mensagem-atualizada",

@@ -13,6 +13,7 @@ import {
   obterProduto,
   removerImagemProduto,
 } from "../lib/api-produtos";
+import { executarAcaoDeImagem } from "../lib/acao-imagem";
 import { FormularioProduto, type DadosFormularioProduto } from "./formulario-produto";
 import { GerenciadorCategorias } from "./gerenciador-categorias";
 import { GerenciadorPersonalizacao } from "./gerenciador-personalizacao";
@@ -145,15 +146,10 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
           aoCancelar={() => setTela({ nome: "lista" })}
           {...(produto
             ? {
-                aoEnviarImagem: async (arquivo: File) => {
-                  const resposta = await enviarImagemProduto(empresaId, produto.id, arquivo);
-                  if (!resposta.ok) throw new Error(resposta.mensagem);
-                  await recarregarProdutoAberto(produto.id);
-                },
-                aoRemoverImagem: async () => {
-                  await removerImagemProduto(empresaId, produto.id);
-                  await recarregarProdutoAberto(produto.id);
-                },
+                aoEnviarImagem: (arquivo: File) =>
+                  executarAcaoDeImagem(() => enviarImagemProduto(empresaId, produto.id, arquivo), () => recarregarProdutoAberto(produto.id)),
+                aoRemoverImagem: () =>
+                  executarAcaoDeImagem(() => removerImagemProduto(empresaId, produto.id), () => recarregarProdutoAberto(produto.id)),
               }
             : {})}
         />

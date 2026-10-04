@@ -38,20 +38,23 @@ export function AvatarIdentidade({
   fotoUrl,
   tamanho = "medio",
 }: {
-  identidade: Pick<ParticipanteConversa, "identidadeId" | "nomeExibicao" | "tipo">;
+  // A foto normalmente vem NA identidade (`fotoUrl` já filtrada pela privacidade no servidor): quem
+  // exibe uma identidade não precisa lembrar de repassá-la. A prop `fotoUrl`, se informada, prevalece.
+  identidade: Pick<ParticipanteConversa, "identidadeId" | "nomeExibicao" | "tipo"> & { fotoUrl?: string | null };
   fotoUrl?: string | null;
   tamanho?: TamanhoAvatar;
 }) {
   const classes = `${TAMANHOS[tamanho]} shrink-0 overflow-hidden rounded-full`;
+  const foto = fotoUrl !== undefined ? fotoUrl : (identidade.fotoUrl ?? null);
 
-  if (fotoUrl) {
+  if (foto) {
     /*
      * <img> puro de propósito: a foto vem do armazenamento de arquivos do Jaa (URL externa), e o
      * otimizador do Next não agrega aqui — é uma miniatura pequena e já dimensionada.
      * alt vazio: o nome aparece ao lado, e leitores de tela não devem repeti-lo.
      */
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={fotoUrl} alt="" className={`${classes} object-cover`} />;
+    return <img src={foto} alt="" className={`${classes} object-cover`} />;
   }
 
   const tom = identidade.tipo === "empresarial" ? TOM_EMPRESA : tomDe(identidade.identidadeId);

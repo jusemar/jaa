@@ -144,19 +144,19 @@ export async function buscarProdutoComCategoria(banco: Banco, empresaId: string,
   return linha ? { ...linha.produto, categoriaNome: linha.categoriaNome } : null;
 }
 
-/** Troca a imagem e devolve a chave ANTERIOR, para remover o arquivo velho do armazenamento. */
+/**
+ * Troca a imagem e devolve a chave ANTERIOR, para remover o arquivo velho do armazenamento.
+ * Ler e trocar acontecem com a linha TRAVADA: duas trocas simultâneas se enfileiram e cada uma remove
+ * exatamente a imagem que substituiu (nunca a mesma duas vezes, nunca deixando uma órfã sem saber).
+ */
 export async function definirImagemDoProduto(banco: Banco, empresaId: string, produtoId: string, imagemChave: string | null): Promise<string | null | undefined> {
-  const [anterior] = await banco
-    .select({ chave: produtos.imagemChave })
-    .from(produtos)
-    .where(and(eq(produtos.empresaId, empresaId), eq(produtos.id, produtoId)))
-    .limit(1);
-  // undefined = produto não existe nesta empresa (diferente de "existe e não tem imagem").
-  if (!anterior) return undefined;
+  return banco.transaction(async (transacao) => {
+    const escopo = and(eq(produtos.empresaId, empresaId), eq(produtos.id, produtoId));
+    const [anterior] = await transacao.select({ chave: produtos.imagemChave }).from(produtos).where(escopo).for("update");
+    // undefined = produto não existe nesta empresa (diferente de "existe e não tem imagem").
+    if (!anterior) return undefined;
 
-  await banco
-    .update(produtos)
-    .set({ imagemChave, atualizadoEm: new Date() })
-    .where(and(eq(produtos.empresaId, empresaId), eq(produtos.id, produtoId)));
-  return anterior.chave;
+    await transacao.update(produtos).set({ imagemChave, atualizadoEm: new Date() }).where(escopo);
+    return anterior.chave;
+  });
 }

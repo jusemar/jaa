@@ -154,6 +154,25 @@ export const IconeMicrofone = (props: PropsIcone) => (
   </Icone>
 );
 
+// Controles do player e da gravação de áudio.
+export const IconeTocar = (props: PropsIcone) => (
+  <Icone {...props}>
+    <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
+  </Icone>
+);
+
+export const IconePausar = (props: PropsIcone) => (
+  <Icone {...props}>
+    <path d="M8.5 5.5v13M15.5 5.5v13" />
+  </Icone>
+);
+
+export const IconeParar = (props: PropsIcone) => (
+  <Icone {...props}>
+    <rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor" />
+  </Icone>
+);
+
 export const IconeAnexo = (props: PropsIcone) => (
   <Icone {...props}>
     <path d="M20 11.5 12.2 19a4.6 4.6 0 0 1-6.5-6.5l7.6-7.6a3 3 0 0 1 4.3 4.3l-7.6 7.6a1.5 1.5 0 0 1-2.1-2.1l7-7" />
@@ -199,6 +218,28 @@ export const IconeFechar = (props: PropsIcone) => (
 export const IconeSetaBaixo = (props: PropsIcone) => (
   <Icone {...props}>
     <path d="m6 9 6 6 6-6" />
+  </Icone>
+);
+
+// Responder (seta que volta), editar (lápis) e painel lateral (recolher/abrir a lista).
+export const IconeResponder = (props: PropsIcone) => (
+  <Icone {...props}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10a6 6 0 0 1 6 6v4" />
+  </Icone>
+);
+
+export const IconeLapis = (props: PropsIcone) => (
+  <Icone {...props}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </Icone>
+);
+
+export const IconePainelLateral = (props: PropsIcone) => (
+  <Icone {...props}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
   </Icone>
 );
 

@@ -87,7 +87,7 @@ describe("conversa Pessoa ↔ Empresa", () => {
     assert.deepEqual(inboxPizzaria.map((c) => [c.id, c.outraIdentidade.identidadeId, c.outraIdentidade.tipo, c.naoLidas]), [[conversaBP, B.identidadeId, "pessoal", 1]]);
     assert.ok(!(await listar(A)).some((c) => c.id === conversaBP), "inbox pessoal isolada");
     const inboxB = await listar(B);
-    assert.deepEqual(inboxB.find((c) => c.id === conversaBP)?.outraIdentidade, { identidadeId: pizzaria.identidadeId, tipo: "empresarial", nomeExibicao: "Pizzaria BH", nomeUsuario: `${PREFIXO}_pizza` });
+    assert.deepEqual(inboxB.find((c) => c.id === conversaBP)?.outraIdentidade, { identidadeId: pizzaria.identidadeId, tipo: "empresarial", nomeExibicao: "Pizzaria BH", nomeUsuario: `${PREFIXO}_pizza`, fotoUrl: null });
     assert.equal((await ctx.historico(comoPizzaria, conversaBP)).mensagens.at(-1)?.id, mensagem.id);
     assert.equal((await ctx.api(A, "GET", `/conversas/${conversaBP}/mensagens`)).statusCode, 404, "A pessoal não lê a conversa da empresa");
     pizzaSocket.disconnect();

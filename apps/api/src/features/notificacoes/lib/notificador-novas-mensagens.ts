@@ -1,5 +1,5 @@
 import type { Banco } from "@jaa/banco";
-import { PREVIA_MENSAGEM_RESPONDIDA_TAMANHO_MAXIMO } from "@jaa/contratos";
+import { PREVIA_AUDIO, PREVIA_IMAGEM, PREVIA_MENSAGEM_RESPONDIDA_TAMANHO_MAXIMO } from "@jaa/contratos";
 import { buscarDadosPublicosIdentidade } from "../../identidades/repositorios/repositorio-identidades.js";
 import type { CanalEventosMensagens } from "../../mensagens/lib/eventos-mensagens.js";
 
@@ -34,7 +34,8 @@ export function criarNotificadorNovasMensagens({
       try {
         const remetente = await buscarDadosPublicosIdentidade(banco, mensagem.remetenteIdentidadeId);
         if (!remetente) return;
-        const caracteres = [...mensagem.conteudo];
+        // Imagem avisa só "Foto" e áudio só "Áudio": nem legenda, nem URL, nem nada do arquivo privado.
+        const caracteres = [...(mensagem.tipo === "imagem" ? PREVIA_IMAGEM : mensagem.tipo === "audio" ? PREVIA_AUDIO : mensagem.conteudo)];
         eventosMensagens.publicar({
           tipo: "notificacao-nova-mensagem",
           conversaId: mensagem.conversaId,

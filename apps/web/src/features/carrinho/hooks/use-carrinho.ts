@@ -1,10 +1,11 @@
 "use client";
 
-import type { EmpresaPublica, ProdutoPublico } from "@jaa/contratos";
+import type { CatalogoPublico, EmpresaPublica, ProdutoPublico } from "@jaa/contratos";
 import { useCallback, useSyncExternalStore } from "react";
 import {
   adicionarAoCarrinho,
   alterarQuantidade,
+  atualizarImagensDoCarrinho,
   removerDoCarrinho,
   type Carrinho,
   type EscolhaCarrinho,
@@ -52,5 +53,17 @@ export function useCarrinho(identidadeId: string) {
     alterarQuantidade: useCallback((linhaId: string, quantidade: number) => carrinho && guardar(alterarQuantidade(carrinho, linhaId, quantidade)), [carrinho, guardar]),
     remover: useCallback((linhaId: string) => carrinho && guardar(removerDoCarrinho(carrinho, linhaId)), [carrinho, guardar]),
     limpar: useCallback(() => guardar(null), [guardar]),
+    // Catálogo recém-lido do servidor: a imagem de cada item passa a ser a ATUAL do produto.
+    sincronizarImagens: useCallback(
+      (catalogo: CatalogoPublico) => {
+        // Lê o carrinho ATUAL do depósito (não o deste render): o catálogo chega depois, e um item
+        // adicionado nesse meio-tempo não pode ser sobrescrito por uma cópia antiga.
+        const atual = carrinhoAtual(identidadeId);
+        if (!atual) return;
+        const atualizado = atualizarImagensDoCarrinho(atual, catalogo.empresa.identidadeId, catalogo.produtos);
+        if (atualizado !== atual) guardar(atualizado);
+      },
+      [identidadeId, guardar],
+    ),
   };
 }

@@ -3,12 +3,13 @@ import { describe, it } from "node:test";
 import type { IdentidadeOperavel } from "@jaa/contratos";
 import { resolverIdentidadeAtiva } from "./selecao-identidade.ts";
 
-const pessoal: IdentidadeOperavel = { tipo: "pessoal", identidadeId: "aaaaaaaa-0000-4000-8000-000000000000", nomeExibicao: "Junior Rocha", nomeUsuario: "junior" };
+const pessoal: IdentidadeOperavel = { tipo: "pessoal", identidadeId: "aaaaaaaa-0000-4000-8000-000000000000", nomeExibicao: "Junior Rocha", nomeUsuario: "junior", fotoUrl: null };
 const empresa: IdentidadeOperavel = {
   tipo: "empresarial",
   identidadeId: "bbbbbbbb-0000-4000-8000-000000000000",
   nomeExibicao: "Pizzaria BH",
   nomeUsuario: "pizzariabh",
+  fotoUrl: null,
   empresa: { id: "cccccccc-0000-4000-8000-000000000000", slug: "pizzaria-bh", papel: "proprietario" },
 };
 

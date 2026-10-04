@@ -10,6 +10,8 @@ import {
   type ResultadoBusca,
 } from "@jaa/contratos";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { ArmazenamentoDeArquivos } from "../../../lib/armazenamento/armazenamento-arquivos.js";
+import { comFotosVisiveis, resolverFotosVisiveis } from "../../perfil/lib/visibilidade-foto.js";
 import * as z from "zod";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
 import { exigirIdentidadeAtuante, obterIdentidadeExigida } from "../../autenticacao/lib/exigir-identidade-autenticada.js";
@@ -38,22 +40,32 @@ function responder(resposta: FastifyReply, status: number, erro: ErroApi) {
   return resposta.code(status).send(erro);
 }
 
-const serializarContato = (registro: ContatoRegistro): Contato => ({
-  identidade: registro.identidade,
+const serializarContato = (registro: ContatoRegistro, fotoUrl: string | null): Contato => ({
+  identidade: { ...registro.identidade, fotoUrl },
   apelido: registro.apelido,
   favorito: registro.favorito,
   criadoEm: registro.criadoEm.toISOString(),
 });
 
-const paraResultado = (identidade: IdentidadePublica, apelido: string | null, ehContato: boolean): ResultadoBusca => ({ identidade, ehContato, apelido });
+const paraResultado = (identidade: IdentidadePublica, fotoUrl: string | null, apelido: string | null, ehContato: boolean): ResultadoBusca => ({
+  identidade: { ...identidade, fotoUrl },
+  ehContato,
+  apelido,
+});
 
-export function registrarRotasContatos(servidor: FastifyInstance, dependencias: { banco: Banco; autenticacao: Autenticacao }) {
+export function registrarRotasContatos(servidor: FastifyInstance, dependencias: { banco: Banco; autenticacao: Autenticacao; armazenamento: ArmazenamentoDeArquivos }) {
   const preHandler = exigirIdentidadeAtuante(dependencias);
-  const { banco } = dependencias;
+  const { banco, armazenamento } = dependencias;
+  const urlPublica = (chave: string) => armazenamento.urlPublica(chave);
+  // Foto de cada identidade listada, decidida pela privacidade DELA para quem está vendo (uma consulta).
+  const fotosPara = (observadorId: string, identidades: readonly IdentidadePublica[]) =>
+    resolverFotosVisiveis(banco, observadorId, identidades.map((identidade) => identidade.identidadeId), urlPublica);
 
   servidor.get("/contatos", { preHandler }, async (requisicao) => {
     const { identidadeId } = obterIdentidadeExigida(requisicao);
-    const lista: ListaContatos = { contatos: (await listarContatos(banco, identidadeId)).map(serializarContato) };
+    const registros = await listarContatos(banco, identidadeId);
+    const fotos = await fotosPara(identidadeId, registros.map((registro) => registro.identidade));
+    const lista: ListaContatos = { contatos: registros.map((registro) => serializarContato(registro, fotos.get(registro.identidade.identidadeId) ?? null)) };
     return lista;
   });
 
@@ -73,8 +85,9 @@ export function registrarRotasContatos(servidor: FastifyInstance, dependencias: 
     if (!identidade) return responder(resposta, 404, { codigo: "IDENTIDADE_NAO_ENCONTRADA", mensagem: "Identidade não encontrada." });
 
     await salvarContato(banco, identidadeId, identidade.identidadeId, entrada.data.apelido?.trim() || null);
+    const [identidadeComFoto] = await comFotosVisiveis(banco, identidadeId, [identidade], urlPublica);
     const contato: Contato = {
-      identidade,
+      identidade: identidadeComFoto ?? { ...identidade, fotoUrl: null },
       apelido: entrada.data.apelido?.trim() || null,
       favorito: false,
       criadoEm: new Date().toISOString(),
@@ -119,9 +132,13 @@ export function registrarRotasContatos(servidor: FastifyInstance, dependencias: 
     });
 
     const conhecidos = await filtrarContatosConhecidos(banco, identidadeId, externos.map((identidade) => identidade.identidadeId));
+    const fotos = await fotosPara(identidadeId, [...daAgenda.map((contato) => contato.identidade), ...externos]);
+    const foto = (identidade: IdentidadePublica) => fotos.get(identidade.identidadeId) ?? null;
     const busca: RespostaBusca = {
-      contatos: daAgenda.map((contato) => paraResultado(contato.identidade, contato.apelido, true)),
-      externos: externos.map((identidade) => paraResultado(identidade, conhecidos.get(identidade.identidadeId) ?? null, conhecidos.has(identidade.identidadeId))),
+      contatos: daAgenda.map((contato) => paraResultado(contato.identidade, foto(contato.identidade), contato.apelido, true)),
+      externos: externos.map((identidade) =>
+        paraResultado(identidade, foto(identidade), conhecidos.get(identidade.identidadeId) ?? null, conhecidos.has(identidade.identidadeId)),
+      ),
     };
     // Nada de telefone no payload, mesmo quando a busca foi feita por telefone.
     void resposta;

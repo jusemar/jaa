@@ -1,5 +1,5 @@
 import { SimboloBloqueio } from "./bloqueio-conversa";
-import type { ParticipanteConversa } from "@jaa/contratos";
+import type { IdentidadeVisivel } from "@jaa/contratos";
 import type { ReactNode } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
 import { IconeVoltar } from "@/components/ui/icones";
@@ -21,15 +21,18 @@ export function CabecalhoConversa({
   digitando,
   acoes,
   aoVoltar,
+  inicio,
   bloqueada = false,
 }: {
-  outraIdentidade: ParticipanteConversa;
+  // Antes do avatar, só na janela larga (ex.: reabrir o painel lateral recolhido).
+  inicio?: ReactNode;
+  outraIdentidade: IdentidadeVisivel;
   // Comunicação bloqueada (qualquer sentido): 🚫 discreto junto ao nome, sem aviso textual.
   bloqueada?: boolean;
   presenca: "online" | "offline" | null;
   digitando: boolean;
   acoes?: ReactNode;
-  // Só no celular: a conversa ocupa a tela toda e precisa de um caminho de volta para a lista.
+  // Só na janela estreita: a conversa ocupa a tela toda e precisa de um caminho de volta para a lista.
   aoVoltar?: () => void;
 }) {
   const descricaoPresenca =
@@ -57,11 +60,12 @@ export function CabecalhoConversa({
             data-voltar-conversas
             aria-label="Voltar para conversas"
             onClick={aoVoltar}
-            className="-ml-1 grid h-10 w-10 shrink-0 place-items-center rounded-jaa-compacto text-conteudo-suave hover:bg-realce xl:hidden"
+            className="-ml-1 grid h-10 w-10 shrink-0 place-items-center rounded-jaa-compacto text-conteudo-suave hover:bg-realce md:hidden"
           >
             <IconeVoltar className="h-5 w-5" />
           </button>
         )}
+        {inicio}
 
         <span className="relative shrink-0">
           <AvatarIdentidade identidade={outraIdentidade} tamanho="medio" />

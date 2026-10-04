@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { comunicacaoBloqueada, type ItemListaConversas, type ParticipanteConversa } from "@jaa/contratos";
+import { comunicacaoBloqueada, type IdentidadeVisivel, type ItemListaConversas } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ConfirmarAcaoConversa, acoesDisponiveis } from "./acoes-conversa.tsx";
@@ -10,9 +10,9 @@ import { CabecalhoConversa } from "./cabecalho-conversa.tsx";
 import { ListaConversas } from "./lista-conversas.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-const PESSOA: ParticipanteConversa = { identidadeId: "aaaaaaaa-0000-4000-8000-000000000001", tipo: "pessoal", nomeExibicao: "Carlos", nomeUsuario: "carlos" };
-const EMPRESA: ParticipanteConversa = { identidadeId: "aaaaaaaa-0000-4000-8000-000000000002", tipo: "empresarial", nomeExibicao: "Pizzaria", nomeUsuario: "pizzaria" };
-const item = (outra: ParticipanteConversa, extra: Partial<ItemListaConversas> = {}): ItemListaConversas => ({
+const PESSOA: IdentidadeVisivel = { identidadeId: "aaaaaaaa-0000-4000-8000-000000000001", tipo: "pessoal", nomeExibicao: "Carlos", nomeUsuario: "carlos", fotoUrl: null };
+const EMPRESA: IdentidadeVisivel = { identidadeId: "aaaaaaaa-0000-4000-8000-000000000002", tipo: "empresarial", nomeExibicao: "Pizzaria", nomeUsuario: "pizzaria", fotoUrl: null };
+const item = (outra: IdentidadeVisivel, extra: Partial<ItemListaConversas> = {}): ItemListaConversas => ({
   id: "bbbbbbbb-0000-4000-8000-000000000001",
   tipo: "direta",
   outraIdentidade: outra,

@@ -14,7 +14,7 @@ export type TipoImagemAceito = (typeof TIPOS_IMAGEM_ACEITOS)[number];
 // 8 MB é folgado para foto de celular e continua barato de processar no servidor.
 export const TAMANHO_MAXIMO_IMAGEM_BYTES = 8 * 1024 * 1024;
 
-export const tipoAnexoSchema = z.enum(["avatar", "logo-empresa", "imagem-produto"]);
+export const tipoAnexoSchema = z.enum(["avatar", "logo-empresa", "imagem-produto", "imagem-conversa"]);
 export type TipoAnexo = z.infer<typeof tipoAnexoSchema>;
 
 /** Lado maior da imagem depois do processamento. Não é decoração: limita o que vai ao armazenamento. */
@@ -22,6 +22,8 @@ export const DIMENSAO_MAXIMA: Record<TipoAnexo, number> = {
   avatar: 512,
   "logo-empresa": 512,
   "imagem-produto": 1024,
+  // Foto de conversa: boa para ver em tela cheia, sem a resolução original da câmera.
+  "imagem-conversa": 1600,
 };
 
 export function ehTipoImagemAceito(tipo: string): tipo is TipoImagemAceito {

@@ -34,6 +34,8 @@
   --cor-marca-suave: oklch(0.947 0.055 137);
   --cor-marca-suave-conteudo: oklch(0.265 0.02 160);
   --cor-marca-conteudo: oklch(1 0 0);
+  /* Mensagem LIDA (✓✓): azul, o sinal que as pessoas já conhecem dos mensageiros. Só para esse estado. */
+  --cor-leitura: oklch(0.68 0.14 237);
   --cor-perigo: oklch(0.577 0.245 27.325);
   /* Ouro só para o que é COMERCIAL: selo de empresa, card de pedido. */
   --cor-ouro: oklch(0.82 0.15 86);
@@ -89,6 +91,7 @@
   --color-marca-suave: var(--cor-marca-suave);
   --color-marca-suave-conteudo: var(--cor-marca-suave-conteudo);
   --color-marca-conteudo: var(--cor-marca-conteudo);
+  --color-leitura: var(--cor-leitura);
   --color-perigo: var(--cor-perigo);
   --color-aviso: var(--cor-aviso);
   --color-ouro: var(--cor-ouro);
@@ -140,6 +143,16 @@ textarea {
 :focus-visible {
   outline: 2px solid var(--cor-marca);
   outline-offset: 2px;
+}
+
+/*
+ * Campo de texto que É a própria caixa (compositor da conversa): focado, mostra só o cursor. A regra
+ * de cima está fora das camadas do Tailwind e venceria um `outline-none` de utilitário, por isso a
+ * exceção fica aqui, com seletor mais específico. Vale só para campo de TEXTO, onde o cursor piscando
+ * já indica o foco; botões continuam com o contorno.
+ */
+.campo-sem-contorno:focus-visible {
+  outline: none;
 }
 
 /*

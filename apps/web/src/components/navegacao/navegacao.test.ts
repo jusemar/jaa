@@ -8,12 +8,13 @@ import { NavegacaoApp } from "./navegacao-app.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
 
-const pessoal: IdentidadeOperavel = { tipo: "pessoal", identidadeId: "aaaaaaaa-0000-4000-8000-000000000000", nomeExibicao: "Junior Rocha", nomeUsuario: "junior" };
+const pessoal: IdentidadeOperavel = { tipo: "pessoal", identidadeId: "aaaaaaaa-0000-4000-8000-000000000000", nomeExibicao: "Junior Rocha", nomeUsuario: "junior", fotoUrl: null };
 const empresarial: IdentidadeOperavel = {
   tipo: "empresarial",
   identidadeId: "bbbbbbbb-0000-4000-8000-000000000000",
   nomeExibicao: "Pizzaria BH",
   nomeUsuario: "pizzariabh",
+  fotoUrl: null,
   empresa: { id: "cccccccc-0000-4000-8000-000000000000", slug: "pizzaria-bh", papel: "proprietario" },
 };
 void empresarial;

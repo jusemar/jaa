@@ -632,7 +632,10 @@ function ItemDoPedido({
 
 /** Miniatura do produto. Sem imagem cadastrada, um marcador neutro — nunca um espaço vazio quebrado. */
 function Miniatura({ url, nome }: { url: string | null; nome: string }) {
-  if (!url) {
+  // URL que falhou ao carregar (ex.: a empresa trocou a foto depois que o item entrou no carrinho):
+  // volta para o marcador neutro em vez de mostrar imagem quebrada.
+  const [falhou, setFalhou] = useState<string | null>(null);
+  if (!url || falhou === url) {
     return (
       <span
         aria-hidden
@@ -649,6 +652,7 @@ function Miniatura({ url, nome }: { url: string | null; nome: string }) {
       src={url}
       alt={nome}
       loading="lazy"
+      onError={() => setFalhou(url)}
       className="h-12 w-12 shrink-0 rounded-jaa-compacto object-cover"
     />
   );

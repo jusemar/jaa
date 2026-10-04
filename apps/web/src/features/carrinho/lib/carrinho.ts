@@ -123,6 +123,31 @@ export function adicionarAoCarrinho(
   return { tipo: "adicionado", carrinho: { empresa, itens }, linhaId };
 }
 
+/**
+ * Atualiza a IMAGEM dos itens com o catálogo que acabou de chegar do servidor. O carrinho guarda a URL
+ * do momento em que o item foi adicionado; se a empresa trocou ou removeu a foto depois, aquela URL
+ * deixou de existir no armazenamento. Só a imagem muda: preço e disponibilidade continuam sendo
+ * conferidos pelo servidor na confirmação. Sem mudança, devolve o MESMO objeto (nada é regravado).
+ */
+export function atualizarImagensDoCarrinho(
+  carrinho: Carrinho,
+  empresaIdentidadeId: string,
+  produtos: readonly Pick<ProdutoPublico, "id" | "imagemUrl">[],
+): Carrinho {
+  if (carrinho.empresa.identidadeId !== empresaIdentidadeId) return carrinho;
+  const imagens = new Map(produtos.map((produto) => [produto.id, produto.imagemUrl]));
+  let mudou = false;
+  const itens = carrinho.itens.map((item) => {
+    // Produto fora da lista (ex.: ficou indisponível) não é tocado: a confirmação decide o que fazer.
+    if (!imagens.has(item.produtoId)) return item;
+    const imagemUrl = imagens.get(item.produtoId) ?? null;
+    if (imagemUrl === item.imagemUrl) return item;
+    mudou = true;
+    return { ...item, imagemUrl };
+  });
+  return mudou ? { ...carrinho, itens } : carrinho;
+}
+
 export function alterarQuantidade(carrinho: Carrinho, linhaId: string, quantidade: number): Carrinho {
   if (quantidade < 1) return removerDoCarrinho(carrinho, linhaId);
   return { ...carrinho, itens: carrinho.itens.map((item) => (item.linhaId === linhaId ? { ...item, quantidade: limitarQuantidade(quantidade) } : item)) };

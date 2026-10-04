@@ -4,7 +4,6 @@ import { PREVIA_MENSAGEM_RESPONDIDA_TAMANHO_MAXIMO, type ItemListaConversas, typ
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { formatarHorarioMensagem } from "../lib/horarios.ts";
-import { AcoesMidiaDesabilitadas } from "./acoes-midia-desabilitadas.tsx";
 import { AvisosNotificacao } from "./avisos-notificacao.tsx";
 import { BalaoMensagem } from "./balao-mensagem.tsx";
 import { CabecalhoConversa } from "./cabecalho-conversa.tsx";
@@ -14,7 +13,7 @@ import { formatarHorarioDaLista, ListaConversas } from "./lista-conversas.tsx";
 // Renderização real dos componentes de apresentação (sem navegador) para verificar o que é exibido.
 
 const EU = "eeeeeeee-0000-4000-8000-000000000000";
-const OUTRA = { identidadeId: "ffffffff-0000-4000-8000-000000000000", tipo: "pessoal" as const, nomeExibicao: "Mateus Filho", nomeUsuario: "mateus" };
+const OUTRA = { identidadeId: "ffffffff-0000-4000-8000-000000000000", tipo: "pessoal" as const, nomeExibicao: "Mateus Filho", nomeUsuario: "mateus", fotoUrl: null };
 const agora = new Date();
 const ha = (minutos: number) => new Date(agora.getTime() - minutos * 60_000).toISOString();
 
@@ -31,16 +30,26 @@ function mensagem(n: number, remetente: string, criadoEm: string, estado: Mensag
     editadaEm: null,
     excluidaEm: null,
     pedido: null,
+    anexo: null,
   };
 }
 
 const html = (elemento: ReactElement) => renderToStaticMarkup(elemento);
+// Itens do menu da mensagem (renderizado aberto nestes testes).
+const ACAO = {
+  responder: 'data-acao-mensagem="responder"',
+  editar: 'data-acao-mensagem="editar"',
+  paraMim: 'data-acao-mensagem="apagar-para-mim"',
+  paraTodos: 'data-acao-mensagem="apagar-para-todos"',
+};
+
 const balao = (m: Mensagem, aoResponder?: (m: Mensagem) => void, aoEditar?: (m: Mensagem) => void) =>
   html(
     createElement(BalaoMensagem, {
       mensagem: m,
       identidadeAtualId: EU,
       nomeRemetente: OUTRA.nomeExibicao,
+      menuAberto: true,
       ...(aoResponder ? { aoResponder } : {}),
       ...(aoEditar ? { aoEditar } : {}),
     }),
@@ -93,8 +102,8 @@ describe("edição no balão", () => {
 
   it("ação Editar só existe na mensagem própria", () => {
     const noop = () => {};
-    assert.ok(balao(mensagem(22, EU, ha(2)), noop, noop).includes(">Editar<"));
-    assert.ok(!balao(mensagem(23, OUTRA.identidadeId, ha(2)), noop, noop).includes(">Editar<"));
+    assert.ok(balao(mensagem(22, EU, ha(2)), noop, noop).includes(ACAO.editar));
+    assert.ok(!balao(mensagem(23, OUTRA.identidadeId, ha(2)), noop, noop).includes(ACAO.editar));
   });
 });
 
@@ -143,7 +152,7 @@ describe("resposta dentro do balão", () => {
   it("mensagem comum não tem referência; ação Responder aparece quando disponível", () => {
     const comum = balao(mensagem(10, OUTRA.identidadeId, ha(1)), () => {});
     assert.ok(!comum.includes("data-referencia-resposta"));
-    assert.ok(comum.includes('aria-label="Responder"'));
+    assert.ok(comum.includes(ACAO.responder));
     assert.ok(comum.includes('data-resposta="false"'));
   });
 
@@ -164,24 +173,24 @@ describe("exclusão no balão", () => {
   const tombstone = (remetente: string): Mensagem => ({ ...mensagem(30, remetente, ha(10), "lida"), conteudo: "", excluidaEm: ha(1) });
   const noop = () => {};
   const comAcoes = (m: Mensagem) =>
-    html(createElement(BalaoMensagem, { mensagem: m, identidadeAtualId: EU, nomeRemetente: OUTRA.nomeExibicao, aoResponder: noop, aoEditar: noop, aoExcluirParaMim: noop, aoExcluirParaTodos: noop }));
+    html(createElement(BalaoMensagem, { mensagem: m, identidadeAtualId: EU, nomeRemetente: OUTRA.nomeExibicao, aoResponder: noop, aoEditar: noop, aoExcluirParaMim: noop, aoExcluirParaTodos: noop, menuAberto: true }));
 
   it("tombstone mostra 'Mensagem excluída' com o horário original, sem conteúdo, status, referência nem Responder/Editar", () => {
     const marcacao = comAcoes({ ...tombstone(EU), mensagemRespondida: null });
     assert.ok(texto(marcacao).includes("Mensagem excluída"));
     assert.ok(marcacao.includes('data-excluida="true"'));
     assert.ok(marcacao.includes("<time"));
-    for (const ausente of ["data-estado", "data-referencia-resposta", 'aria-label="Responder"', ">Editar<", ">Excluir para todos<", "data-editada"]) {
+    for (const ausente of ["data-estado", "data-referencia-resposta", ACAO.responder, ACAO.editar, ACAO.paraTodos, "data-editada"]) {
       assert.ok(!marcacao.includes(ausente), ausente);
     }
-    assert.ok(marcacao.includes(">Excluir para mim<"), "tombstone ainda pode ser escondido para mim");
+    assert.ok(marcacao.includes(ACAO.paraMim), "tombstone ainda pode ser escondido para mim");
   });
 
   it("Excluir para todos só na própria; Excluir para mim em qualquer mensagem", () => {
     const propria = comAcoes(mensagem(31, EU, ha(2)));
     const recebida = comAcoes(mensagem(32, OUTRA.identidadeId, ha(2)));
-    assert.ok(propria.includes(">Excluir para todos<") && propria.includes(">Excluir para mim<"));
-    assert.ok(!recebida.includes(">Excluir para todos<") && recebida.includes(">Excluir para mim<"));
+    assert.ok(propria.includes(ACAO.paraTodos) && propria.includes(ACAO.paraMim));
+    assert.ok(!recebida.includes(ACAO.paraTodos) && recebida.includes(ACAO.paraMim));
   });
 
   it("referência a mensagem excluída mostra 'Mensagem excluída' sem conteúdo", () => {
@@ -226,10 +235,10 @@ describe("mensagem de pedido no balão", () => {
 
   it("card de pedido não é texto: não oferece editar nem responder", () => {
     const marcacao = balao(comPedido, noop, noop);
-    assert.ok(!marcacao.includes(">Editar<"));
-    assert.ok(!marcacao.includes(">Responder<"));
+    assert.ok(!marcacao.includes(ACAO.editar));
+    assert.ok(!marcacao.includes(ACAO.responder));
     // A mesma mensagem como texto continua com as ações normais.
-    assert.ok(balao(mensagem(9, EU, ha(1)), noop, noop).includes(">Editar<"));
+    assert.ok(balao(mensagem(9, EU, ha(1)), noop, noop).includes(ACAO.editar));
   });
 });
 
@@ -266,7 +275,7 @@ describe("CabecalhoConversa", () => {
      * A seta existe onde vale UMA TELA POR VEZ, e desaparece exatamente onde lista, conversa e
      * pedido convivem (`xl`) — o mesmo e único breakpoint do mensageiro, nunca `md`/`lg` soltos.
      */
-    assert.ok(/data-voltar-conversas[^>]*xl:hidden|xl:hidden[^>]*data-voltar-conversas/.test(comVoltar));
+    assert.ok(/data-voltar-conversas[^>]*md:hidden|md:hidden[^>]*data-voltar-conversas/.test(comVoltar), "na janela larga a lista está ao lado: não há para onde voltar");
     assert.equal(cabecalho("online", false).includes("data-voltar-conversas"), false);
   });
 
@@ -372,24 +381,6 @@ describe("ListaConversas", () => {
     assert.match(formatarHorarioDaLista("2026-09-17T09:42:00.000Z", agora), /^\d{2}:\d{2}$/);
     assert.equal(formatarHorarioDaLista("2026-09-16T23:10:00.000Z", agora), "ontem");
     assert.equal(formatarHorarioDaLista("2026-06-01T10:00:00.000Z", agora), "01/06/26");
-  });
-});
-
-describe("anexar (mídia futura) no compositor", () => {
-  it("um único botão de anexar, desabilitado, anunciando os quatro tipos e sem seletor de arquivo", () => {
-    const marcacao = html(createElement(AcoesMidiaDesabilitadas));
-    const botoes = marcacao.match(/<button[^>]*data-midia-futura="[^"]*"[^>]*>/g) ?? [];
-    // UM controle, como no WhatsApp: quatro botões só para dizer "em breve" tomavam a linha do compositor.
-    assert.equal(botoes.length, 1);
-    const botao = botoes[0] ?? "";
-    assert.ok(botao.includes("disabled"), "desabilitado");
-    assert.ok(botao.includes('type="button"'), "não envia o formulário");
-    // Nada da informação se perde: os quatro tipos continuam no rótulo acessível e na dica.
-    for (const tipo of ["foto", "vídeo", "áudio", "documento"]) {
-      assert.ok(botao.toLowerCase().includes(tipo), tipo);
-    }
-    assert.ok(texto(marcacao).includes("Em breve"));
-    assert.ok(!/<input|type="file"|<form|ondrop|accept=/i.test(marcacao), "sem seletor, upload ou drop");
   });
 });
 

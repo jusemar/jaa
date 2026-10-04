@@ -6,6 +6,10 @@ import {
   mensagemSchema,
   paginaConversasSchema,
   paginaMensagensSchema,
+  urlsAudiosSchema,
+  urlsImagensSchema,
+  CAMPO_ARQUIVO_AUDIO,
+  CAMPO_ARQUIVO_IMAGEM,
   type ConfirmacaoRecebimento,
   type ConfirmarLeituraEntrada,
   type ConfirmarRecebimentoEntrada,
@@ -17,8 +21,14 @@ import {
   type Mensagem,
   type PaginaConversas,
   type PaginaMensagens,
+  type PedirUrlsAudiosEntrada,
+  type PedirUrlsImagensEntrada,
+  type UrlsAudios,
+  type UrlsImagens,
 } from "@jaa/contratos";
-import { requisitarApi, type ResultadoApi } from "@/lib/api";
+import { enviarMultipart, requisitarApi, type ResultadoApi } from "@/lib/api";
+import { camposDoEnvioDeAudio, nomeDoArquivoDeAudio, type TentativaAudio } from "./audio-conversa";
+import { camposDoEnvioDeImagem, type TentativaImagem } from "./imagem-conversa";
 import { cabecalhosIdentidadeAtuante } from "@/lib/identidade-atuante";
 
 // Todas as operações do mensageiro vão em nome da identidade ATUANTE (intenção validada pela API).
@@ -48,6 +58,53 @@ export function enviarMensagem(conversaId: string, entrada: EnviarMensagemTextoE
     headers: cabecalhosIdentidadeAtuante(),
     method: "POST",
     body: JSON.stringify(entrada),
+  });
+}
+
+/**
+ * IMAGEM: multipart com os campos NA ORDEM do contrato e o arquivo por último. Reenviar a MESMA
+ * tentativa (mesmo idCliente) é seguro: a API devolve a mensagem já salva (200) sem gravar de novo.
+ */
+export function enviarMensagemImagem(conversaId: string, tentativa: Pick<TentativaImagem, "idCliente" | "legenda" | "mensagemRespondidaId" | "arquivo">): Promise<ResultadoApi<Mensagem>> {
+  return enviarMultipart(`/conversas/${conversaId}/mensagens/imagem`, mensagemSchema, {
+    campos: camposDoEnvioDeImagem(tentativa),
+    arquivo: tentativa.arquivo,
+    campoArquivo: CAMPO_ARQUIVO_IMAGEM,
+    headers: cabecalhosIdentidadeAtuante(),
+    mensagemFalha: "Não foi possível enviar a foto.",
+  });
+}
+
+/*
+ * MENSAGEM DE VOZ: multipart com os campos NA ORDEM do contrato (idCliente, resposta, duracaoMs) e o
+ * arquivo por último. Reenviar a MESMA tentativa é seguro: a API devolve 200 com a mensagem já salva.
+ */
+export function enviarMensagemAudio(conversaId: string, tentativa: Pick<TentativaAudio, "idCliente" | "duracaoMs" | "mensagemRespondidaId" | "arquivo">): Promise<ResultadoApi<Mensagem>> {
+  return enviarMultipart(`/conversas/${conversaId}/mensagens/audio`, mensagemSchema, {
+    campos: camposDoEnvioDeAudio(tentativa),
+    arquivo: tentativa.arquivo,
+    nomeArquivo: nomeDoArquivoDeAudio(tentativa.arquivo.type),
+    campoArquivo: CAMPO_ARQUIVO_AUDIO,
+    headers: cabecalhosIdentidadeAtuante(),
+    mensagemFalha: "Não foi possível enviar o áudio.",
+  });
+}
+
+// URLs PRIVADAS temporárias dos áudios (mesmas regras das imagens).
+export function pedirUrlsAudios(conversaId: string, mensagemIds: string[]): Promise<ResultadoApi<UrlsAudios>> {
+  return requisitarApi(`/conversas/${conversaId}/audios/urls`, urlsAudiosSchema, {
+    headers: cabecalhosIdentidadeAtuante(),
+    method: "POST",
+    body: JSON.stringify({ mensagemIds } satisfies PedirUrlsAudiosEntrada),
+  });
+}
+
+// URLs PRIVADAS temporárias das imagens (até 100 ids por chamada); só o que a identidade pode ver volta.
+export function pedirUrlsImagens(conversaId: string, mensagemIds: string[]): Promise<ResultadoApi<UrlsImagens>> {
+  return requisitarApi(`/conversas/${conversaId}/imagens/urls`, urlsImagensSchema, {
+    headers: cabecalhosIdentidadeAtuante(),
+    method: "POST",
+    body: JSON.stringify({ mensagemIds } satisfies PedirUrlsImagensEntrada),
   });
 }
 

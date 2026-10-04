@@ -5,6 +5,7 @@ import { buscarCategoria } from "../repositorios/repositorio-categorias.js";
 import {
   atualizarProdutoDaEmpresa,
   buscarProdutoComCategoria,
+  buscarProdutoDaEmpresa,
   definirImagemDoProduto,
   inserirProduto,
   listarProdutosPaginados,
@@ -101,6 +102,21 @@ export async function alterarDisponibilidadeProduto(
   if (!(await temPermissao(banco, usuarioId, empresaId, "alterar-disponibilidade-produto"))) return { tipo: "empresa-nao-encontrada" };
   const produto = await atualizarProdutoDaEmpresa(banco, empresaId, produtoId, { disponibilidade });
   return produto ? { tipo: "atualizado", produto } : { tipo: "produto-nao-encontrado" };
+}
+
+/**
+ * Confere, ANTES de qualquer byte da imagem ser lido, que a conta pode gerenciar produtos desta
+ * empresa e que o produto existe NELA. Sem isso, uma conta qualquer provocaria processamento de
+ * imagem e gravação no storage só para ser recusada depois.
+ */
+export async function autorizarImagemProduto(
+  banco: Banco,
+  usuarioId: string,
+  empresaId: string,
+  produtoId: string,
+): Promise<{ tipo: "autorizado" } | SemAcesso | ProdutoAusente> {
+  if (!(await temPermissao(banco, usuarioId, empresaId, "gerenciar-produtos"))) return { tipo: "empresa-nao-encontrada" };
+  return (await buscarProdutoDaEmpresa(banco, empresaId, produtoId)) ? { tipo: "autorizado" } : { tipo: "produto-nao-encontrado" };
 }
 
 /**

@@ -31,6 +31,7 @@ function mensagem(n: number, estado: EstadoMensagem = "enviada", remetente = EU)
     editadaEm: null,
     excluidaEm: null,
     pedido: null,
+    anexo: null,
   };
 }
 

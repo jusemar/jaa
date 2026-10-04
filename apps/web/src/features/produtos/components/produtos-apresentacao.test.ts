@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { CategoriaProduto, Produto } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { executarAcaoDeImagem } from "../lib/acao-imagem.ts";
 import { FormularioProduto } from "./formulario-produto.tsx";
 import { GerenciadorCategorias } from "./gerenciador-categorias.tsx";
 import { ControlePaginacao, ListaProdutos } from "./lista-produtos.tsx";
@@ -87,7 +88,7 @@ describe("FormularioProduto", () => {
 
   it("produto novo explica por que a imagem ainda não pode ser enviada", () => {
     const html = renderToStaticMarkup(createElement(FormularioProduto, { produto: null, categorias, enviando: false, aoSalvar: () => {}, aoCancelar: () => {} }));
-    assert.ok(texto(html).includes("Crie o produto primeiro"));
+    assert.ok(texto(html).includes("A foto é adicionada logo depois de criar o produto"));
     assert.ok(!html.includes('type="file"'), "sem produto não existe destino para o arquivo");
   });
 
@@ -134,5 +135,55 @@ describe("GerenciadorCategorias", () => {
     const marcado = marcacao();
     assert.ok(marcado.includes(`data-remover-categoria="${categorias[0]!.id}"`));
     assert.ok(texto(marcado).includes("2 produtos"));
+  });
+});
+
+describe("imagem principal do produto na administração", () => {
+  const URL_A = "https://pub-exemplo.r2.dev/imagem-produto/aaaaaaaa-0000-4000-8000-000000000000/a.webp";
+  const URL_B = "https://pub-exemplo.r2.dev/imagem-produto/aaaaaaaa-0000-4000-8000-000000000000/b.webp";
+  const formulario = (produto: Produto) =>
+    renderToStaticMarkup(
+      createElement(FormularioProduto, { produto, categorias, enviando: false, aoSalvar: () => {}, aoCancelar: () => {}, aoEnviarImagem: async () => {}, aoRemoverImagem: async () => {} }),
+    );
+
+  it("com imagem: mostra a atual e oferece Trocar e Remover", () => {
+    const html = formulario({ ...base, imagemUrl: URL_A });
+    assert.ok(html.includes(`src="${URL_A}"`));
+    assert.ok(texto(html).includes("Trocar imagem") && texto(html).includes("Remover"));
+    assert.ok(!html.includes("📦"));
+  });
+
+  it("sem imagem: marcador neutro e Adicionar imagem, sem Remover", () => {
+    const html = formulario(base);
+    assert.ok(html.includes("📦") && !html.includes("<img"));
+    assert.ok(texto(html).includes("Adicionar imagem") && !texto(html).includes("Remover"));
+  });
+
+  it("a tela é função do produto relido: A → B (troca) → null (remoção)", () => {
+    assert.ok(formulario({ ...base, imagemUrl: URL_A }).includes(`src="${URL_A}"`));
+    const trocada = formulario({ ...base, imagemUrl: URL_B });
+    assert.ok(trocada.includes(`src="${URL_B}"`) && !trocada.includes(URL_A));
+    assert.ok(formulario({ ...base, imagemUrl: null }).includes("📦"));
+  });
+});
+
+describe("executarAcaoDeImagem", () => {
+  it("sucesso: relê o produto (a tela passa a mostrar a imagem nova)", async () => {
+    let releu = 0;
+    await executarAcaoDeImagem(async () => ({ ok: true }), async () => {
+      releu += 1;
+    });
+    assert.equal(releu, 1);
+  });
+
+  it("falha: lança a mensagem REAL da API e não relê nada — a imagem anterior continua na tela", async () => {
+    let releu = 0;
+    await assert.rejects(
+      executarAcaoDeImagem(async () => ({ ok: false, mensagem: "A imagem deve ter no máximo 8 MB." }), async () => {
+        releu += 1;
+      }),
+      { message: "A imagem deve ter no máximo 8 MB." },
+    );
+    assert.equal(releu, 0);
   });
 });

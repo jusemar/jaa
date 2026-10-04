@@ -302,6 +302,20 @@
       "when": 1790586160745,
       "tag": "0042_apelido_endereco_opcional",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790998072110,
+      "tag": "0043_mensagens_com_anexo",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791134070481,
+      "tag": "0044_mensagens_de_audio",
+      "breakpoints": true
     }
   ]
 }

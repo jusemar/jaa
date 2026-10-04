@@ -110,6 +110,23 @@ describe("entrar com telefone ou @usuario", () => {
     assert.equal(conta.json().nomeUsuario, "joao_senha");
   });
 
+  it("o app Mobile (sem Origin, com expo-origin) entra por senha e a sessão vale em /conta/contexto", async () => {
+    // Exatamente o que o `expoClient` do Better Auth manda: nada de Origin, `expo-origin` com o scheme.
+    const resposta = await fetch(`${ctx.urlServidor}/autenticacao/entrar`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "expo-origin": "mobile://" },
+      body: JSON.stringify({ identificador: "@joao_senha", senha: SENHA }),
+    });
+    assert.equal(resposta.status, 200, await resposta.clone().text());
+    // O plugin do Expo guarda o cookie a partir do `set-cookie` desta resposta.
+    const sessao = resposta.headers.getSetCookie().find((cookie) => cookie.startsWith("better-auth.session_token="));
+    assert.ok(sessao, "a resposta traz o cookie de sessão do Better Auth");
+
+    const contexto = await fetch(`${ctx.urlServidor}/conta/contexto`, { headers: { cookie: sessao.split(";")[0] as string } });
+    assert.equal(contexto.status, 200);
+    assert.equal(((await contexto.json()) as { identidadePessoal: { nomeUsuario: string } }).identidadePessoal.nomeUsuario, "joao_senha");
+  });
+
   it("entra pelo celular, com ou sem máscara, com ou sem @ no identificador", async () => {
     assert.equal((await entrar("(31) 98766-5001", SENHA)).statusCode, 200);
     assert.equal((await entrar("+5531987665001", SENHA)).statusCode, 200);

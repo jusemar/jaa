@@ -50,7 +50,7 @@ describe("empresa e identidades operáveis", () => {
     const empresa = { id: uuid, nome: "P", slug: "pizzaria-bh", status: "ativa", identidadeId: uuid, nomeUsuario: "pizzariabh", papel: "proprietario", criadoEm: "2026-09-15T12:00:00.000Z", atualizadoEm: "2026-09-15T12:00:00.000Z" };
     assert.equal(empresaSchema.safeParse(empresa).success, true);
     assert.equal(empresaSchema.safeParse({ ...empresa, papel: "dono" }).success, false);
-    assert.equal(identidadeOperavelSchema.safeParse({ tipo: "pessoal", identidadeId: uuid, nomeExibicao: "Junior", nomeUsuario: "junior" }).success, true);
-    assert.equal(identidadeOperavelSchema.safeParse({ tipo: "empresarial", identidadeId: uuid, nomeExibicao: "P", nomeUsuario: "p" }).success, false, "empresarial exige empresa");
+    assert.equal(identidadeOperavelSchema.safeParse({ tipo: "pessoal", identidadeId: uuid, nomeExibicao: "Junior", nomeUsuario: "junior", fotoUrl: null }).success, true);
+    assert.equal(identidadeOperavelSchema.safeParse({ tipo: "empresarial", identidadeId: uuid, nomeExibicao: "P", nomeUsuario: "p", fotoUrl: null }).success, false, "empresarial exige empresa");
   });
 });

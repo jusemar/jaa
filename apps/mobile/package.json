@@ -8,12 +8,15 @@
     "@jaa/contratos": "*",
     "better-auth": "^1.7.5",
     "expo": "~57.0.22",
+    "expo-audio": "~57.0.5",
     "expo-constants": "~57.0.18",
     "expo-dev-client": "~57.0.19",
     "expo-device": "~57.0.2",
     "expo-font": "~57.0.4",
     "expo-glass-effect": "~57.0.3",
     "expo-image": "~57.0.5",
+    "expo-image-manipulator": "~57.0.20",
+    "expo-image-picker": "~57.0.20",
     "expo-linking": "~57.0.10",
     "expo-location": "~57.0.18",
     "expo-router": "~57.0.21",
@@ -32,20 +35,23 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "0.10.1"
+    "react-native-worklets": "0.10.1",
+    "socket.io-client": "^4.8.3",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
-    "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "private": true
 }

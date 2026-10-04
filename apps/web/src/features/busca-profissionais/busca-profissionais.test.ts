@@ -105,7 +105,7 @@ describe("local já cadastrado acompanha a IDENTIDADE ATUANTE", () => {
         chamadas.push(`operavel:${identidadeId}`);
         return dados.operavel === false
           ? { ok: false, status: 404, codigo: null, mensagem: "Não encontrada." }
-          : { ok: true, status: 200, dados: { tipo: "empresarial", identidadeId, nomeExibicao: "pizzaria isaque", nomeUsuario: "isaque", empresa: { id: EMPRESA_ID, slug: "isaque", papel: "proprietario" } } };
+          : { ok: true, status: 200, dados: { tipo: "empresarial", identidadeId, nomeExibicao: "pizzaria isaque", nomeUsuario: "isaque", fotoUrl: null, empresa: { id: EMPRESA_ID, slug: "isaque", papel: "proprietario" } } };
       },
       obterBaseEmpresa: async (empresaId) => {
         chamadas.push(`base:${empresaId}`);

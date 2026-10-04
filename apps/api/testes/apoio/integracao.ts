@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { criarConexaoBanco } from "@jaa/banco";
 import {
+  anexosMensagem,
   atribuicoesEntrega,
   categoriasProduto,
   compatibilidadesZona,
@@ -41,7 +42,7 @@ import { count, inArray, like, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { io, type Socket } from "socket.io-client";
 import type { MotorDeRotas } from "../../src/features/entregas/lib/motor-rotas.js";
-import type { ArmazenamentoDeArquivos } from "../../src/lib/armazenamento/armazenamento-arquivos.js";
+import type { ArmazenamentoDeArquivos, ArmazenamentoPrivado } from "../../src/lib/armazenamento/armazenamento-arquivos.js";
 import { criarAplicacao } from "../../src/aplicacao.js";
 import { criarOpcoesAutenticacao } from "../../src/features/autenticacao/autenticacao.js";
 import { criarAvisoSessoesEncerradas } from "../../src/features/autenticacao/lib/sessoes-encerradas.js";
@@ -79,11 +80,14 @@ export function criarAmbienteIntegracao({
   motorRotas,
   // Armazenamento FAKE quando o teste precisa dele: nenhum teste fala com o Cloudflare de verdade.
   armazenamento,
+  // Bucket PRIVADO fake (imagens de conversa): nenhum teste fala com o Cloudflare de verdade.
+  armazenamentoPrivado,
 }: {
   telefones: string[];
   prefixoIp: string;
   motorRotas?: MotorDeRotas | undefined;
   armazenamento?: ArmazenamentoDeArquivos | undefined;
+  armazenamentoPrivado?: ArmazenamentoPrivado | undefined;
 }) {
   const ambiente = carregarAmbiente();
   // A origem do teste é definida AQUI: mudar as origens do .env local não pode quebrar a suíte.
@@ -160,6 +164,42 @@ export function criarAmbienteIntegracao({
     });
   }
 
+  /**
+   * Multipart com as partes NA ORDEM dada (campos de texto e arquivo): permite provar que o servidor
+   * só lê os campos que chegam antes do arquivo.
+   */
+  function enviarMultipart(
+    pessoa: Pessoa,
+    url: string,
+    partes: ({ campo: string; valor: string } | { arquivo: { nome: string; tipo: string; conteudo: Buffer } })[],
+  ) {
+    const limite = "----JaaTesteMultipart";
+    const corpo = Buffer.concat([
+      ...partes.map((parte) =>
+        "campo" in parte
+          ? Buffer.from(`--${limite}\r\nContent-Disposition: form-data; name="${parte.campo}"\r\n\r\n${parte.valor}\r\n`)
+          : Buffer.concat([
+              Buffer.from(`--${limite}\r\nContent-Disposition: form-data; name="arquivo"; filename="${parte.arquivo.nome}"\r\nContent-Type: ${parte.arquivo.tipo}\r\n\r\n`),
+              parte.arquivo.conteudo,
+              Buffer.from("\r\n"),
+            ]),
+      ),
+      Buffer.from(`--${limite}--\r\n`),
+    ]);
+    return app.inject({
+      method: "POST",
+      url,
+      remoteAddress: pessoa.ip,
+      headers: {
+        origin: ORIGEM_WEB,
+        cookie: pessoa.cookie,
+        "content-type": `multipart/form-data; boundary=${limite}`,
+        ...(pessoa.identidadeAtuanteId ? { [CABECALHO_IDENTIDADE_ATUANTE]: pessoa.identidadeAtuanteId } : {}),
+      },
+      payload: corpo,
+    });
+  }
+
   async function limpar() {
     const usuariosTeste = banco
       .select({ id: users.id })
@@ -202,9 +242,12 @@ export function criarAmbienteIntegracao({
           inArray(excecoesPrivacidade.alvoIdentidadeId, identidadesTeste),
         ),
       );
-    await banco
-      .delete(mensagens)
-      .where(inArray(mensagens.conversaId, conversasTeste));
+    // Anexos e mensagens na MESMA transação: anexo sozinho reprovaria a verificação diferida da imagem
+    // (e a FK RESTRICT impede apagar a mensagem antes do anexo).
+    await banco.transaction(async (transacao) => {
+      await transacao.delete(anexosMensagem).where(inArray(anexosMensagem.conversaId, conversasTeste));
+      await transacao.delete(mensagens).where(inArray(mensagens.conversaId, conversasTeste));
+    });
     await banco
       .delete(atribuicoesEntrega)
       .where(
@@ -295,6 +338,12 @@ export function criarAmbienteIntegracao({
     eventosEntregas,
     api,
     enviarArquivo,
+    enviarMultipart,
+    // Endereço HTTP real (depois de `iniciar`), para testes que precisam de cabeçalhos exatos de outro
+    // cliente — ex.: o app nativo, que não manda `Origin` (o `api()` acima sempre manda o do Web).
+    get urlServidor() {
+      return `http://127.0.0.1:${porta}`;
+    },
 
     async iniciar() {
       await limpar();
@@ -307,6 +356,7 @@ export function criarAmbienteIntegracao({
         eventosEntregas,
         ...(motorRotas ? { motorRotas } : {}),
         ...(armazenamento ? { armazenamento } : {}),
+        ...(armazenamentoPrivado ? { armazenamentoPrivado } : {}),
         logger: false,
       });
       configurarRealtime(app, {

@@ -1,0 +1,285 @@
+/// <reference types="node" />
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import type { ItemListaConversas, Mensagem } from "@jaa/contratos";
+import {
+  aplicarAtualizacaoNaLista,
+  aplicarExclusaoParaMimNaLista,
+  aplicarMensagemNaLista,
+  aplicarNaoLidasNaLista,
+  contarConversasNaoLidas,
+  filtrarConversas,
+  aplicarEstadoPessoalNaLista,
+  mesclarConversas,
+  precisaCarregarConversa,
+  rotuloNaoLidas,
+} from "./lista-conversas.ts";
+import { aplicarNaoLidas, combinarResumo, totalNaoLidas, type NaoLidasPorConversa } from "./nao-lidas-globais.ts";
+
+// UUIDv7 sintéticos: ordem lexicográfica = ordem cronológica.
+const idMensagem = (n: number) => `01a0a394-${String(n).padStart(4, "0")}-7000-8000-000000000000`;
+const idConversa = (letra: string) => `${letra.repeat(8)}-0000-4000-8000-000000000000`;
+
+function mensagem(conversa: string, n: number, conteudo = `m${n}`): Mensagem {
+  return {
+    id: idMensagem(n),
+    conversaId: idConversa(conversa),
+    remetenteIdentidadeId: idConversa("f"),
+    tipo: "texto",
+    conteudo,
+    criadoEm: "2026-09-15T12:00:00.000Z",
+    estado: "enviada",
+    mensagemRespondida: null,
+    editadaEm: null,
+    excluidaEm: null,
+    pedido: null,
+    anexo: null,
+  };
+}
+
+function item(conversa: string, n: number): ItemListaConversas {
+  return {
+    id: idConversa(conversa),
+    tipo: "direta",
+    outraIdentidade: { identidadeId: idConversa("e"), tipo: "pessoal", nomeExibicao: conversa, nomeUsuario: conversa, fotoUrl: null },
+    ultimaMensagem: mensagem(conversa, n),
+    atividadeId: mensagem(conversa, n).id,
+    naoLidas: 0,
+    comunicacaoBloqueada: false,
+  };
+}
+
+const ids = (lista: ItemListaConversas[]) => lista.map((i) => i.outraIdentidade.nomeUsuario).join("");
+
+describe("mesclarConversas", () => {
+  it("ordena pela última mensagem e não duplica conversas vindas de páginas sobrepostas", () => {
+    const lista = mesclarConversas([item("a", 3), item("b", 2)], [item("b", 2), item("c", 1)]);
+    assert.equal(ids(lista), "abc");
+  });
+
+  it("nunca regride para uma última mensagem mais antiga", () => {
+    const lista = mesclarConversas([item("a", 9)], [item("a", 1)]);
+    assert.equal(lista[0]?.ultimaMensagem?.id, idMensagem(9));
+  });
+});
+
+describe("aplicarMensagemNaLista", () => {
+  it("leva a conversa ao topo e atualiza prévia e horário, sem duplicar", () => {
+    const inicial = [item("a", 3), item("b", 2), item("c", 1)];
+    const { lista, conhecida } = aplicarMensagemNaLista(inicial, { ...mensagem("c", 4, "nova"), criadoEm: "2026-09-15T13:00:00.000Z" });
+    assert.equal(conhecida, true);
+    assert.equal(ids(lista), "cab");
+    assert.equal(lista[0]?.ultimaMensagem?.conteudo, "nova");
+    assert.equal(lista[0]?.ultimaMensagem?.criadoEm, "2026-09-15T13:00:00.000Z");
+    assert.equal(lista.length, 3);
+  });
+
+  it("mesmo evento aplicado duas vezes (realtime + resposta HTTP) mantém um único item", () => {
+    const evento = mensagem("b", 5);
+    const primeira = aplicarMensagemNaLista([item("a", 3), item("b", 2)], evento).lista;
+    const segunda = aplicarMensagemNaLista(primeira, evento).lista;
+    assert.deepEqual(segunda, primeira);
+  });
+
+  it("evento atrasado (mais antigo que a última conhecida) não altera a lista", () => {
+    const inicial = [item("a", 7), item("b", 6)];
+    assert.deepEqual(aplicarMensagemNaLista(inicial, mensagem("b", 1)).lista, inicial);
+  });
+
+  it("conversa desconhecida não é inventada: sinaliza para recarregar", () => {
+    const inicial = [item("a", 3)];
+    const resultado = aplicarMensagemNaLista(inicial, mensagem("z", 9));
+    assert.equal(resultado.conhecida, false);
+    assert.equal(resultado.lista, inicial);
+  });
+});
+
+describe("aplicarAtualizacaoNaLista e página com a mesma última mensagem", () => {
+  it("edição da última mensagem troca só a prévia, sem reordenar; edição de outra mensagem não muda nada", () => {
+    const inicial = [item("a", 3), item("b", 2)];
+    const editada = { ...mensagem("b", 2, "b editada"), editadaEm: "2026-09-15T12:10:00.000Z" };
+    const lista = aplicarAtualizacaoNaLista(inicial, editada);
+    assert.equal(ids(lista), "ab");
+    assert.equal(lista[1]?.ultimaMensagem?.conteudo, "b editada");
+    assert.deepEqual(aplicarAtualizacaoNaLista(inicial, { ...mensagem("b", 1, "antiga"), editadaEm: "2026-09-15T12:10:00.000Z" }), inicial);
+  });
+
+  it("recarga com a mesma última mensagem não desfaz edição já aplicada", () => {
+    const editada = { ...mensagem("a", 3, "editada"), editadaEm: "2026-09-15T12:10:00.000Z" };
+    const lista = mesclarConversas(aplicarAtualizacaoNaLista([item("a", 3)], editada), [item("a", 3)]);
+    assert.equal(lista[0]?.ultimaMensagem?.conteudo, "editada");
+  });
+});
+
+describe("aplicarExclusaoParaMimNaLista", () => {
+  it("se a excluída era a última, usa a nova última visível e reposiciona; senão não muda nada", () => {
+    const inicial = [item("a", 9), item("b", 5)];
+    const lista = aplicarExclusaoParaMimNaLista(inicial, { conversaId: idConversa("a"), mensagemId: idMensagem(9), ultimaMensagem: mensagem("a", 2) });
+    assert.equal(ids(lista), "ba");
+    assert.equal(lista[1]?.ultimaMensagem?.id, idMensagem(2));
+    assert.equal(aplicarExclusaoParaMimNaLista(inicial, { conversaId: idConversa("a"), mensagemId: idMensagem(1), ultimaMensagem: mensagem("a", 0) }), inicial);
+  });
+
+  it("sem mensagem visível restante, a conversa sai da lista", () => {
+    const lista = aplicarExclusaoParaMimNaLista([item("a", 9), item("b", 5)], { conversaId: idConversa("b"), mensagemId: idMensagem(5), ultimaMensagem: null });
+    assert.equal(ids(lista), "a");
+  });
+});
+
+describe("não lidas na lista", () => {
+  it("contagem do servidor substitui (não soma), não reordena e ignora conversa não carregada", () => {
+    const inicial = [item("a", 3), item("b", 2)];
+    const lista = aplicarNaoLidasNaLista(inicial, { conversaId: idConversa("b"), naoLidas: 4 });
+    assert.equal(ids(lista), "ab");
+    assert.equal(lista[1]?.naoLidas, 4);
+    assert.equal(aplicarNaoLidasNaLista(lista, { conversaId: idConversa("b"), naoLidas: 0 })[1]?.naoLidas, 0);
+    assert.deepEqual(aplicarNaoLidasNaLista(inicial, { conversaId: idConversa("z"), naoLidas: 9 }), inicial);
+  });
+
+  it("recarga da página traz a contagem atual; nova mensagem não inventa contagem no cliente", () => {
+    const comContagem = mesclarConversas([item("a", 3)], [{ ...item("a", 3), naoLidas: 2 }]);
+    assert.equal(comContagem[0]?.naoLidas, 2);
+    assert.equal(aplicarMensagemNaLista(comContagem, mensagem("a", 4)).lista[0]?.naoLidas, 2);
+  });
+
+  it("rótulo 99+ a partir de 100", () => {
+    assert.deepEqual([1, 99, 100].map(rotuloNaoLidas), ["1", "99", "99+"]);
+  });
+});
+
+describe("filtros da inbox", () => {
+  // A mesma lista que o servidor entregou; os filtros são recorte de LEITURA, derivado do que já veio.
+  const pessoaLida = item("a", 4);
+  const pessoaNaoLida = { ...item("b", 3), naoLidas: 2 };
+  const empresaNaoLida = {
+    ...item("c", 2),
+    naoLidas: 5,
+    outraIdentidade: { ...item("c", 2).outraIdentidade, tipo: "empresarial" as const, nomeUsuario: "c" },
+  };
+  const empresaLida = {
+    ...item("d", 1),
+    outraIdentidade: { ...item("d", 1).outraIdentidade, tipo: "empresarial" as const, nomeUsuario: "d" },
+  };
+  const lista = [pessoaLida, pessoaNaoLida, empresaNaoLida, empresaLida];
+
+  it("todas não filtra nada e preserva a ordem do servidor", () => {
+    assert.equal(ids(filtrarConversas(lista, "todas")), "abcd");
+  });
+
+  it("não lidas mostra só quem tem mensagem por ler", () => {
+    assert.equal(ids(filtrarConversas(lista, "nao-lidas")), "bc");
+    assert.equal(contarConversasNaoLidas(lista), 2);
+  });
+
+  it("a conversa aberta e sendo lida não some debaixo do dedo", () => {
+    assert.equal(ids(filtrarConversas(lista, "nao-lidas", pessoaNaoLida.id)), "c");
+    assert.equal(contarConversasNaoLidas(lista, pessoaNaoLida.id), 1);
+  });
+
+  it("empresas mostra só identidades empresariais, lidas ou não", () => {
+    assert.equal(ids(filtrarConversas(lista, "empresas")), "cd");
+  });
+
+  it("filtro sem resultado devolve lista vazia, nunca a lista inteira", () => {
+    assert.deepEqual(filtrarConversas([pessoaLida], "nao-lidas"), []);
+    assert.deepEqual(filtrarConversas([pessoaLida], "empresas"), []);
+  });
+});
+
+/*
+ * REGRESSÃO "badge com não lidas, lista sem": a lista e o indicador de Conversas ouvem os MESMOS fatos
+ * do servidor (página HTTP / resumo e o evento absoluto `conversa:nao-lidas`). Esta simulação usa as
+ * funções reais dos dois lados, na ordem em que o navegador as aplica.
+ */
+describe("não lidas: lista e indicador global coerentes", () => {
+  type Evento = { conversaId: string; naoLidas: number };
+  function tela(inicial: ItemListaConversas[] = []) {
+    let lista = inicial;
+    let badge: NaoLidasPorConversa = new Map();
+    const recargas: string[] = [];
+    return {
+      // O que o hook da lista faz com `conversa:nao-lidas` (e o do badge, com o mesmo evento).
+      naoLidas(evento: Evento) {
+        badge = aplicarNaoLidas(badge, evento);
+        if (precisaCarregarConversa(lista, evento)) recargas.push(evento.conversaId);
+        else lista = aplicarNaoLidasNaLista(lista, evento);
+      },
+      mensagem(m: Mensagem) {
+        const r = aplicarMensagemNaLista(lista, m);
+        if (r.conhecida) lista = r.lista;
+        else recargas.push(m.conversaId);
+      },
+      // Resposta HTTP da 1ª página (o servidor devolve a contagem daquele momento).
+      pagina(itens: ItemListaConversas[]) {
+        lista = mesclarConversas(lista, itens);
+      },
+      resumo(conversas: Evento[]) {
+        badge = combinarResumo(badge, { conversas }, new Set());
+      },
+      estadoPessoal(conversa: string, acao: "limpa" | "apagada") {
+        lista = aplicarEstadoPessoalNaLista(lista, { conversaId: idConversa(conversa), acao });
+      },
+      get lista() { return lista; },
+      get badge() { return totalNaoLidas(badge); },
+      get somaLista() { return lista.reduce((total, i) => total + i.naoLidas, 0); },
+      get recargas() { return recargas; },
+      naoLidasDe: (conversa: string) => lista.find((i) => i.id === idConversa(conversa))?.naoLidas,
+    };
+  }
+  const comNaoLidas = (i: ItemListaConversas, naoLidas: number) => ({ ...i, naoLidas });
+
+  it("A e B recebem mensagens: contador individual, badge e aba 'Não lidas' acompanham e somam igual", () => {
+    const t = tela([item("a", 1), item("b", 2)]);
+    t.mensagem(mensagem("a", 3)); t.naoLidas({ conversaId: idConversa("a"), naoLidas: 1 });
+    assert.equal(t.naoLidasDe("a"), 1);
+    assert.equal(t.badge, 1);
+    assert.deepEqual(filtrarConversas(t.lista, "nao-lidas").map((i) => i.id), [idConversa("a")]);
+
+    t.mensagem(mensagem("a", 4)); t.naoLidas({ conversaId: idConversa("a"), naoLidas: 2 });
+    t.mensagem(mensagem("a", 5)); t.naoLidas({ conversaId: idConversa("a"), naoLidas: 3 });
+    t.mensagem(mensagem("b", 6)); t.naoLidas({ conversaId: idConversa("b"), naoLidas: 1 });
+    assert.equal(t.naoLidasDe("a"), 3);
+    assert.equal(t.naoLidasDe("b"), 1);
+    assert.equal(t.badge, 4);
+    assert.equal(t.somaLista, 4);
+    assert.equal(contarConversasNaoLidas(t.lista), 2);
+
+    // Abrir A: o servidor recalcula e manda 0 só para A. B continua.
+    t.naoLidas({ conversaId: idConversa("a"), naoLidas: 0 });
+    assert.equal(t.naoLidasDe("a"), 0);
+    assert.equal(t.naoLidasDe("b"), 1);
+    assert.equal(t.badge, 1);
+    assert.equal(t.somaLista, 1);
+    t.naoLidas({ conversaId: idConversa("b"), naoLidas: 0 });
+    assert.equal(t.badge, 0);
+    assert.equal(filtrarConversas(t.lista, "nao-lidas").length, 0);
+  });
+
+  it("conversa com não lidas que a lista ainda NÃO tem: a lista recarrega (antes: badge contava e a linha nunca aparecia)", () => {
+    const t = tela([item("a", 1)]);
+    // Só o evento de contagem chega (ex.: a conversa ficou fora da página carregada).
+    t.naoLidas({ conversaId: idConversa("c"), naoLidas: 4 });
+    assert.equal(t.badge, 4);
+    assert.deepEqual(t.recargas, [idConversa("c")], "a lista pede a 1ª página em vez de ignorar");
+    t.pagina([comNaoLidas(item("c", 7), 4), item("a", 1)]);
+    assert.equal(t.naoLidasDe("c"), 4);
+    assert.equal(t.somaLista, t.badge);
+    assert.equal(filtrarConversas(t.lista, "nao-lidas")[0]?.id, idConversa("c"));
+  });
+
+  it("zerar conversa que a lista não tem não provoca recarga", () => {
+    const t = tela([item("a", 1)]);
+    t.naoLidas({ conversaId: idConversa("z"), naoLidas: 0 });
+    assert.deepEqual(t.recargas, []);
+  });
+
+  it("limpar e apagar não deixam contador fantasma na lista nem no badge", () => {
+    const t = tela([comNaoLidas(item("a", 3), 2), comNaoLidas(item("b", 4), 1)]);
+    t.resumo([{ conversaId: idConversa("a"), naoLidas: 2 }, { conversaId: idConversa("b"), naoLidas: 1 }]);
+    t.estadoPessoal("a", "limpa"); t.naoLidas({ conversaId: idConversa("a"), naoLidas: 0 });
+    t.estadoPessoal("b", "apagada"); t.naoLidas({ conversaId: idConversa("b"), naoLidas: 0 });
+    assert.equal(t.badge, 0);
+    assert.equal(t.somaLista, 0);
+    assert.deepEqual(t.recargas, []);
+  });
+});

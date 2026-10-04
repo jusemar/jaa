@@ -6,7 +6,9 @@ import { after, before, describe, it } from "node:test";
 import { produtos } from "@jaa/banco/schema";
 import type { Empresa, Produto } from "@jaa/contratos";
 import { eq, sql } from "drizzle-orm";
+import sharp from "sharp";
 import { criarAmbienteIntegracao, type Pessoa } from "./apoio/integracao.js";
+import type { ArmazenamentoDeArquivos } from "../src/lib/armazenamento/armazenamento-arquivos.js";
 
 /*
  * Integração REAL da administração de produtos (HTTP + Better Auth + PostgreSQL), com foco em isolamento
@@ -14,9 +16,37 @@ import { criarAmbienteIntegracao, type Pessoa } from "./apoio/integracao.js";
  */
 
 const PREFIXO = `prd${randomUUID().slice(0, 4)}`;
+
+/*
+ * Armazenamento FAKE em memória (nenhuma credencial real): conta cada `salvar` para provar que pedido
+ * recusado nunca chega ao storage, e pode simular o provedor fora do ar.
+ */
+const guardados = new Map<string, { conteudo: Buffer; tipoConteudo: string }>();
+let gravacoes = 0;
+let falharProximaGravacao = false;
+const armazenamentoFake: ArmazenamentoDeArquivos = {
+  nome: "teste",
+  async salvar({ chave, conteudo, tipoConteudo }) {
+    gravacoes += 1;
+    if (falharProximaGravacao) {
+      falharProximaGravacao = false;
+      throw new Error("Armazenamento respondeu 500 ao gravar o arquivo.");
+    }
+    guardados.set(chave, { conteudo, tipoConteudo });
+    return { chave };
+  },
+  async remover(chave) {
+    guardados.delete(chave);
+  },
+  urlPublica: (chave) => `https://arquivos.teste.invalid/${chave}`,
+};
+const chaveDaUrl = (url: string) => url.replace("https://arquivos.teste.invalid/", "");
+const imagemJpeg = (largura: number) => sharp({ create: { width: largura, height: largura, channels: 3, background: "#c0392b" } }).jpeg().toBuffer();
+
 const ctx = criarAmbienteIntegracao({
   telefones: ["+5531987651301", "+5531987651302", "+5531987651303"],
   prefixoIp: "198.18.8.",
+  armazenamento: armazenamentoFake,
 });
 
 let A: Pessoa;
@@ -235,6 +265,129 @@ describe("isolamento multiempresa e segurança", () => {
     for (const proibido of ["usuarioId", "telefone", "phone", "email", "papel", "sessao", "Junior Rocha", "+55319876513"]) {
       assert.ok(!corpo.includes(proibido), proibido);
     }
+  });
+});
+
+describe("imagem principal do produto", () => {
+  let produto: Produto;
+  const rotaImagem = (empresa: Empresa | string, produtoId: string) => `${rotaProduto(empresa, produtoId)}/imagem`;
+  const enviar = async (pessoa: Pessoa, url: string, largura = 1600) =>
+    ctx.enviarArquivo(pessoa, url, { nome: "foto.jpg", tipo: "image/jpeg", conteudo: await imagemJpeg(largura) });
+
+  // Consulta PÚBLICA (a do cliente na conversa), sem sessão: a mesma imagem chega para quem compra.
+  const imagemNoCatalogoDoCliente = async () => {
+    const resposta = await ctx.api(null, "GET", `/publico/empresas/${pizzaria.identidadeId}/catalogo`);
+    assert.equal(resposta.statusCode, 200, resposta.body);
+    const daPizza = (resposta.json().produtos as { id: string; imagemUrl: string | null }[]).find((item) => item.id === produto.id);
+    assert.ok(daPizza, "produto disponível aparece no catálogo público");
+    return daPizza.imagemUrl;
+  };
+
+  before(async () => {
+    produto = await criarProduto(A, pizzaria, { nome: "Pizza com foto", precoCentavos: 4500, disponibilidade: "disponivel" });
+  });
+
+  it("envio válido grava a imagem processada e devolve a URL montada a partir da CHAVE", async () => {
+    const envio = await enviar(A, rotaImagem(pizzaria, produto.id));
+    assert.equal(envio.statusCode, 200, envio.body);
+    const { chave, url } = envio.json();
+    assert.match(chave, new RegExp(`^imagem-produto/${produto.id}/[0-9a-f-]{36}\\.webp$`), "chave gerada pelo servidor");
+    assert.equal(url, `https://arquivos.teste.invalid/${chave}`);
+
+    const guardado = guardados.get(chave);
+    assert.ok(guardado);
+    assert.equal(guardado.tipoConteudo, "image/webp");
+    assert.equal((await sharp(guardado.conteudo).metadata()).width, 1024, "imagem de produto cabe em 1024px");
+
+    assert.equal((await linhaDoBanco(produto.id))?.imagemChave, chave, "o banco guarda a chave, não a URL");
+    assert.equal((await ctx.api(A, "GET", rotaProduto(pizzaria, produto.id))).json().imagemUrl, url);
+    const catalogo = (await ctx.api(A, "GET", rotaProdutos(pizzaria))).json().produtos as Produto[];
+    assert.equal(catalogo.find((item) => item.id === produto.id)?.imagemUrl, url);
+    assert.equal(await imagemNoCatalogoDoCliente(), url, "o cliente vê a mesma imagem no catálogo público");
+  });
+
+  it("trocar a imagem grava a nova, aponta o banco para ela e só então remove a anterior", async () => {
+    const anterior = chaveDaUrl((await ctx.api(A, "GET", rotaProduto(pizzaria, produto.id))).json().imagemUrl);
+    const troca = await enviar(A, rotaImagem(pizzaria, produto.id), 400);
+    assert.equal(troca.statusCode, 200, troca.body);
+    assert.notEqual(troca.json().chave, anterior, "chave nova a cada envio: nada é sobrescrito");
+    assert.equal(guardados.has(anterior), false, "a anterior foi removida");
+    assert.ok(guardados.has(troca.json().chave));
+    assert.equal((await linhaDoBanco(produto.id))?.imagemChave, troca.json().chave);
+    assert.equal(await imagemNoCatalogoDoCliente(), troca.json().url, "o catálogo do cliente passa a mostrar a nova");
+  });
+
+  it("falha do storage ao gravar não muda nada: o banco segue apontando para a imagem que existe", async () => {
+    const atual = (await linhaDoBanco(produto.id))?.imagemChave;
+    falharProximaGravacao = true;
+    const envio = await enviar(A, rotaImagem(pizzaria, produto.id), 300);
+    assert.equal(envio.statusCode, 500);
+    assert.equal((await linhaDoBanco(produto.id))?.imagemChave, atual);
+    assert.ok(atual && guardados.has(atual), "a imagem atual não foi removida");
+  });
+
+  it("arquivo inválido é recusado sem gravar nada e sem tocar na imagem atual", async () => {
+    const atual = (await linhaDoBanco(produto.id))?.imagemChave;
+    const antes = gravacoes;
+    const falso = await ctx.enviarArquivo(A, rotaImagem(pizzaria, produto.id), { nome: "x.jpg", tipo: "image/jpeg", conteudo: Buffer.from("não sou imagem") });
+    assert.equal(falso.statusCode, 400, falso.body);
+    assert.equal(falso.json().codigo, "ARQUIVO_INVALIDO");
+    const tipoErrado = await ctx.enviarArquivo(A, rotaImagem(pizzaria, produto.id), { nome: "x.gif", tipo: "image/gif", conteudo: await imagemJpeg(50) });
+    assert.equal(tipoErrado.statusCode, 400, tipoErrado.body);
+    assert.equal(gravacoes, antes);
+    assert.equal((await linhaDoBanco(produto.id))?.imagemChave, atual);
+  });
+
+  it("conta sem permissão na empresa não provoca processamento nem gravação", async () => {
+    const atual = (await linhaDoBanco(produto.id))?.imagemChave;
+    const antes = gravacoes;
+
+    const alheia = await enviar(B, rotaImagem(pizzaria, produto.id));
+    assert.equal(alheia.statusCode, 404, alheia.body);
+    assert.equal(alheia.json().codigo, "EMPRESA_NAO_ENCONTRADA");
+
+    // Pela própria empresa, com o id de um produto de OUTRA: o produto não existe nela.
+    const cruzada = await enviar(B, rotaImagem(mercado, produto.id));
+    assert.equal(cruzada.statusCode, 404, cruzada.body);
+    assert.equal(cruzada.json().codigo, "PRODUTO_NAO_ENCONTRADO");
+
+    const remocao = await ctx.api(B, "DELETE", rotaImagem(pizzaria, produto.id));
+    assert.equal(remocao.statusCode, 404, remocao.body);
+
+    assert.equal(gravacoes, antes, "nenhum PUT no storage para quem não pode");
+    assert.equal((await linhaDoBanco(produto.id))?.imagemChave, atual);
+    assert.ok(atual && guardados.has(atual));
+  });
+
+  it("produto inexistente é 404 sem gravar nada", async () => {
+    const antes = gravacoes;
+    const envio = await enviar(A, rotaImagem(pizzaria, randomUUID()));
+    assert.equal(envio.statusCode, 404, envio.body);
+    assert.equal(envio.json().codigo, "PRODUTO_NAO_ENCONTRADO");
+    assert.equal((await ctx.api(A, "DELETE", rotaImagem(pizzaria, randomUUID()))).statusCode, 404);
+    assert.equal(gravacoes, antes);
+  });
+
+  it("remover limpa o banco e o storage; remover de novo é inofensivo", async () => {
+    const atual = (await linhaDoBanco(produto.id))?.imagemChave;
+    assert.ok(atual);
+    const remocao = await ctx.api(A, "DELETE", rotaImagem(pizzaria, produto.id));
+    assert.equal(remocao.statusCode, 200, remocao.body);
+    assert.deepEqual(remocao.json(), { removida: true });
+    assert.equal(guardados.has(atual), false);
+    assert.equal((await linhaDoBanco(produto.id))?.imagemChave, null);
+    assert.equal((await ctx.api(A, "GET", rotaProduto(pizzaria, produto.id))).json().imagemUrl, null);
+    assert.equal(await imagemNoCatalogoDoCliente(), null, "o catálogo do cliente volta ao marcador sem imagem");
+
+    assert.deepEqual((await ctx.api(A, "DELETE", rotaImagem(pizzaria, produto.id))).json(), { removida: false });
+  });
+
+  it("envios simultâneos deixam exatamente UMA imagem: cada um remove a que substituiu", async () => {
+    const respostas = await Promise.all([enviar(A, rotaImagem(pizzaria, produto.id), 200), enviar(A, rotaImagem(pizzaria, produto.id), 210)]);
+    for (const resposta of respostas) assert.equal(resposta.statusCode, 200, resposta.body);
+    const final = (await linhaDoBanco(produto.id))?.imagemChave;
+    const doProduto = [...guardados.keys()].filter((chave) => chave.startsWith(`imagem-produto/${produto.id}/`));
+    assert.deepEqual(doProduto, [final], "sem órfão no storage e o banco aponta para a que existe");
   });
 });
 

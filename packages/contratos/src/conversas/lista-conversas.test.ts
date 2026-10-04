@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { eventoConversaNaoLidasSchema } from "../realtime/eventos.ts";
+import { identidadeVisivelSchema } from "./conversa.ts";
 import {
   LIMITE_CONTAGEM_NAO_LIDAS,
   LIMITE_PAGINA_CONVERSAS_MAXIMO,
@@ -35,7 +36,7 @@ describe("itemListaConversasSchema", () => {
   const item = {
     id: uuid,
     tipo: "direta",
-    outraIdentidade: { identidadeId: uuid, tipo: "pessoal", nomeExibicao: "Bia", nomeUsuario: "bia" },
+    outraIdentidade: { identidadeId: uuid, tipo: "pessoal", nomeExibicao: "Bia", nomeUsuario: "bia", fotoUrl: null },
     ultimaMensagem: {
       id: uuid,
       conversaId: uuid,
@@ -45,6 +46,7 @@ describe("itemListaConversasSchema", () => {
       criadoEm: "2026-09-15T12:00:00.000Z",
       estado: "enviada",
       pedido: null,
+      anexo: null,
       mensagemRespondida: null,
       editadaEm: null,
       excluidaEm: null,
@@ -59,7 +61,7 @@ describe("itemListaConversasSchema", () => {
       ...item,
       outraIdentidade: { ...item.outraIdentidade, telefone: "+5531987654321", usuarioId: "u1" },
     });
-    assert.deepEqual(Object.keys(resultado.outraIdentidade).sort(), ["identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
+    assert.deepEqual(Object.keys(resultado.outraIdentidade).sort(), ["fotoUrl", "identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
   });
 
   it("última mensagem é obrigatória no item, mas pode ser null (conversa LIMPA por quem lista); atividade é obrigatória", () => {
@@ -77,5 +79,18 @@ describe("naoLidas", () => {
     for (const invalido of [-1, 1.5, LIMITE_CONTAGEM_NAO_LIDAS + 1, "3", null]) assert.equal(contagemNaoLidasSchema.safeParse(invalido).success, false);
     assert.equal(eventoConversaNaoLidasSchema.safeParse({ conversaId: uuid, naoLidas: 3, identidadeId: uuid }).success, true);
     assert.deepEqual(Object.keys(eventoConversaNaoLidasSchema.parse({ conversaId: uuid, naoLidas: 3, identidadeId: uuid })).sort(), ["conversaId", "naoLidas"]);
+  });
+});
+
+describe("identidade exibida com avatar", () => {
+  const identidade = { identidadeId: "01a0a394-6225-75f2-b809-b2690993c512", tipo: "pessoal", nomeExibicao: "Bia", nomeUsuario: "bia" };
+
+  it("fotoUrl é obrigatória: URL pronta ou null; a chave do arquivo não faz parte do contrato", () => {
+    assert.equal(identidadeVisivelSchema.safeParse({ ...identidade, fotoUrl: "https://pub-exemplo.r2.dev/avatar/a.webp" }).success, true);
+    assert.equal(identidadeVisivelSchema.safeParse({ ...identidade, fotoUrl: null }).success, true);
+    assert.equal(identidadeVisivelSchema.safeParse(identidade).success, false);
+    assert.equal(identidadeVisivelSchema.safeParse({ ...identidade, fotoUrl: "avatar/a.webp" }).success, false, "chave crua não é URL");
+    const lida = identidadeVisivelSchema.parse({ ...identidade, fotoUrl: null, fotoChave: "avatar/a.webp" });
+    assert.equal("fotoChave" in lida, false);
   });
 });

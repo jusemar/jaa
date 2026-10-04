@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { MAXIMO_ITENS_POR_PEDIDO, QUANTIDADE_MAXIMA_POR_ITEM, type EmpresaPublica, type GrupoOpcoesPublico, type ProdutoPublico } from "@jaa/contratos";
 import {
   adicionarAoCarrinho,
+  atualizarImagensDoCarrinho,
   alterarQuantidade,
   escolhasDaMontagem,
   itensParaPedido,
@@ -210,5 +211,32 @@ describe("carrinho", () => {
       // Sem observação, o campo simplesmente não é enviado.
       { produtoId: pizza.id, quantidade: 1 },
     ]);
+  });
+});
+
+describe("atualizarImagensDoCarrinho", () => {
+  const URL_A = "https://pub-exemplo.r2.dev/imagem-produto/a/a.webp";
+  const URL_B = "https://pub-exemplo.r2.dev/imagem-produto/a/b.webp";
+  const comPizza = () => {
+    const resultado = adicionarAoCarrinho(null, pizzaria, { ...pizza, imagemUrl: URL_A }, 1);
+    assert.equal(resultado.tipo, "adicionado");
+    if (resultado.tipo !== "adicionado") throw new Error("esperava adicionar");
+    return resultado.carrinho;
+  };
+
+  it("troca: o item passa a usar a imagem ATUAL do catálogo", () => {
+    const atualizado = atualizarImagensDoCarrinho(comPizza(), pizzaria.identidadeId, [{ id: pizza.id, imagemUrl: URL_B }]);
+    assert.equal(atualizado.itens[0]?.imagemUrl, URL_B);
+  });
+
+  it("remoção: o item volta para sem imagem (marcador neutro)", () => {
+    assert.equal(atualizarImagensDoCarrinho(comPizza(), pizzaria.identidadeId, [{ id: pizza.id, imagemUrl: null }]).itens[0]?.imagemUrl, null);
+  });
+
+  it("nada muda: devolve o MESMO carrinho; catálogo de outra empresa ou produto ausente não mexem em nada", () => {
+    const carrinho = comPizza();
+    assert.equal(atualizarImagensDoCarrinho(carrinho, pizzaria.identidadeId, [{ id: pizza.id, imagemUrl: URL_A }]), carrinho);
+    assert.equal(atualizarImagensDoCarrinho(carrinho, farmacia.identidadeId, [{ id: pizza.id, imagemUrl: URL_B }]), carrinho);
+    assert.equal(atualizarImagensDoCarrinho(carrinho, pizzaria.identidadeId, [{ id: refri.id, imagemUrl: URL_B }]), carrinho);
   });
 });

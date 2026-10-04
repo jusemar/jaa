@@ -19,8 +19,8 @@ const pizzaria: Empresa = {
   criadoEm: "2026-09-15T12:00:00.000Z",
   atualizadoEm: "2026-09-15T12:00:00.000Z",
 };
-const pessoal: IdentidadeOperavel = { tipo: "pessoal", identidadeId: "aaaaaaaa-0000-4000-8000-000000000000", nomeExibicao: "Junior Rocha", nomeUsuario: "junior" };
-const empresarial: IdentidadeOperavel = { tipo: "empresarial", identidadeId: pizzaria.identidadeId, nomeExibicao: "Pizzaria BH", nomeUsuario: "pizzariabh", empresa: { id: pizzaria.id, slug: pizzaria.slug, papel: "proprietario" } };
+const pessoal: IdentidadeOperavel = { tipo: "pessoal", identidadeId: "aaaaaaaa-0000-4000-8000-000000000000", nomeExibicao: "Junior Rocha", nomeUsuario: "junior", fotoUrl: null };
+const empresarial: IdentidadeOperavel = { tipo: "empresarial", identidadeId: pizzaria.identidadeId, nomeExibicao: "Pizzaria BH", nomeUsuario: "pizzariabh", fotoUrl: null, empresa: { id: pizzaria.id, slug: pizzaria.slug, papel: "proprietario" } };
 
 describe("ListaEmpresas", () => {
   it("mostra nome, @usuario, endereço futuro da loja, papel e Abrir", () => {

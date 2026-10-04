@@ -49,7 +49,9 @@ import { registrarRotasUsuarios } from "./features/usuarios/rotas/rotas-usuarios
 import type { Ambiente } from "./lib/ambiente.js";
 import {
   armazenamentoIndisponivel,
+  armazenamentoPrivadoIndisponivel,
   type ArmazenamentoDeArquivos,
+  type ArmazenamentoPrivado,
 } from "./lib/armazenamento/armazenamento-arquivos.js";
 
 interface DependenciasAplicacao {
@@ -67,6 +69,8 @@ interface DependenciasAplicacao {
   motorRotas?: MotorDeRotas;
   // Fronteira com o storage. Sem credenciais, o upload é recusado com aviso claro (nunca "salvou" falso).
   armazenamento?: ArmazenamentoDeArquivos;
+  // Bucket PRIVADO (imagens de conversa): leitura só por URL assinada.
+  armazenamentoPrivado?: ArmazenamentoPrivado;
   logger: FastifyServerOptions["logger"];
 }
 
@@ -81,6 +85,7 @@ export async function criarAplicacao({
   geocodificador = geocodificadorIndisponivel,
   motorRotas = criarMotorDeRotas(null),
   armazenamento = armazenamentoIndisponivel,
+  armazenamentoPrivado = armazenamentoPrivadoIndisponivel,
   logger,
 }: DependenciasAplicacao) {
   const servidor = Fastify({ logger });
@@ -116,8 +121,8 @@ export async function criarAplicacao({
     urlBase: ambiente.BETTER_AUTH_URL,
   });
   registrarRotaTesteProtegido(servidor, autenticacao);
-  registrarRotasUsuarios(servidor, { banco, autenticacao });
-  registrarRotasIdentidades(servidor, { banco, autenticacao });
+  registrarRotasUsuarios(servidor, { banco, autenticacao, armazenamento });
+  registrarRotasIdentidades(servidor, { banco, autenticacao, armazenamento });
   registrarRotasEmpresas(servidor, { banco, autenticacao });
   registrarRotasProdutosAdministracao(servidor, {
     banco,
@@ -187,9 +192,9 @@ export async function criarAplicacao({
       return resultado.tipo === "alterado";
     },
   });
-  registrarRotasContatos(servidor, { banco, autenticacao });
-  registrarRotasConversas(servidor, { banco, autenticacao, eventosMensagens });
-  registrarRotasMensagens(servidor, { banco, autenticacao, eventosMensagens });
+  registrarRotasContatos(servidor, { banco, autenticacao, armazenamento });
+  registrarRotasConversas(servidor, { banco, autenticacao, armazenamento, eventosMensagens });
+  registrarRotasMensagens(servidor, { banco, autenticacao, eventosMensagens, armazenamentoPrivado });
   registrarRotasBloqueios(servidor, { banco, autenticacao, eventosMensagens });
 
   return servidor;

@@ -241,7 +241,7 @@ describe("conteúdo e ordem da lista", () => {
     assert.deepEqual(itemA, {
       id: conversaAB,
       tipo: "direta",
-      outraIdentidade: { identidadeId: B.identidadeId, tipo: "pessoal", nomeExibicao: "Pessoa lst_b", nomeUsuario: "lst_b" },
+      outraIdentidade: { identidadeId: B.identidadeId, tipo: "pessoal", nomeExibicao: "Pessoa lst_b", nomeUsuario: "lst_b", fotoUrl: null },
       ultimaMensagem: mensagem,
       // Atividade = a última mensagem visível; sem bloqueio entre as pessoas.
       atividadeId: mensagem.id,
@@ -249,7 +249,7 @@ describe("conteúdo e ordem da lista", () => {
       comunicacaoBloqueada: false,
     });
     assert.equal(itemB?.naoLidas, 1, "a mensagem de A é não lida para B");
-    assert.deepEqual(itemB?.outraIdentidade, { identidadeId: A.identidadeId, tipo: "pessoal", nomeExibicao: "Pessoa lst_a", nomeUsuario: "lst_a" });
+    assert.deepEqual(itemB?.outraIdentidade, { identidadeId: A.identidadeId, tipo: "pessoal", nomeExibicao: "Pessoa lst_a", nomeUsuario: "lst_a", fotoUrl: null });
     assert.deepEqual(itemB?.ultimaMensagem, mensagem);
   });
 
@@ -338,8 +338,8 @@ describe("isolamento e privacidade", () => {
     assert.deepEqual(Object.keys(json).sort(), ["conversas", "proximoCursor"]);
     for (const item of json.conversas as ItemListaConversas[]) {
       assert.deepEqual(Object.keys(item).sort(), ["atividadeId", "comunicacaoBloqueada", "id", "naoLidas", "outraIdentidade", "tipo", "ultimaMensagem"]);
-      assert.deepEqual(Object.keys(item.outraIdentidade).sort(), ["identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
-      assert.deepEqual(Object.keys(item.ultimaMensagem ?? {}).sort(), ["conteudo", "conversaId", "criadoEm", "editadaEm", "estado", "excluidaEm", "id", "mensagemRespondida", "pedido", "remetenteIdentidadeId", "tipo"]);
+      assert.deepEqual(Object.keys(item.outraIdentidade).sort(), ["fotoUrl", "identidadeId", "nomeExibicao", "nomeUsuario", "tipo"]);
+      assert.deepEqual(Object.keys(item.ultimaMensagem ?? {}).sort(), ["anexo", "conteudo", "conversaId", "criadoEm", "editadaEm", "estado", "excluidaEm", "id", "mensagemRespondida", "pedido", "remetenteIdentidadeId", "tipo"]);
     }
 
     const contas = await banco.select({ id: users.id, email: users.email }).from(users).where(inArray(users.phoneNumber, TELEFONES_TESTE));

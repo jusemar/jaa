@@ -1,7 +1,7 @@
 import type { Banco } from "@jaa/banco";
 import { atribuicoesEntrega, entregadoresEmpresa, identidades, membrosEmpresa } from "@jaa/banco/schema";
 import type { StatusEntregador } from "@jaa/contratos";
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { aplicarMudancaOperacional } from "./repositorio-fila.js";
 
 export type EntregadorRegistro = typeof entregadoresEmpresa.$inferSelect;
@@ -197,6 +197,18 @@ export function listarVinculosDaPessoa(banco: Banco, usuarioId: string) {
     .from(entregadoresEmpresa)
     .where(eq(entregadoresEmpresa.usuarioId, usuarioId))
     .orderBy(desc(entregadoresEmpresa.id));
+}
+
+// Resumo dos vínculos da pessoa por status, numa consulta agregada (contexto da conta: sem empresas nem N+1).
+export async function contarVinculosDaPessoaPorStatus(banco: Banco, usuarioId: string): Promise<Record<StatusEntregador, number>> {
+  const linhas = await banco
+    .select({ status: entregadoresEmpresa.status, total: count() })
+    .from(entregadoresEmpresa)
+    .where(eq(entregadoresEmpresa.usuarioId, usuarioId))
+    .groupBy(entregadoresEmpresa.status);
+  const contagem: Record<StatusEntregador, number> = { convidado: 0, ativo: 0, inativo: 0 };
+  for (const linha of linhas) contagem[linha.status] = linha.total;
+  return contagem;
 }
 
 // Vínculos ATIVOS da conta: base da área "Minhas entregas" (uma pessoa entrega para várias empresas).

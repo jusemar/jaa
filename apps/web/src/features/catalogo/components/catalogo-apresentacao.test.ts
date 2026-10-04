@@ -397,3 +397,31 @@ describe("cardápio do cliente (Web)", () => {
     assert.ok(blocoDoGrupo(montador(), tamanho.id).includes("min-w-0"));
   });
 });
+describe("imagem do produto no catálogo do cliente", () => {
+  const URL = "https://pub-exemplo.r2.dev/imagem-produto/aaaaaaaa-0000-4000-8000-000000000000/a.webp";
+  const comImagem: ProdutoPublico = { ...calabresa, imagemUrl: URL };
+  const cardapioCom = (produto: ProdutoPublico) =>
+    renderToStaticMarkup(
+      createElement(Cardapio, {
+        empresa,
+        secoes: montarSecoes([pizzas], [produto]),
+        secaoEscolhidaId: null,
+        aoEscolherSecao: () => {},
+        aoVer: () => {},
+      }),
+    );
+  const detalhe = (produto: ProdutoPublico) =>
+    renderToStaticMarkup(createElement(DetalheProdutoCatalogo, { empresa, produto, grupos: [], aoVoltar: () => {}, aoAdicionar: () => {} }));
+
+  it("card do cardápio e detalhe mostram a imagem real quando há imagemUrl", () => {
+    assert.ok(cardapioCom(comImagem).includes(`src="${URL}"`));
+    assert.ok(detalhe(comImagem).includes(`src="${URL}"`));
+  });
+
+  it("sem imagem: o marcador neutro existente (data-sem-imagem), nunca <img> quebrado", () => {
+    for (const html of [cardapioCom(calabresa), detalhe(calabresa)]) {
+      assert.ok(html.includes("data-sem-imagem"));
+      assert.ok(!html.includes("<img"));
+    }
+  });
+});

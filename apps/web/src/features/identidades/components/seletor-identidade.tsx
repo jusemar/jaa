@@ -64,7 +64,7 @@ export function SeletorIdentidade({
             : "flex min-h-11 w-full items-center gap-2 rounded-jaa-compacto border border-borda bg-superficie px-2 text-left hover:bg-realce"
         }
       >
-        {ativa && <AvatarIdentidade identidade={{ identidadeId: ativa.identidadeId, nomeExibicao: ativa.nomeExibicao, tipo: ativa.tipo }} tamanho="pequeno" />}
+        {ativa && <AvatarIdentidade identidade={ativa} tamanho="pequeno" />}
         {!compacto && (
           <>
             <span className="flex min-w-0 flex-1 flex-col">
@@ -137,7 +137,7 @@ function Grupo({
             }}
             className={`flex min-h-12 items-center gap-2 px-3 text-left text-sm hover:bg-superficie-suave ${selecionada ? "bg-marca-suave" : ""}`}
           >
-            <AvatarIdentidade identidade={{ identidadeId: identidade.identidadeId, nomeExibicao: identidade.nomeExibicao, tipo: identidade.tipo }} tamanho="pequeno" />
+            <AvatarIdentidade identidade={identidade} tamanho="pequeno" />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate font-medium">{identidade.nomeExibicao}</span>
               <span className="truncate text-xs text-conteudo-suave">@{identidade.nomeUsuario}</span>

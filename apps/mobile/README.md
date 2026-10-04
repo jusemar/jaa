@@ -1,59 +1,36 @@
-# Welcome to your Expo app 👋
+# Jaa — aplicativo mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplicativo ÚNICO do Jaa (React Native + Expo SDK 57 + Expo Router). Não existem apps separados de
+cliente, entregador ou profissional: as capacidades pertencem à mesma identidade pessoal e vêm do
+servidor (`GET /conta/contexto`). As regras do projeto estão no `CLAUDE.md` da raiz.
 
-## Get started
+## Estrutura
 
-1. Install dependencies
+- `src/app` — rotas FINAS: `_layout` (Stack raiz), `(abas)` (Início, Entregas, Conta) e `diagnostico`
+  (tela temporária de desenvolvimento, aberta pela aba Conta);
+- `src/features` — domínio: `autenticacao` (senha e OTP, Better Auth + SecureStore), `conta` (contexto
+  central, portão de sessão, conta), `inicio`, `entregas` (saída em andamento e rastreamento);
+- `src/components/ui` — primitivos visuais do Jaa (Texto, Botao, CampoTexto, Cartao, Selo, Aviso…);
+- `src/constants/theme.ts` — tokens (cores, espaços, raios), com os mesmos nomes semânticos da Web.
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Rodar (emulador Android + API local)
 
 ```bash
-npm run reset-project
+# 1. API na porta 3333 (raiz do monorepo)
+npm run dev -w @jaa/api
+
+# 2. Metro (em apps/mobile). No emulador Android, 10.0.2.2 é o computador que hospeda o emulador.
+EXPO_PUBLIC_JAA_API_URL=http://10.0.2.2:3333 npx expo start --clear
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+A tela de entrada mostra, em desenvolvimento, a linha "Servidor: …" com o endereço da API em uso.
 
-### Other setup steps
+## Verificações
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+npm run typecheck -w mobile
+npm test -w mobile          # lógica pura (node:test)
+```
 
 ## Rastreamento da entrega (localização em background)
 
@@ -61,41 +38,24 @@ O aplicativo compartilha a localização do entregador **somente enquanto existe
 atribuída a ele**. Terminou a saída (concluída, cancelada ou perdida), o rastreamento para — e o
 servidor recusa qualquer posição fora da operação. Fora de uma entrega o Jaa não coleta localização.
 
-### Development Build é obrigatório
+Localização em background **não funciona no Expo Go**; exige development build
+(`npx expo prebuild` + `npx expo run:android`). As permissões já estão no `app.json`. A interface
+mostra a situação real (`permissao_negada`, `somente_primeiro_plano`, `gps_desligado`, `ativo`) em vez
+de prometer acompanhamento contínuo. A política de envio é compartilhada em `@jaa/contratos`
+(`POLITICA_RASTREAMENTO`, `decidirEnvioDePosicao`).
 
-Localização em background **não funciona no Expo Go** e o comportamento dele não representa o do
-aparelho real. Para testar:
+Pendência conhecida: o estado local do rastreamento fica em memória (ver `CLAUDE.md`, seção 7,
+"Rastreamento durante a saída").
 
-```bash
-npx expo prebuild        # gera os projetos nativos com as permissões do app.json
-npx expo run:android     # ou: npx expo run:ios
-```
+## Foto do perfil (câmera e galeria)
 
-O que já está configurado em `app.json`:
+Na aba Perfil, tocar no avatar abre: **Tirar foto**, **Escolher da galeria** e, havendo foto,
+**Remover**. O envio usa a MESMA rota da Web (`POST|DELETE /perfil/foto`, multipart com o campo
+`arquivo`), com a sessão do aparelho e a identidade atuante; nenhuma credencial de armazenamento existe
+no app. Antes do envio a imagem é recortada em quadrado e reduzida a JPEG de até 1024 px
+(`expo-image-manipulator`): isso garante formato aceito pela API (HEIC/HEIF viram JPEG) e pouco
+tráfego. A permissão de câmera é pedida só ao tocar em "Tirar foto"; a galeria usa o seletor de fotos
+do sistema, sem permissão de armazenamento.
 
-- **Android**: `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`,
-  `FOREGROUND_SERVICE` e `FOREGROUND_SERVICE_LOCATION`, com serviço em primeiro plano (notificação
-  visível durante a entrega — exigência do sistema e transparência com a pessoa);
-- **iOS**: `UIBackgroundModes: ["location"]` e os textos de permissão (`WhenInUse` e
-  `AlwaysAndWhenInUse`), com o indicador azul de localização ativo em segundo plano.
-
-### O que o sistema operacional pode limitar
-
-O Jaa **não promete** rastreamento contínuo: quem decide é o sistema. A interface mostra a situação
-real — `permissao_negada`, `somente_primeiro_plano` (funciona com o app aberto, não com a tela
-bloqueada), `gps_desligado`, `degradado` ou `ativo` — em vez de fingir que está acompanhando.
-
-### Política de envio
-
-A política é compartilhada em `@jaa/contratos` (`POLITICA_RASTREAMENTO`, `decidirEnvioDePosicao`):
-uma atualização útil a cada 10–20 s, descartando leitura imprecisa e posição praticamente igual à
-anterior, com "sinal de vida" no intervalo máximo. Ajuste os valores lá — nunca espalhados no código.
-
-Sem conexão, o aplicativo guarda uma fila **curta** (as posições mais recentes) e envia ao reconectar:
-o que importa é a posição atual da operação, não a trilha do que já passou.
-
-### Autenticação
-
-A autenticação do Mobile ainda não existe (ver `CLAUDE.md`, seção 5). O cliente HTTP já usa a mesma
-sessão Better Auth do Web (`credentials: "include"`); quando o login mobile for implementado, esta
-área funciona sem mudança.
+`expo-image-picker` e `expo-image-manipulator` são módulos nativos: depois de instalá-los é preciso
+GERAR UM NOVO development build (`npx expo run:android`), senão o app falha ao abrir o seletor.

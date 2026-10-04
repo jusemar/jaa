@@ -16,7 +16,9 @@ type ResultadoEditarMensagem =
   | { tipo: "comunicacao-bloqueada" }
   | { tipo: "mensagem-nao-encontrada" }
   | { tipo: "de-outra-identidade" }
-  | { tipo: "excluida" };
+  | { tipo: "excluida" }
+  // Só texto se edita: card de pedido e imagem (legenda inclusive) não.
+  | { tipo: "nao-editavel" };
 
 /**
  * Edita o conteúdo de uma mensagem de texto do PRÓPRIO autor (identidade da sessão).
@@ -43,6 +45,7 @@ export async function editarMensagem(
   if (!atual || (await estaOcultaPara(banco, mensagemId, identidadeId))) return { tipo: "mensagem-nao-encontrada" };
   if (atual.remetenteIdentidadeId !== identidadeId) return { tipo: "de-outra-identidade" };
   if (atual.excluidaParaTodosEm) return { tipo: "excluida" };
+  if (atual.tipo !== "texto") return { tipo: "nao-editavel" };
   if (atual.conteudo === conteudo) return { tipo: "sem-alteracao", mensagem: atual };
 
   const alterou = await atualizarConteudoMensagem(banco, { conversaId, mensagemId, remetenteIdentidadeId: identidadeId, conteudo, operadorUsuarioId });

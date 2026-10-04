@@ -11,8 +11,8 @@ import { criarMotorDeRotas } from "./features/entregas/lib/motor-rotas.js";
 import { criarProvedorMapbox } from "./features/entregas/lib/provedores/provedor-mapbox.js";
 import { iniciarRotinaDespacho } from "./features/entregas/lib/rotina-despacho.js";
 import { criarCanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos.js";
-import { carregarAmbiente } from "./lib/ambiente.js";
-import { criarArmazenamento } from "./lib/armazenamento/criar-armazenamento.js";
+import { NOMES_VARIAVEIS_ARMAZENAMENTO, carregarAmbiente, situacaoArmazenamentoPrivado, situacaoArmazenamentoPublico } from "./lib/ambiente.js";
+import { criarArmazenamento, criarArmazenamentoPrivado } from "./lib/armazenamento/criar-armazenamento.js";
 import { configurarRealtime } from "./realtime/configurar-realtime.js";
 
 const ambiente = carregarAmbiente();
@@ -51,8 +51,21 @@ const servidor = await criarAplicacao({
   geocodificador,
   motorRotas,
   armazenamento: criarArmazenamento(ambiente),
+  armazenamentoPrivado: criarArmazenamentoPrivado(ambiente),
   logger: true,
 });
+
+// Só NOMES de variáveis no aviso, nunca valores. (Em produção, configuração parcial nem chega aqui.)
+if (situacaoArmazenamentoPublico(ambiente) === "parcial") {
+  servidor.log.warn(
+    `Armazenamento R2 PÚBLICO configurado pela metade: preencha ${NOMES_VARIAVEIS_ARMAZENAMENTO.publico.join(", ")}. Até lá o envio de imagens responde 503.`,
+  );
+}
+if (situacaoArmazenamentoPrivado(ambiente) === "parcial") {
+  servidor.log.warn(
+    `Armazenamento R2 PRIVADO configurado pela metade: preencha ${NOMES_VARIAVEIS_ARMAZENAMENTO.privado.join(", ")}. Até lá ele fica indisponível.`,
+  );
+}
 
 configurarRealtime(servidor, {
   autenticacao,

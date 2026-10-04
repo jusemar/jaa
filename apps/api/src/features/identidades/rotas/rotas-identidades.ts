@@ -7,6 +7,7 @@ import {
 } from "@jaa/contratos";
 import type { FastifyInstance } from "fastify";
 import * as z from "zod";
+import type { ArmazenamentoDeArquivos } from "../../../lib/armazenamento/armazenamento-arquivos.js";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
 import {
   exigirIdentidadeAutenticada,
@@ -19,14 +20,16 @@ import {
 import { criarIdentidadePessoal } from "../casos-de-uso/criar-identidade-pessoal.js";
 import {
   autorizarOperacaoIdentidade,
+  comFotos,
   listarIdentidadesOperaveis,
 } from "../lib/autorizacao-identidades.js";
 import { serializarIdentidadePessoal } from "../lib/serializar-identidade.js";
 
 export function registrarRotasIdentidades(
   servidor: FastifyInstance,
-  { banco, autenticacao }: { banco: Banco; autenticacao: Autenticacao },
+  { banco, autenticacao, armazenamento }: { banco: Banco; autenticacao: Autenticacao; armazenamento: ArmazenamentoDeArquivos },
 ) {
+  const urlPublica = (chave: string) => armazenamento.urlPublica(chave);
   servidor.post(
     "/identidades/pessoal",
     { preHandler: exigirSessao(autenticacao) },
@@ -92,7 +95,7 @@ export function registrarRotasIdentidades(
     async (requisicao) => {
       const { usuarioId } = obterIdentidadeExigida(requisicao);
       const lista: ListaIdentidadesOperaveis = {
-        identidades: await listarIdentidadesOperaveis(banco, usuarioId),
+        identidades: await comFotos(banco, await listarIdentidadesOperaveis(banco, usuarioId), urlPublica),
       };
       return lista;
     },
@@ -114,12 +117,14 @@ export function registrarRotasIdentidades(
         };
         return resposta.code(400).send(erro);
       }
-      const identidade: IdentidadeOperavel | null =
-        await autorizarOperacaoIdentidade(
-          banco,
-          usuarioId,
-          parametros.data.identidadeId,
-        );
+      const autorizada = await autorizarOperacaoIdentidade(
+        banco,
+        usuarioId,
+        parametros.data.identidadeId,
+      );
+      const identidade: IdentidadeOperavel | null = autorizada
+        ? ((await comFotos(banco, [autorizada], urlPublica))[0] ?? null)
+        : null;
       if (!identidade) {
         const erro: ErroApi = {
           codigo: "IDENTIDADE_NAO_ENCONTRADA",

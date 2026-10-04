@@ -2,13 +2,16 @@
 
 import type {
   EventoNotificacaoNovaMensagem,
+  IdentidadeVisivel,
   ParticipanteConversa,
   TipoIdentidade,
 } from "@jaa/contratos";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
 import { IconeConversa } from "@/components/ui/icones";
 import { PesquisaJaa } from "@/features/contatos/components/pesquisa-jaa";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { BotaoPainelLateral, MestreDetalhe, usePainelRecolhido } from "@/components/navegacao/mestre-detalhe";
+import { AreaContatos } from "@/features/contatos/components/area-contatos";
 import { useConfirmacaoRecebimento } from "../hooks/use-confirmacao-recebimento";
 import { useDocumentoVisivel } from "../hooks/use-documento-visivel";
 import { useListaConversas } from "../hooks/use-lista-conversas";
@@ -32,20 +35,25 @@ import { ConversaTecnica, type ConversaAberta } from "./conversa-tecnica";
 import { ListaConversas } from "./lista-conversas";
 
 /*
- * O MENSAGEIRO em dois painéis, como na referência de UI/UX aprovada: a lista de conversas à
- * esquerda e a conversa aberta à direita.
+ * O MENSAGEIRO em mestre-detalhe (`MestreDetalhe`): painel lateral à esquerda e a conversa aberta à
+ * direita, sempre que a janela comporta os dois; a pessoa pode recolher o painel.
  *
- * No CELULAR só um painel existe por vez — a lista ocupa a tela, e abrir uma conversa a substitui
- * (com "voltar" no cabeçalho). É a diferença que mais pesa na experiência: antes a conversa era uma
- * caixinha de altura fixa embaixo da lista, e no celular isso era impraticável.
+ * O painel mostra a LISTA DE CONVERSAS ou os CONTATOS (`painel`), conforme a área aberta no app. A
+ * conversa é a mesma nos dois casos — uma só, com o mesmo estado: trocar de área não a fecha.
+ *
+ * Na janela ESTREITA só um lado existe por vez — o painel ocupa a tela, e abrir uma conversa o
+ * substitui (com "voltar" no cabeçalho).
  *
  * Nada da mecânica mudou: inbox por identidade ATUANTE, realtime, confirmação de recebimento,
  * leitura e notificações continuam exatamente como estavam.
  */
 
+export type PainelMensageiro = "conversas" | "contatos";
+
 // `identidadeId` = identidade ATUANTE (pessoal ou empresa operada). A inbox é carregada pela API para ela.
 export function MensageiroTecnico({
   identidadeId,
+  painel = "conversas",
   tipoIdentidade = "pessoal",
   pessoa,
   aoAlterarConversaAberta,
@@ -54,6 +62,8 @@ export function MensageiroTecnico({
   aoAbrirConversaSolicitada,
 }: {
   identidadeId: string;
+  // O que o painel lateral lista. A conversa aberta ao lado é a mesma nos dois.
+  painel?: PainelMensageiro;
   tipoIdentidade?: TipoIdentidade;
   /*
    * Quem está USANDO o Jaa: a identidade PESSOAL da conta, que é o que o topo da lista identifica.
@@ -61,10 +71,10 @@ export function MensageiroTecnico({
    * pessoa sentada no aplicativo continua sendo a mesma. Vem da lista de identidades operáveis que
    * o servidor já devolve (a mesma fonte do "Agindo como"): nenhum estado novo.
    */
-  pessoa: Pick<
+  pessoa: (Pick<
     ParticipanteConversa,
     "identidadeId" | "nomeExibicao" | "nomeUsuario" | "tipo"
-  > | null;
+  > & { fotoUrl?: string | null }) | null;
   // Avisa o app: com uma conversa aberta no celular, a barra de navegação sai do caminho.
   aoAlterarConversaAberta?: (aberta: boolean) => void;
   // Abre a área de pedidos do aplicativo; ausente quando a identidade atual não tem essa área.
@@ -154,9 +164,14 @@ export function MensageiroTecnico({
   }, [conversaAberta, aoAlterarConversaAberta]);
 
   function abrirPelaNotificacao(aviso: EventoNotificacaoNovaMensagem) {
+    /*
+     * O aviso traz só nome e @usuario do remetente. A foto (já filtrada pela privacidade no servidor)
+     * vem da lista de conversas, que recebe a mesma mensagem; sem ela ainda, as iniciais.
+     */
+    const daLista = lista.itens.find((item) => item.id === aviso.conversaId)?.outraIdentidade;
     setConversaAberta({
       id: aviso.conversaId,
-      outraIdentidade: aviso.remetente,
+      outraIdentidade: daLista ?? { ...aviso.remetente, fotoUrl: null },
     });
     notificacoes.dispensar(aviso.mensagemId);
   }
@@ -194,7 +209,7 @@ export function MensageiroTecnico({
         setErro(aberta.mensagem);
         return;
       }
-      const outra: ParticipanteConversa | undefined =
+      const outra: IdentidadeVisivel | undefined =
         aberta.dados.participantes.find((p) => p.identidadeId !== identidadeId);
       if (outra)
         setConversaAberta({ id: aberta.dados.id, outraIdentidade: outra });
@@ -203,149 +218,137 @@ export function MensageiroTecnico({
     }
   }
 
+  const { recolhido, alternar } = usePainelRecolhido();
+  const avisosDeAbertura = (
+    <>
+      {abrindo && (
+        <p role="status" className="text-xs text-conteudo-suave">
+          Abrindo conversa…
+        </p>
+      )}
+      {erro && (
+        <p role="alert" className="text-sm text-perigo">
+          {erro}
+        </p>
+      )}
+    </>
+  );
+
+  const painelLateral = (
+    <>
+      {/*
+        QUEM ESTÁ USANDO o Jaa, no alto do painel — e não o nome do aplicativo, que a pessoa já sabe.
+        Mesma altura do cabeçalho da conversa (72px): os dois se alinham. Só existe na janela larga
+        (`md`): abaixo disso quem identifica a conta é a barra do topo do aplicativo. A troca de
+        identidade continua no "Agindo como", que é o lugar dela.
+      */}
+      <div className="hidden h-[4.5rem] shrink-0 items-center gap-2.5 border-b border-borda px-4 md:flex">
+        {pessoa && (
+          <>
+            <AvatarIdentidade identidade={pessoa} tamanho="pequeno" />
+            <span className="min-w-0 flex-1">
+              <span data-identidade-em-uso className="block truncate text-sm font-bold">
+                {pessoa.nomeExibicao}
+              </span>
+              <span className="block truncate text-xs text-conteudo-suave">@{pessoa.nomeUsuario}</span>
+            </span>
+          </>
+        )}
+        <BotaoPainelLateral recolhido={false} aoAlternar={alternar} className="ml-auto" />
+      </div>
+
+      {painel === "contatos" ? (
+        // A MESMA agenda de sempre, agora no painel: escolher alguém abre a conversa ao lado.
+        <div data-painel-contatos className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 pb-24 md:pb-4">
+          {avisosDeAbertura}
+          <AreaContatos aoAbrirConversa={(nomeUsuario) => void abrirCom(nomeUsuario)} />
+        </div>
+      ) : (
+        <>
+          <div className="flex shrink-0 flex-col gap-3 border-b border-borda p-4">
+            {/* Uma busca só: pessoas e empresas, contatos primeiro. Tocar no resultado abre a conversa. */}
+            <PesquisaJaa comProfissionais aoAbrirConversa={(nomeUsuario) => void abrirCom(nomeUsuario)} />
+
+            <div role="tablist" aria-label="Filtrar conversas" className="flex gap-2">
+              {FILTROS_CONVERSAS.map((opcao) => {
+                const ativo = filtro === opcao;
+                return (
+                  <button
+                    key={opcao}
+                    type="button"
+                    role="tab"
+                    aria-selected={ativo}
+                    data-filtro-conversas={opcao}
+                    onClick={() => setFiltro(opcao)}
+                    className={`flex min-h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors ${
+                      ativo ? "bg-marca text-marca-conteudo" : "text-conteudo-suave hover:bg-realce hover:text-conteudo"
+                    }`}
+                  >
+                    {ROTULO_FILTRO_CONVERSAS[opcao]}
+                    {opcao === "nao-lidas" && conversasNaoLidas > 0 && (
+                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${ativo ? "bg-marca-conteudo/20" : "bg-marca text-marca-conteudo"}`}>
+                        {conversasNaoLidas}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {avisosDeAbertura}
+          </div>
+
+          <ListaConversas
+            identidadeId={identidadeId}
+            itens={itensVisiveis}
+            carregando={!lista.primeiraPaginaCarregada && !lista.erro}
+            erro={lista.erro}
+            // Paginar só faz sentido na lista completa: o filtro é recorte do que já está carregado.
+            temMais={filtro === "todas" && lista.proximoCursor !== null}
+            carregandoMais={lista.carregandoMais}
+            conversaAbertaId={conversaAberta?.id ?? null}
+            conversaEmLeituraId={conversaEmLeituraId}
+            aoAcaoConversa={executarAcaoConversa}
+            aoAbrir={(item) => setConversaAberta({ id: item.id, outraIdentidade: item.outraIdentidade })}
+            aoCarregarMais={() => void lista.carregarMais()}
+          />
+        </>
+      )}
+    </>
+  );
+
+  // Painel recolhido: o caminho de volta fica no próprio conteúdo (cabeçalho da conversa ou tela vazia).
+  const abrirPainel = recolhido ? <BotaoPainelLateral recolhido aoAlternar={alternar} /> : null;
+
+  const conteudo = conversaAberta ? (
+    // `key`: trocar de conversa recomeça o estado (histórico, envio pendente, atividade) do zero.
+    <ConversaTecnica
+      key={`${conversaAberta.id}:${versaoLimpeza}`}
+      identidadeId={identidadeId}
+      tipoIdentidade={tipoIdentidade}
+      conversa={conversaAberta}
+      aoVoltar={() => setConversaAberta(null)}
+      inicioCabecalho={abrirPainel}
+      {...(aoAbrirPedidos ? { aoAbrirPedidos } : {})}
+      aoMensagemConfirmada={lista.registrarMensagem}
+      aoMensagemAtualizada={lista.registrarAtualizacao}
+      aoMensagemExcluidaParaMim={lista.registrarExclusaoParaMim}
+      aoConversarCom={(nomeUsuario) => void abrirCom(nomeUsuario)}
+      aoAcaoConversa={executarAcaoConversa}
+    />
+  ) : (
+    <ConversaNaoEscolhida painel={painel} inicio={abrirPainel} />
+  );
+
   return (
     <section aria-label="Mensageiro" className="flex min-h-0 min-w-0 flex-1">
-      {/* Coluna da inbox: 300px no desktop, como na referência de UI/UX aprovada. */}
-      <aside
-        aria-label="Conversas"
-        className={`min-w-0 flex-col border-borda bg-superficie xl:flex xl:w-[18.75rem] xl:shrink-0 xl:border-r ${conversaAberta ? "hidden w-full" : "flex w-full"}`}
-      >
-        {/*
-          QUEM ESTÁ USANDO o Jaa, no alto da lista — e não o nome do aplicativo, que a pessoa já sabe.
-          Mesma altura do cabeçalho da conversa (72px): as duas se alinham.
-          Acompanha a barra do topo do aplicativo (`md`), não as colunas (`xl`): abaixo de `md` quem
-          identifica a conta é aquela barra, e daí para cima é aqui — em nenhuma largura a inbox fica
-          sem cabeçalho. A troca de identidade continua no "Agindo como", que é o lugar dela.
-        */}
-        <div className="hidden h-[4.5rem] shrink-0 items-center gap-2.5 border-b border-borda px-4 md:flex">
-          {pessoa && (
-            <>
-              <AvatarIdentidade identidade={pessoa} tamanho="pequeno" />
-              <span className="min-w-0">
-                <span
-                  data-identidade-em-uso
-                  className="block truncate text-sm font-bold"
-                >
-                  {pessoa.nomeExibicao}
-                </span>
-                <span className="block truncate text-xs text-conteudo-suave">
-                  @{pessoa.nomeUsuario}
-                </span>
-              </span>
-            </>
-          )}
-        </div>
-
-        <div className="flex shrink-0 flex-col gap-3 border-b border-borda p-4">
-          {/* Uma busca só: pessoas e empresas, contatos primeiro. Tocar no resultado abre a conversa. */}
-          <PesquisaJaa
-            comProfissionais
-            aoAbrirConversa={(nomeUsuario) => void abrirCom(nomeUsuario)}
-          />
-
-          <div
-            role="tablist"
-            aria-label="Filtrar conversas"
-            className="flex gap-2"
-          >
-            {FILTROS_CONVERSAS.map((opcao) => {
-              const ativo = filtro === opcao;
-              return (
-                <button
-                  key={opcao}
-                  type="button"
-                  role="tab"
-                  aria-selected={ativo}
-                  data-filtro-conversas={opcao}
-                  onClick={() => setFiltro(opcao)}
-                  className={`flex min-h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors ${
-                    ativo
-                      ? "bg-marca text-marca-conteudo"
-                      : "text-conteudo-suave hover:bg-realce hover:text-conteudo"
-                  }`}
-                >
-                  {ROTULO_FILTRO_CONVERSAS[opcao]}
-                  {opcao === "nao-lidas" && conversasNaoLidas > 0 && (
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${ativo ? "bg-marca-conteudo/20" : "bg-marca text-marca-conteudo"}`}
-                    >
-                      {conversasNaoLidas}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {abrindo && (
-            <p role="status" className="text-xs text-conteudo-suave">
-              Abrindo conversa…
-            </p>
-          )}
-          {erro && (
-            <p role="alert" className="text-sm text-perigo">
-              {erro}
-            </p>
-          )}
-        </div>
-
-        <ListaConversas
-          identidadeId={identidadeId}
-          itens={itensVisiveis}
-          carregando={!lista.primeiraPaginaCarregada && !lista.erro}
-          erro={lista.erro}
-          // Paginar só faz sentido na lista completa: o filtro é recorte do que já está carregado.
-          temMais={filtro === "todas" && lista.proximoCursor !== null}
-          carregandoMais={lista.carregandoMais}
-          conversaAbertaId={conversaAberta?.id ?? null}
-          conversaEmLeituraId={conversaEmLeituraId}
-          aoAcaoConversa={executarAcaoConversa}
-          aoAbrir={(item) =>
-            setConversaAberta({
-              id: item.id,
-              outraIdentidade: item.outraIdentidade,
-            })
-          }
-          aoCarregarMais={() => void lista.carregarMais()}
-        />
-      </aside>
-
-      <div
-        className={`min-w-0 flex-1 flex-col ${conversaAberta ? "flex" : "hidden xl:flex"}`}
-      >
-        {conversaAberta ? (
-          // `key`: trocar de conversa recomeça o estado (histórico, envio pendente, atividade) do zero.
-          <ConversaTecnica
-            key={`${conversaAberta.id}:${versaoLimpeza}`}
-            identidadeId={identidadeId}
-            tipoIdentidade={tipoIdentidade}
-            conversa={conversaAberta}
-            aoVoltar={() => setConversaAberta(null)}
-            {...(aoAbrirPedidos ? { aoAbrirPedidos } : {})}
-            aoMensagemConfirmada={lista.registrarMensagem}
-            aoMensagemAtualizada={lista.registrarAtualizacao}
-            aoMensagemExcluidaParaMim={lista.registrarExclusaoParaMim}
-            aoConversarCom={(nomeUsuario) => void abrirCom(nomeUsuario)}
-            aoAcaoConversa={executarAcaoConversa}
-          />
-        ) : (
-          <div className="chat-wallpaper flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-            <span
-              aria-hidden
-              className="grid h-14 w-14 place-items-center rounded-full bg-marca text-marca-conteudo shadow-suave"
-            >
-              <IconeConversa className="h-7 w-7" />
-            </span>
-            <p className="fonte-display text-base font-bold">
-              Escolha uma conversa
-            </p>
-            <p className="max-w-sm text-sm text-conteudo-suave">
-              Selecione alguém na lista ao lado, ou use a busca para encontrar
-              uma pessoa ou empresa pelo nome ou @usuario.
-            </p>
-          </div>
-        )}
-      </div>
+      <MestreDetalhe
+        rotuloPainel={painel === "contatos" ? "Contatos" : "Conversas"}
+        painel={painelLateral}
+        conteudo={conteudo}
+        conteudoEmFoco={conversaAberta !== null}
+        recolhido={recolhido}
+      />
 
       <AvisosNotificacao
         avisos={notificacoes.avisos}
@@ -353,5 +356,23 @@ export function MensageiroTecnico({
         aoDispensar={notificacoes.dispensar}
       />
     </section>
+  );
+}
+
+/** Lado direito sem conversa aberta. Só aparece na janela larga (na estreita o painel é a tela). */
+export function ConversaNaoEscolhida({ painel, inicio }: { painel: PainelMensageiro; inicio?: ReactNode }) {
+  return (
+    <div data-conversa-nao-escolhida className="chat-wallpaper relative flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+      {inicio && <div className="absolute left-3 top-4">{inicio}</div>}
+      <span aria-hidden className="grid h-14 w-14 place-items-center rounded-full bg-marca text-marca-conteudo shadow-suave">
+        <IconeConversa className="h-7 w-7" />
+      </span>
+      <p className="fonte-display text-base font-bold">Escolha uma conversa</p>
+      <p className="max-w-sm text-sm text-conteudo-suave">
+        {painel === "contatos"
+          ? "Selecione um contato na lista ao lado, ou use a busca para encontrar uma pessoa ou empresa. A conversa abre aqui."
+          : "Selecione alguém na lista ao lado, ou use a busca para encontrar uma pessoa ou empresa pelo nome ou @usuario."}
+      </p>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ItemListaConversas } from "@jaa/contratos";
+import { PREVIA_AUDIO, PREVIA_IMAGEM, type ItemListaConversas } from "@jaa/contratos";
 import { useState } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
 import { rotuloNaoLidas } from "../lib/lista-conversas";
@@ -158,6 +158,18 @@ export function ListaConversas(props: {
                         <>
                           {autor}
                           <span>Pedido</span>
+                        </>
+                      ) : ultimaMensagem.tipo === "imagem" ? (
+                        // Só o rótulo: nada de URL, nome de arquivo ou miniatura da imagem privada.
+                        <>
+                          {autor}
+                          <span data-previa-imagem>{PREVIA_IMAGEM}</span>
+                        </>
+                      ) : ultimaMensagem.tipo === "audio" ? (
+                        // Só o rótulo: nada de URL, duração, formato ou nome de arquivo do áudio privado.
+                        <>
+                          {autor}
+                          <span data-previa-audio>{PREVIA_AUDIO}</span>
                         </>
                       ) : (
                         <>

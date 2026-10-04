@@ -14,7 +14,7 @@ import {
   type ExclusaoParaMim,
   type GrupoOpcoesPublico,
   type Mensagem,
-  type ParticipanteConversa,
+  type IdentidadeVisivel,
   type EnderecoCliente,
   type Pedido,
   type TipoIdentidade,
@@ -43,6 +43,8 @@ import {
   confirmarLeituraConversa,
   editarMensagem,
   enviarMensagem,
+  enviarMensagemAudio,
+  enviarMensagemImagem,
   excluirMensagemParaMim,
   excluirMensagemParaTodos,
   listarMensagens,
@@ -84,8 +86,25 @@ import { AcompanhamentoDoPedido } from "@/features/entregas/components/acompanha
 import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
 import { useStatusPedido } from "@/features/pedidos/hooks/use-status-pedido";
 import { criarPedido, obterPedido } from "@/features/pedidos/lib/api-pedidos";
-import { AcoesMidiaDesabilitadas } from "./acoes-midia-desabilitadas";
+import { BalaoAudioPendente } from "./balao-audio-pendente";
+import { BalaoImagemPendente } from "./balao-imagem-pendente";
+import { AudioProntoParaEnviar, BotaoGravarAudio, GravandoAudio } from "./gravacao-audio-compositor";
+import { useGravacaoAudio } from "../hooks/use-gravacao-audio";
+import { destinoDaTentativaDeAudio, mensagemDeFalhaAudio, modoDoCompositor, podeGravar, tentativaDeAudioJaChegou, type TentativaAudio } from "../lib/audio-conversa";
 import { BalaoMensagem } from "./balao-mensagem";
+import { BotaoAnexarImagem } from "./botao-anexar-imagem";
+import { LightboxImagem } from "./lightbox-imagem";
+import { PreviaImagemCompositor } from "./previa-imagem-compositor";
+import { useUrlsAudios, useUrlsImagens } from "../hooks/use-urls-imagens";
+import {
+  conteudoParaPrevia,
+  destinoDaTentativa,
+  mensagemDeFalhaImagem,
+  tentativaJaChegou,
+  validarArquivoImagem,
+  type TentativaImagem,
+} from "../lib/imagem-conversa";
+import { criarUrlsLocais } from "../lib/urls-locais";
 import { BarraContextoCompositor } from "./barra-contexto-compositor";
 import { CabecalhoConversa } from "./cabecalho-conversa";
 import { useBloqueioConversa } from "../hooks/use-bloqueio-conversa";
@@ -168,7 +187,7 @@ type TentativaPedido = { idCliente: string; assinatura: string };
 // Aberta pela lista ou pelo @usuario; a autorização de leitura/envio continua sendo da API.
 export type ConversaAberta = {
   id: string;
-  outraIdentidade: ParticipanteConversa;
+  outraIdentidade: IdentidadeVisivel;
 };
 
 export function ConversaTecnica({
@@ -176,6 +195,7 @@ export function ConversaTecnica({
   tipoIdentidade = "pessoal",
   conversa,
   aoVoltar,
+  inicioCabecalho,
   aoAbrirPedidos,
   aoMensagemConfirmada,
   aoMensagemAtualizada,
@@ -189,6 +209,8 @@ export function ConversaTecnica({
   conversa: ConversaAberta;
   // Só no celular: a conversa ocupa a tela toda e o cabeçalho ganha o caminho de volta para a lista.
   aoVoltar?: () => void;
+  // Controle do layout (reabrir o painel lateral recolhido), exibido no começo do cabeçalho.
+  inicioCabecalho?: ReactNode;
   /*
    * Abre a área de pedidos que JÁ existe no aplicativo. Ausente quando a identidade atual não tem
    * essa área — não se inventa destino nem fluxo novo de pedidos para preencher um ícone.
@@ -216,6 +238,23 @@ export function ConversaTecnica({
   const bloqueio = useBloqueioConversa(conversa.outraIdentidade.identidadeId);
   const bloqueada = bloqueio.situacao !== null && (bloqueio.situacao.euBloqueei || bloqueio.situacao.fuiBloqueado);
   const [pendente, setPendente] = useState<TentativaEnvio | null>(null);
+  // IMAGEM escolhida (prévia local) antes do envio: o campo de texto passa a ser a legenda.
+  const [imagemSelecionada, setImagemSelecionada] = useState<{ arquivo: File; previaUrl: string } | null>(null);
+  /*
+   * Tentativa de IMAGEM em envio ou que falhou: aparece como balão local até a resposta da API.
+   * Guarda a tentativa inteira (idCliente, arquivo, legenda, resposta) para o Reenviar ser o MESMO envio.
+   */
+  const [imagemPendente, setImagemPendente] = useState<{
+    tentativa: TentativaImagem;
+    situacao: "enviando" | "falhou";
+    idsAntesDoEnvio: ReadonlySet<string>;
+  } | null>(null);
+  const [imagemAberta, setImagemAberta] = useState<{ mensagemId: string; descricao: string } | null>(null);
+  // Prévias locais (object URLs): toda URL criada é revogada — ao trocar, cancelar, concluir ou sair.
+  // MENSAGEM DE VOZ em envio (ou que falhou): mesma mecânica da foto pendente.
+  const [audioPendente, setAudioPendente] = useState<{ tentativa: TentativaAudio; situacao: "enviando" | "falhou"; idsAntesDoEnvio: ReadonlySet<string> } | null>(null);
+  const [urlsLocais] = useState(() => criarUrlsLocais());
+  useEffect(() => () => urlsLocais.revogarTodas(), [urlsLocais]);
   const [respostaSelecionada, setRespondendo] =
     useState<RespostaEmComposicao | null>(null);
   // Mensagem própria em edição: o compositor passa a salvar o novo conteúdo em vez de enviar.
@@ -247,6 +286,7 @@ export function ConversaTecnica({
     alterarQuantidade,
     remover,
     limpar,
+    sincronizarImagens,
   } = useCarrinho(identidadeId);
   /*
    * "Seu pedido" tem TRÊS estados de propósito, porque a expectativa muda com o tamanho da tela:
@@ -292,12 +332,17 @@ export function ConversaTecnica({
   });
   const listaMensagensRef = useRef<HTMLOListElement>(null);
   const ultimaMensagemId = mensagens.at(-1)?.id;
+  // URLs privadas das imagens desta conversa: só em memória, pedidas em lote, renovadas quando vencem.
+  const { estadoDaImagem, cache: cacheImagens } = useUrlsImagens(conversa.id, mensagens);
+  // Mesma regra para os áudios (outra rota, o mesmo cache em memória).
+  const { estadoDaImagem: estadoDoAudio, cache: cacheAudios } = useUrlsAudios(conversa.id, mensagens);
+  const imagemPendenteId = imagemPendente?.tentativa.idCliente ?? audioPendente?.tentativa.idCliente;
 
-  // Mantém a mensagem mais recente visível quando chega ou é enviada uma nova.
+  // Mantém a mensagem mais recente visível quando chega ou é enviada uma nova (inclusive a foto em envio).
   useEffect(() => {
     const lista = listaMensagensRef.current;
-    if (lista && ultimaMensagemId) lista.scrollTop = lista.scrollHeight;
-  }, [ultimaMensagemId]);
+    if (lista && (ultimaMensagemId || imagemPendenteId)) lista.scrollTop = lista.scrollHeight;
+  }, [ultimaMensagemId, imagemPendenteId]);
 
   const adicionar = useCallback((novas: Mensagem[]) => {
     setReconciliada((atual) => receberMensagens(atual, novas));
@@ -484,6 +529,115 @@ export function ConversaTecnica({
     }
   }
 
+  function escolherImagem(arquivo: File) {
+    const problema = validarArquivoImagem(arquivo);
+    if (problema) {
+      setErro(problema);
+      return;
+    }
+    setErro(null);
+    urlsLocais.revogar(imagemSelecionada?.previaUrl);
+    setImagemSelecionada({ arquivo, previaUrl: urlsLocais.criar(arquivo) });
+    campoMensagemRef.current?.focus();
+  }
+
+  function removerImagemSelecionada() {
+    urlsLocais.revogar(imagemSelecionada?.previaUrl);
+    setImagemSelecionada(null);
+    campoMensagemRef.current?.focus();
+  }
+
+  /*
+   * Envia (ou REENVIA) uma tentativa de imagem. A tentativa não muda entre as tentativas: mesmo
+   * idCliente, arquivo, legenda e resposta — a API devolve 200 com a mensagem já salva se a primeira
+   * tiver chegado. A foto aparece na conversa pelo balão pendente desde já.
+   */
+  async function enviarImagem(tentativa: TentativaImagem, idsAntesDoEnvio: ReadonlySet<string>) {
+    setErro(null);
+    setImagemPendente({ tentativa, situacao: "enviando", idsAntesDoEnvio });
+    const resultado = await enviarMensagemImagem(conversa.id, tentativa);
+    if (resultado.ok) {
+      adicionar([resultado.dados]);
+      aoMensagemConfirmada(resultado.dados);
+      urlsLocais.revogar(tentativa.previaUrl);
+      setImagemPendente(null);
+      return;
+    }
+
+    setErro(mensagemDeFalhaImagem(resultado));
+    const destino = destinoDaTentativa(resultado);
+    if (destino === "manter") {
+      setImagemPendente({ tentativa, situacao: "falhou", idsAntesDoEnvio });
+      return;
+    }
+    setImagemPendente(null);
+    if (destino === "sem-resposta") {
+      // A mensagem citada não vale mais: a foto volta ao compositor (mesma prévia), sem a referência.
+      setRespondendo(null);
+      setImagemSelecionada({ arquivo: tentativa.arquivo, previaUrl: tentativa.previaUrl });
+      setTexto(tentativa.legenda);
+    } else {
+      urlsLocais.revogar(tentativa.previaUrl);
+    }
+    if (resultado.codigo === "COMUNICACAO_BLOQUEADA") void bloqueio.reler();
+  }
+
+  function descartarImagemPendente() {
+    urlsLocais.revogar(imagemPendente?.tentativa.previaUrl);
+    setImagemPendente(null);
+    setErro(null);
+  }
+
+  const fecharImagem = useCallback(() => setImagemAberta(null), []);
+
+  // Gravação da mensagem de voz: gravar → parar → ouvir → enviar ou descartar.
+  const gravacao = useGravacaoAudio({ criarUrl: urlsLocais.criar, revogarUrl: urlsLocais.revogar, aoErro: setErro });
+
+  /*
+   * Envia (ou REENVIA) uma tentativa de áudio: mesmo idCliente, mesmo arquivo, mesma resposta — a API
+   * devolve 200 com a mensagem já salva se a primeira tiver chegado. O áudio aparece na conversa pelo
+   * balão pendente desde já.
+   */
+  async function enviarAudio(tentativa: TentativaAudio, idsAntesDoEnvio: ReadonlySet<string>) {
+    setErro(null);
+    setAudioPendente({ tentativa, situacao: "enviando", idsAntesDoEnvio });
+    const resultado = await enviarMensagemAudio(conversa.id, tentativa);
+    if (resultado.ok) {
+      adicionar([resultado.dados]);
+      aoMensagemConfirmada(resultado.dados);
+      urlsLocais.revogar(tentativa.previaUrl);
+      setAudioPendente(null);
+      return;
+    }
+    setErro(mensagemDeFalhaAudio(resultado));
+    if (destinoDaTentativaDeAudio(resultado) === "manter") {
+      setAudioPendente({ tentativa, situacao: "falhou", idsAntesDoEnvio });
+      return;
+    }
+    // Recusa definitiva (ou a mensagem citada não vale mais): o áudio não tem como seguir.
+    urlsLocais.revogar(tentativa.previaUrl);
+    setAudioPendente(null);
+    if (resultado.codigo === "MENSAGEM_RESPONDIDA_NAO_ENCONTRADA") setRespondendo(null);
+    if (resultado.codigo === "COMUNICACAO_BLOQUEADA") void bloqueio.reler();
+  }
+
+  // O áudio pronto vira UMA mensagem de áudio (nunca texto + áudio); a prévia passa a ser do balão pendente.
+  function enviarAudioPronto() {
+    if (gravacao.estado.fase !== "pronto" || audioPendente || bloqueada) return;
+    const { arquivo, duracaoMs, previaUrl } = gravacao.estado.audio;
+    const mensagemRespondidaId = respondendo?.mensagemId;
+    const tentativa: TentativaAudio = { idCliente: crypto.randomUUID(), arquivo, duracaoMs, previaUrl, ...(mensagemRespondidaId ? { mensagemRespondidaId } : {}) };
+    gravacao.descartar(false);
+    setRespondendo(null);
+    void enviarAudio(tentativa, new Set(mensagens.map((mensagem) => mensagem.id)));
+  }
+
+  function descartarAudioPendente() {
+    urlsLocais.revogar(audioPendente?.tentativa.previaUrl);
+    setAudioPendente(null);
+    setErro(null);
+  }
+
   async function salvarEdicao(mensagem: Mensagem, conteudo: string) {
     setErro(null);
     setOcupado(true);
@@ -520,6 +674,9 @@ export function ConversaTecnica({
       return;
     }
     setReconciliada((atual) => ocultarMensagem(atual, mensagem.id));
+    // Imagem excluída para mim: a URL sai da memória e não é mais pedida.
+    cacheImagens.esquecer(mensagem.id);
+    cacheAudios.esquecer(mensagem.id);
     aoMensagemExcluidaParaMim(resultado.dados);
   }
 
@@ -537,12 +694,34 @@ export function ConversaTecnica({
       return;
     }
     setReconciliada((atual) => receberAtualizacao(atual, resultado.dados));
+    // Tombstone: a imagem some para todos; a URL não é guardada nem renovada.
+    cacheImagens.esquecer(mensagem.id);
+    cacheAudios.esquecer(mensagem.id);
     aoMensagemAtualizada(resultado.dados);
   }
 
   function aoEnviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const conteudo = texto.trim();
+    // IMAGEM: uma ação de envio cria UMA mensagem de imagem; o texto digitado é a legenda (opcional).
+    if (imagemSelecionada && !editando) {
+      if (imagemPendente) return;
+      atividade.pararDigitacao();
+      const mensagemRespondidaId = respondendo?.mensagemId;
+      const tentativa: TentativaImagem = {
+        idCliente: crypto.randomUUID(),
+        arquivo: imagemSelecionada.arquivo,
+        legenda: conteudo,
+        previaUrl: imagemSelecionada.previaUrl,
+        ...(mensagemRespondidaId ? { mensagemRespondidaId } : {}),
+      };
+      // O compositor fica livre: a tentativa (e a prévia) passam a viver no balão pendente.
+      setImagemSelecionada(null);
+      setTexto("");
+      setRespondendo(null);
+      void enviarImagem(tentativa, new Set(mensagens.map((mensagem) => mensagem.id)));
+      return;
+    }
     if (!conteudo) return;
     if (editando) {
       void salvarEdicao(editando, conteudo);
@@ -574,7 +753,8 @@ export function ConversaTecnica({
         conversa.outraIdentidade.nomeExibicao,
         identidadeId,
       ),
-      ...resumirConteudoParaPrevia(mensagem.conteudo),
+      // Imagem sem legenda é citada como "Foto" (nunca miniatura nem URL da imagem privada).
+      ...resumirConteudoParaPrevia(conteudoParaPrevia(mensagem)),
     });
     campoMensagemRef.current?.focus();
   }
@@ -589,6 +769,11 @@ export function ConversaTecnica({
     atividade.pararDigitacao();
     setRespondendo(null);
     setPendente(null);
+    // Editar é sobre um texto já enviado: gravação, áudio pronto e foto ainda não enviados são descartados.
+    gravacao.cancelar();
+    gravacao.descartar();
+    urlsLocais.revogar(imagemSelecionada?.previaUrl);
+    setImagemSelecionada(null);
     setEditando(mensagem);
     setTexto(mensagem.conteudo);
     campoMensagemRef.current?.focus();
@@ -782,6 +967,16 @@ export function ConversaTecnica({
   const barraPedidoVisivel =
     podeComprar && temItensNoCarrinho && !painelPedidoOcupado;
 
+  // Um modo de compositor por vez; o microfone só existe no modo normal (campo vazio, nada pendente).
+  const modo = modoDoCompositor({
+    editando: editando !== null,
+    gravando: gravacao.estado.fase === "gravando",
+    audioPronto: gravacao.estado.fase === "pronto",
+    imagemSelecionada: imagemSelecionada !== null,
+    temTexto: texto.trim() !== "",
+  });
+  const microfoneNoLugarDoEnviar = podeGravar({ modo, bloqueada, midiaPendente: imagemPendente !== null || audioPendente !== null, textoPendente: pendente !== null });
+
   const rotuloEnvio = editando
     ? "Salvar"
     : pendente && !ocupado
@@ -807,6 +1002,7 @@ export function ConversaTecnica({
           presenca={atividade.presenca}
           digitando={atividade.outraDigitando}
           {...(aoVoltar ? { aoVoltar } : {})}
+          inicio={inicioCabecalho}
           bloqueada={bloqueada}
           acoes={
             <div className="flex items-center gap-1">
@@ -1039,6 +1235,7 @@ export function ConversaTecnica({
               <CatalogoDaEmpresa
                 identidadeEmpresaId={outro.identidadeId}
                 aoFechar={() => setCatalogoAberto(false)}
+                aoCarregarCatalogo={sincronizarImagens}
                 {...(podeComprar
                   ? { aoAdicionarAoCarrinho: adicionarProduto }
                   : {})}
@@ -1104,10 +1301,56 @@ export function ConversaTecnica({
                       aoExcluirParaTodos={(alvo) => void excluirParaTodos(alvo)}
                       aoAbrirPedido={(pedidoId) => void abrirPedido(pedidoId)}
                       visaoCliente={tipoIdentidade === "pessoal"}
+                      {...(mensagem.tipo === "audio"
+                        ? {
+                            estadoAudio: estadoDoAudio(mensagem.id),
+                            aoFalharAudio: (alvo: Mensagem) => void cacheAudios.aoFalharCarregamento(alvo.id),
+                            aoCarregarAudio: (alvo: Mensagem) => cacheAudios.aoCarregar(alvo.id),
+                          }
+                        : {})}
+                      {...(mensagem.tipo === "imagem"
+                        ? {
+                            estadoImagem: estadoDaImagem(mensagem.id),
+                            aoAbrirImagem: (alvo: Mensagem) =>
+                              setImagemAberta({ mensagemId: alvo.id, descricao: alvo.conteudo || "Foto" }),
+                            aoFalharImagem: (alvo: Mensagem) => void cacheImagens.aoFalharCarregamento(alvo.id),
+                            aoCarregarImagem: (alvo: Mensagem) => cacheImagens.aoCarregar(alvo.id),
+                          }
+                        : {})}
                     />
                   </Fragment>
                 );
               })}
+
+              {/*
+                Foto em envio (ou que falhou): balão local com a prévia. Se a mensagem oficial já
+                chegou pelo tempo real antes da resposta do envio, ele não é mostrado — sem foto dupla.
+              */}
+              {imagemPendente &&
+                !(
+                  imagemPendente.situacao === "enviando" &&
+                  tentativaJaChegou(imagemPendente.tentativa, mensagens, imagemPendente.idsAntesDoEnvio, identidadeId)
+                ) && (
+                  <BalaoImagemPendente
+                    previaUrl={imagemPendente.tentativa.previaUrl}
+                    legenda={imagemPendente.tentativa.legenda}
+                    situacao={imagemPendente.situacao}
+                    aoReenviar={() => void enviarImagem(imagemPendente.tentativa, imagemPendente.idsAntesDoEnvio)}
+                    aoDescartar={descartarImagemPendente}
+                  />
+                )}
+
+              {/* Áudio em envio (ou que falhou): mesma regra — sem áudio duplo se o tempo real chegar antes. */}
+              {audioPendente &&
+                !(audioPendente.situacao === "enviando" && tentativaDeAudioJaChegou(audioPendente.tentativa, mensagens, audioPendente.idsAntesDoEnvio, identidadeId)) && (
+                  <BalaoAudioPendente
+                    previaUrl={audioPendente.tentativa.previaUrl}
+                    duracaoMs={audioPendente.tentativa.duracaoMs}
+                    situacao={audioPendente.situacao}
+                    aoReenviar={() => void enviarAudio(audioPendente.tentativa, audioPendente.idsAntesDoEnvio)}
+                    aoDescartar={descartarAudioPendente}
+                  />
+                )}
             </ol>
           )}
         </div>
@@ -1158,6 +1401,13 @@ export function ConversaTecnica({
                 aoCancelar={cancelarResposta}
               />
             )}
+            {imagemSelecionada && !editando && (
+              <PreviaImagemCompositor
+                previaUrl={imagemSelecionada.previaUrl}
+                nomeArquivo={imagemSelecionada.arquivo.name}
+                aoRemover={removerImagemSelecionada}
+              />
+            )}
             {editando && (
               <BarraContextoCompositor
                 titulo="Editando mensagem"
@@ -1167,7 +1417,25 @@ export function ConversaTecnica({
               />
             )}
 
+            {/*
+              MENSAGEM DE VOZ: enquanto grava, ou com um áudio pronto, estes controles OCUPAM o lugar
+              da pílula de texto — um modo por vez (`modoDoCompositor`), nunca texto e áudio juntos.
+            */}
+            {modo === "gravando" && gravacao.estado.fase === "gravando" && (
+              <GravandoAudio decorridoMs={gravacao.estado.decorridoMs} aoCancelar={gravacao.cancelar} aoParar={gravacao.parar} />
+            )}
+            {modo === "audio-pronto" && gravacao.estado.fase === "pronto" && (
+              <AudioProntoParaEnviar
+                previaUrl={gravacao.estado.audio.previaUrl}
+                duracaoMs={gravacao.estado.audio.duracaoMs}
+                aoDescartar={() => gravacao.descartar()}
+                aoEnviar={enviarAudioPronto}
+                desabilitado={bloqueada || audioPendente !== null}
+              />
+            )}
+
             <form
+              hidden={modo === "gravando" || modo === "audio-pronto"}
               onSubmit={aoEnviar}
               // Com bloqueio (qualquer sentido) não se digita nem envia; o 🚫 no cabeçalho explica.
               data-compositor-bloqueado={bloqueada ? "" : undefined}
@@ -1178,12 +1446,19 @@ export function ConversaTecnica({
                 controles de empurrarem a linha além da largura da conversa em tela estreita.
               */
               /*
-                O foco é marcado na PÍLULA, não no campo: o campo é transparente por dentro dela, e
-                um contorno só no <input> apareceria solto no meio do retângulo.
+                Focado, o compositor fica IGUAL ao repouso: sem borda, anel ou sombra de destaque na
+                pílula nem no campo — só o cursor de texto piscando, como nos mensageiros. O foco
+                continua sendo anunciado (o campo tem rótulo) e os BOTÕES mantêm o contorno de foco
+                por teclado.
               */
-              className="flex items-center gap-1 rounded-full border border-borda bg-superficie p-1 shadow-suave focus-within:border-marca focus-within:ring-2 focus-within:ring-marca/25"
+              data-compositor
+              className="flex items-center gap-1 rounded-full border border-borda bg-superficie p-1 shadow-suave"
             >
-              <AcoesMidiaDesabilitadas />
+              {/* Uma foto por vez: enquanto uma está em envio (ou falhou), ela precisa ser resolvida antes. */}
+              <BotaoAnexarImagem
+                desabilitado={bloqueada || editando !== null || imagemPendente !== null || audioPendente !== null}
+                aoEscolher={escolherImagem}
+              />
               <label htmlFor="campo-mensagem" className="sr-only">
                 Mensagem
               </label>
@@ -1193,7 +1468,7 @@ export function ConversaTecnica({
                 name="mensagem"
                 value={texto}
                 disabled={bloqueada}
-                placeholder={bloqueada ? "" : "Digite uma mensagem…"}
+                placeholder={bloqueada ? "" : imagemSelecionada && !editando ? "Legenda (opcional)…" : "Digite uma mensagem…"}
                 onChange={(evento) => {
                   setTexto(evento.target.value);
                   if (!editando) atividade.informarTexto(evento.target.value);
@@ -1201,18 +1476,22 @@ export function ConversaTecnica({
                 maxLength={4000}
                 autoComplete="off"
                 /*
-                 * O campo não tem fundo nem contorno próprios: ele É a pílula. `text-base` (16px)
-                 * também evita o zoom automático do iOS ao focar.
+                 * O campo não tem fundo nem contorno próprios: ele É a pílula, e focado mostra só o
+                 * cursor (`campo-sem-contorno`, em globals.css). `text-base` (16px) também evita o
+                 * zoom automático do iOS ao focar.
                  */
-                className="min-h-9 min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-conteudo-suave"
+                className="campo-sem-contorno min-h-9 min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-conteudo-suave"
               />
               {/*
                 Enviar CIRCULAR no verde da marca (o jade fosco do Design System, não um verde neon),
                 dentro da própria pílula. Salvar/Reenviar levam palavra, então viram uma cápsula da
                 mesma altura — o alvo de toque não fica menor que 36px.
               */}
+              {/* Campo vazio, nada em composição e nada pendente: o lugar do "enviar" é do microfone. */}
+              {microfoneNoLugarDoEnviar && <BotaoGravarAudio aoGravar={() => void gravacao.iniciar()} desabilitado={gravacao.estado.fase === "pedindo-microfone"} />}
               <button
                 type="submit"
+                hidden={microfoneNoLugarDoEnviar}
                 disabled={ocupado || bloqueada}
                 aria-label={rotuloEnvio}
                 className={`grid h-9 shrink-0 place-items-center rounded-full bg-marca text-marca-conteudo transition-colors hover:bg-marca/90 disabled:opacity-50 ${rotuloEnvio === "Enviar" ? "w-9" : "px-3.5 text-xs font-medium"}`}
@@ -1233,6 +1512,20 @@ export function ConversaTecnica({
           {erro}
         </p>
       )}
+
+      {imagemAberta &&
+        (() => {
+          // A URL vem do cache em memória; se a imagem deixou de estar disponível (ex.: excluída), não abre.
+          const estado = estadoDaImagem(imagemAberta.mensagemId);
+          return estado.situacao === "pronta" ? (
+            <LightboxImagem
+              url={estado.url}
+              descricao={imagemAberta.descricao}
+              aoFechar={fecharImagem}
+              aoFalhar={() => void cacheImagens.aoFalharCarregamento(imagemAberta.mensagemId)}
+            />
+          ) : null;
+        })()}
     </section>
   );
 }

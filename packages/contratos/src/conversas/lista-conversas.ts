@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { mensagemSchema } from "../mensagens/mensagem.ts";
-import { participanteConversaSchema } from "./conversa.ts";
+import { identidadeVisivelSchema } from "./conversa.ts";
 
 export const LIMITE_PAGINA_CONVERSAS_PADRAO = 20;
 
@@ -32,7 +32,7 @@ export type ListarConversasConsulta = z.input<typeof listarConversasConsultaSche
 export const itemListaConversasSchema = z.object({
   id: z.uuid(),
   tipo: z.literal("direta"),
-  outraIdentidade: participanteConversaSchema,
+  outraIdentidade: identidadeVisivelSchema,
   // Mensagem mais recente que ESTA identidade vê. null = ela LIMPOU a conversa e nada novo chegou.
   ultimaMensagem: mensagemSchema.nullable(),
   // Ordem e cursor da lista (UUIDv7): a última mensagem visível ou, na conversa limpa, até onde limpou.

@@ -5,7 +5,9 @@ import { participantesConversa } from "../conversas/participantes-conversa.js";
 import { pedidos } from "../pedidos/pedidos.js";
 
 // "pedido": card que REFERENCIA um Pedido Jaa (nada do pedido é copiado para o texto da mensagem).
-export const tipoMensagem = pgEnum("tipo_mensagem", ["texto", "pedido"]);
+// "imagem": mensagem com UM anexo de imagem (`anexos_mensagem`); `conteudo` é a legenda opcional.
+// Banco preparado; contratos, API e clientes ainda não aceitam este tipo.
+export const tipoMensagem = pgEnum("tipo_mensagem", ["texto", "pedido", "imagem", "audio"]);
 
 export const mensagens = pgTable(
   "mensagens",
@@ -67,11 +69,12 @@ export const mensagens = pgTable(
       .where(sql`${tabela.mensagemRespondidaId} is not null`),
     check("mensagens_editada_apos_criacao", sql`${tabela.editadaEm} is null or ${tabela.editadaEm} >= ${tabela.criadoEm}`),
     // Mantido em sincronia com conteudoMensagemTextoSchema em @jaa/contratos.
-    // Conteúdo por tipo: texto tem corpo válido; card de pedido e tombstone têm conteúdo vazio.
+    // Conteúdo por tipo: texto tem corpo válido; card de pedido e tombstone têm conteúdo vazio;
+    // imagem tem legenda OPCIONAL (vazia, ou com as mesmas regras do texto).
     // Comparação como texto: permite usar o valor de enum criado na mesma migration.
     check(
       "mensagens_conteudo_texto_valido",
-      sql`(${tabela.excluidaParaTodosEm} is not null and ${tabela.conteudo} = '') or (${tabela.excluidaParaTodosEm} is null and ${tabela.tipo}::text = 'texto' and char_length(${tabela.conteudo}) between 1 and 4000 and ${tabela.conteudo} ~ '[^[:space:]]') or (${tabela.excluidaParaTodosEm} is null and ${tabela.tipo}::text = 'pedido' and ${tabela.conteudo} = '')`,
+      sql`(${tabela.excluidaParaTodosEm} is not null and ${tabela.conteudo} = '') or (${tabela.excluidaParaTodosEm} is null and ${tabela.tipo}::text = 'texto' and char_length(${tabela.conteudo}) between 1 and 4000 and ${tabela.conteudo} ~ '[^[:space:]]') or (${tabela.excluidaParaTodosEm} is null and ${tabela.tipo}::text = 'pedido' and ${tabela.conteudo} = '') or (${tabela.excluidaParaTodosEm} is null and ${tabela.tipo}::text = 'imagem' and (${tabela.conteudo} = '' or (char_length(${tabela.conteudo}) between 1 and 4000 and ${tabela.conteudo} ~ '[^[:space:]]'))) or (${tabela.excluidaParaTodosEm} is null and ${tabela.tipo}::text = 'audio' and ${tabela.conteudo} = '')`,
     ),
     check("mensagens_pedido_por_tipo", sql`(${tabela.tipo}::text = 'pedido') = (${tabela.pedidoId} is not null)`),
     check("mensagens_excluida_apos_criacao", sql`${tabela.excluidaParaTodosEm} is null or ${tabela.excluidaParaTodosEm} >= ${tabela.criadoEm}`),

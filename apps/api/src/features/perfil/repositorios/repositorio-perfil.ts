@@ -95,11 +95,23 @@ export async function atualizarPreferencias(banco: Banco, identidadeId: string, 
     .onConflictDoUpdate({ target: preferenciasIdentidade.identidadeId, set: campos });
 }
 
-/** Troca a foto e devolve a chave ANTERIOR, para que o arquivo velho possa ser removido do storage. */
-export async function definirFotoChave(banco: Banco, identidadeId: string, fotoChave: string | null): Promise<string | null> {
-  const [linha] = await banco.select({ anterior: identidades.fotoChave }).from(identidades).where(eq(identidades.id, identidadeId)).limit(1);
-  await banco.update(identidades).set({ fotoChave }).where(eq(identidades.id, identidadeId));
-  return linha?.anterior ?? null;
+/**
+ * Troca a foto e devolve a chave ANTERIOR, para que o arquivo velho possa ser removido do storage.
+ * Ler e trocar acontecem com a linha TRAVADA: duas trocas simultâneas se enfileiram, e a segunda
+ * enxerga a chave gravada pela primeira — assim cada envio remove exatamente a foto que substituiu.
+ * `undefined` = a identidade não existe (diferente de "existe e não tinha foto").
+ */
+export async function definirFotoChave(banco: Banco, identidadeId: string, fotoChave: string | null): Promise<string | null | undefined> {
+  return banco.transaction(async (transacao) => {
+    const [linha] = await transacao
+      .select({ anterior: identidades.fotoChave })
+      .from(identidades)
+      .where(eq(identidades.id, identidadeId))
+      .for("update");
+    if (!linha) return undefined;
+    await transacao.update(identidades).set({ fotoChave }).where(eq(identidades.id, identidadeId));
+    return linha.anterior;
+  });
 }
 
 export async function ehContatoDe(banco: Banco, identidadeId: string, contatoIdentidadeId: string): Promise<boolean> {

@@ -8,6 +8,8 @@ import {
   type PaginaConversas,
 } from "@jaa/contratos";
 import type { FastifyInstance } from "fastify";
+import type { ArmazenamentoDeArquivos } from "../../../lib/armazenamento/armazenamento-arquivos.js";
+import { comFotosVisiveis, resolverFotosVisiveis } from "../../perfil/lib/visibilidade-foto.js";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
 import {
   exigirIdentidadeAtuante,
@@ -22,7 +24,7 @@ import { limparConversaPara, listarNaoLidasPorConversa } from "../repositorios/r
 
 export function registrarRotasConversas(
   servidor: FastifyInstance,
-  dependencias: { banco: Banco; autenticacao: Autenticacao; eventosMensagens?: CanalEventosMensagens },
+  dependencias: { banco: Banco; autenticacao: Autenticacao; armazenamento: ArmazenamentoDeArquivos; eventosMensagens?: CanalEventosMensagens },
 ) {
   const preHandler = exigirIdentidadeAtuante(dependencias);
 
@@ -68,8 +70,15 @@ export function registrarRotasConversas(
     }
 
     const resultado = await listarConversas(dependencias.banco, identidadeId, consulta.data);
+    // Uma consulta para a PÁGINA inteira: a foto de cada interlocutor, filtrada pela privacidade dele.
+    const fotos = await resolverFotosVisiveis(
+      dependencias.banco,
+      identidadeId,
+      resultado.conversas.map((item) => item.outraIdentidade.identidadeId),
+      (chave) => dependencias.armazenamento.urlPublica(chave),
+    );
     const pagina: PaginaConversas = {
-      conversas: resultado.conversas.map(serializarItemListaConversas),
+      conversas: resultado.conversas.map((item) => serializarItemListaConversas(item, fotos.get(item.outraIdentidade.identidadeId) ?? null)),
       proximoCursor: resultado.proximoCursor,
     };
     return pagina;
@@ -104,7 +113,9 @@ export function registrarRotasConversas(
           const conversa: ConversaDireta = {
             id: resultado.conversaId,
             tipo: "direta",
-            participantes: resultado.participantes,
+            participantes: await comFotosVisiveis(dependencias.banco, identidadeId, resultado.participantes, (chave) =>
+              dependencias.armazenamento.urlPublica(chave),
+            ),
           };
           return resposta.code(resultado.tipo === "criada" ? 201 : 200).send(conversa);
         }

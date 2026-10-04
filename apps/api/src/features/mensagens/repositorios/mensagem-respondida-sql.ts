@@ -1,4 +1,4 @@
-import { PREVIA_MENSAGEM_RESPONDIDA_TAMANHO_MAXIMO, type MensagemRespondida } from "@jaa/contratos";
+import { PREVIA_AUDIO, PREVIA_IMAGEM, PREVIA_MENSAGEM_RESPONDIDA_TAMANHO_MAXIMO, type MensagemRespondida } from "@jaa/contratos";
 import { sql, type SQL } from "drizzle-orm";
 
 const TAMANHO_PREVIA = sql.raw(String(PREVIA_MENSAGEM_RESPONDIDA_TAMANHO_MAXIMO));
@@ -6,11 +6,20 @@ const TAMANHO_PREVIA = sql.raw(String(PREVIA_MENSAGEM_RESPONDIDA_TAMANHO_MAXIMO)
 // Objeto JSON da referência a partir de `original` (mensagens) e `autor` (identidades).
 // Só dados públicos da identidade autora; o conteúdo vem limitado à prévia (a original não muda).
 // Original excluída para todos: nunca devolve conteúdo (que também já foi apagado no banco).
+// Imagem: a prévia é a LEGENDA, ou "Foto" sem legenda — nunca URL ou miniatura do arquivo privado.
+// Áudio: sempre "Áudio" (sem transcrição, duração ou arquivo).
+const PREVIA_IMAGEM_SQL = sql`${PREVIA_IMAGEM}::text`;
+const PREVIA_AUDIO_SQL = sql`${PREVIA_AUDIO}::text`;
 const objetoReferencia = sql`json_build_object(
   'id', original.id,
   'remetente', json_build_object('identidadeId', autor.id, 'nomeExibicao', autor.nome_exibicao),
   'tipo', original.tipo,
-  'previaConteudo', case when original.excluida_para_todos_em is null then left(original.conteudo, ${TAMANHO_PREVIA}) else '' end,
+  'previaConteudo', case
+    when original.excluida_para_todos_em is not null then ''
+    when original.tipo::text = 'imagem' and original.conteudo = '' then ${PREVIA_IMAGEM_SQL}
+    when original.tipo::text = 'audio' then ${PREVIA_AUDIO_SQL}
+    else left(original.conteudo, ${TAMANHO_PREVIA})
+  end,
   'conteudoTruncado', original.excluida_para_todos_em is null and char_length(original.conteudo) > ${TAMANHO_PREVIA},
   'excluida', original.excluida_para_todos_em is not null
 )`;

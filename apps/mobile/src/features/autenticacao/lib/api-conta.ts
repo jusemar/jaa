@@ -1,5 +1,5 @@
 import type { ContaAtual, CriarIdentidadePessoalEntrada } from "@jaa/contratos";
-import { cabecalhoSessao } from "./cliente-autenticacao";
+import { cabecalhoSessao, clienteAutenticacao } from "./cliente-autenticacao";
 import { URL_API } from "@/lib/configuracao";
 
 /**
@@ -39,6 +39,15 @@ export const concluirCadastro = {
   },
 };
 
+/**
+ * Encerra a sessão pelo cliente do Better Auth: é o plugin do Expo que apaga o cookie guardado no
+ * SecureStore (uma chamada HTTP solta derrubaria a sessão no servidor e deixaria o cookie no aparelho).
+ * Sem rede, a sessão local é apagada do mesmo jeito.
+ */
 export async function sair(): Promise<void> {
-  await requisitar("/api/auth/sign-out", { method: "POST", body: JSON.stringify({}) });
+  try {
+    await clienteAutenticacao.signOut();
+  } catch {
+    // Sem conexão: o plugin já limpou a sessão local antes de tentar a chamada.
+  }
 }

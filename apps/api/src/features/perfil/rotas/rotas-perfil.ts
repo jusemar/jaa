@@ -12,8 +12,15 @@ import {
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as z from "zod";
 import type { ArmazenamentoDeArquivos } from "../../../lib/armazenamento/armazenamento-arquivos.js";
-import { ArmazenamentoNaoConfiguradoErro } from "../../../lib/armazenamento/armazenamento-arquivos.js";
-import { ImagemInvalidaErro, montarChave, processarImagem } from "../../../lib/armazenamento/pipeline-imagem.js";
+import {
+  FALHA_ARMAZENAMENTO_INDISPONIVEL,
+  LIMITE_ENVIO_FOTO_PERFIL,
+  falhaLimiteDeEnvios,
+  gravarESubstituir,
+  lerImagemEnviada,
+} from "../../../lib/armazenamento/receber-imagem.js";
+import { consumirLimiteDeUso } from "../../../lib/limite-de-uso.js";
+import { resolverFotosVisiveis } from "../lib/visibilidade-foto.js";
 import type { Autenticacao } from "../../autenticacao/autenticacao.js";
 import { exigirIdentidadeAtuante, obterIdentidadeExigida } from "../../autenticacao/lib/exigir-identidade-autenticada.js";
 import {
@@ -107,43 +114,40 @@ export function registrarRotasPerfil(
 
   /**
    * FOTO da identidade atuante (avatar da pessoa ou logo da empresa — mesma rota, mesmo domínio).
-   * Os bytes passam pelo pipeline: o tipo é conferido nos bytes, o EXIF (com geolocalização!) é
-   * descartado e a imagem é redimensionada antes de sair do servidor.
+   * Quem pode operar a identidade já foi decidido por `exigirIdentidadeAtuante`; daí em diante:
+   * limite de envios da CONTA → pipeline (tipo conferido nos bytes, EXIF com geolocalização
+   * descartado, redimensionamento) → gravação com chave nova → troca da referência → remoção da antiga.
    */
   servidor.post("/perfil/foto", { preHandler }, async (requisicao, resposta) => {
-    const { identidadeId } = obterIdentidadeExigida(requisicao);
-    const perfil = await buscarPerfil(banco, identidadeId);
-    if (!perfil) return responder(resposta, 404, { codigo: "IDENTIDADE_NAO_ENCONTRADA", mensagem: "Identidade não encontrada." });
+    const { usuarioId, identidadeId, tipoIdentidade } = obterIdentidadeExigida(requisicao);
 
-    const arquivo = await requisicao.file();
-    if (!arquivo) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Envie uma imagem." });
-
-    const tipoAnexo = perfil.tipo === "empresarial" ? "logo-empresa" : "avatar";
-    try {
-      const bytes = await arquivo.toBuffer();
-      const imagem = await processarImagem(bytes, tipoAnexo, arquivo.mimetype);
-      const chave = montarChave(tipoAnexo, identidadeId);
-      await armazenamento.salvar({ chave, conteudo: imagem.conteudo, tipoConteudo: imagem.tipoConteudo });
-
-      const anterior = await definirFotoChave(banco, identidadeId, chave);
-      // A imagem antiga vira lixo assim que a nova é gravada; falhar aqui não pode derrubar a troca.
-      if (anterior && anterior !== chave) await armazenamento.remover(anterior).catch(() => undefined);
-
-      return { chave, url: armazenamento.urlPublica(chave) };
-    } catch (erro) {
-      if (erro instanceof ImagemInvalidaErro) return responder(resposta, 400, { codigo: "ARQUIVO_INVALIDO", mensagem: erro.message });
-      if (erro instanceof ArmazenamentoNaoConfiguradoErro) {
-        return responder(resposta, 503, { codigo: "ARMAZENAMENTO_INDISPONIVEL", mensagem: "O envio de imagens ainda não está configurado neste ambiente." });
-      }
-      throw erro;
+    const limite = await consumirLimiteDeUso(banco, `envio-foto-perfil:${usuarioId}`, LIMITE_ENVIO_FOTO_PERFIL);
+    if (!limite.permitido) {
+      const falha = falhaLimiteDeEnvios(limite.tenteNovamenteEmSegundos);
+      return resposta.code(falha.status).header("retry-after", String(limite.tenteNovamenteEmSegundos)).send(falha.erro);
     }
+
+    const tipoAnexo = tipoIdentidade === "empresarial" ? "logo-empresa" : "avatar";
+    const leitura = await lerImagemEnviada(requisicao, tipoAnexo);
+    if (!leitura.ok) return responder(resposta, leitura.status, leitura.erro);
+
+    const gravacao = await gravarESubstituir(armazenamento, { tipo: tipoAnexo, donoId: identidadeId, imagem: leitura.imagem }, async (chave) => {
+      const anterior = await definirFotoChave(banco, identidadeId, chave);
+      return anterior === undefined ? { trocada: false, recusa: "identidade-nao-encontrada" as const } : { trocada: true, anterior };
+    });
+    if (!gravacao.ok) {
+      if ("indisponivel" in gravacao) return responder(resposta, FALHA_ARMAZENAMENTO_INDISPONIVEL.status, FALHA_ARMAZENAMENTO_INDISPONIVEL.erro);
+      return responder(resposta, 404, { codigo: "IDENTIDADE_NAO_ENCONTRADA", mensagem: "Identidade não encontrada." });
+    }
+    return { chave: gravacao.chave, url: armazenamento.urlPublica(gravacao.chave) };
   });
 
   servidor.delete("/perfil/foto", { preHandler }, async (requisicao) => {
     const { identidadeId } = obterIdentidadeExigida(requisicao);
     const anterior = await definirFotoChave(banco, identidadeId, null);
+    // Banco primeiro, arquivo depois: falhar ao remover deixa um órfão, nunca uma referência quebrada.
     if (anterior) await armazenamento.remover(anterior).catch(() => undefined);
-    return { removida: anterior !== null };
+    return { removida: Boolean(anterior) };
   });
 
   servidor.get("/perfil/excecoes", { preHandler }, async (requisicao) => {
@@ -193,7 +197,8 @@ export function registrarRotasPerfil(
     const ehEuMesmo = alvo.identidadeId === observador;
     const [ehContato, excecao] = ehEuMesmo ? [true, null] : await Promise.all([ehContatoDe(banco, alvo.identidadeId, observador), buscarExcecao(banco, alvo.identidadeId, observador)]);
 
-    const mostrarFoto = ehEuMesmo || podeVer({ visibilidade: alvo.preferencias.visibilidadeFoto, ehContato, excecao });
+    // Foto pela MESMA regra das listas (conversas, contatos, busca): um único ponto de decisão.
+    const fotos = await resolverFotosVisiveis(banco, observador, [alvo.identidadeId], (chave) => armazenamento.urlPublica(chave));
     const mostrarStatus = ehEuMesmo || podeVer({ visibilidade: alvo.preferencias.visibilidadeStatus, ehContato, excecao });
     // Invisível nunca vaza para terceiros: para eles a identidade só aparece sem status.
     const statusVisivel = alvo.preferencias.statusEscolhido === "invisivel" && !ehEuMesmo ? null : alvo.preferencias.statusEscolhido;
@@ -203,7 +208,7 @@ export function registrarRotasPerfil(
       tipo: alvo.tipo,
       nomeExibicao: alvo.nomeExibicao,
       nomeUsuario: alvo.nomeUsuario,
-      fotoUrl: mostrarFoto ? urlDaFoto(alvo.fotoChave) : null,
+      fotoUrl: fotos.get(alvo.identidadeId) ?? null,
       fraseStatus: mostrarStatus ? alvo.fraseStatus : null,
       cidade: alvo.cidade,
       sobre: alvo.sobre,

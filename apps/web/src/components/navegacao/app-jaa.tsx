@@ -2,7 +2,6 @@
 
 import type { ContaAtual } from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
-import { AreaContatos } from "@/features/contatos/components/area-contatos";
 import { MensageiroTecnico } from "@/features/conversas/components/mensageiro-tecnico";
 import { useAvisosMensagens } from "@/features/conversas/hooks/use-avisos-mensagens";
 import { AreaEmpresas } from "@/features/empresas/components/area-empresas";
@@ -26,7 +25,7 @@ import { NavegacaoApp } from "./navegacao-app";
  * mensageiro, tudo aberto ao mesmo tempo na mesma página — era o principal problema de usabilidade:
  * nada tinha foco e no celular era impossível achar o que interessava.
  *
- * CONVERSAS ocupa a tela inteira (dois painéis, como na referência de UI/UX aprovada); as demais
+ * CONVERSAS e CONTATOS são o mensageiro em mestre-detalhe (painel lateral + conversa); as demais
  * áreas são uma coluna de conteúdo com respiro e largura de leitura.
  *
  * A área aberta vive no ENDEREÇO (#pedidos). Assim o F5 volta para onde a pessoa estava, o botão
@@ -88,7 +87,11 @@ export function AppJaa({
     identidades.operaveis.find((identidade) => identidade.tipo === "pessoal") ??
     null;
   const ehEmpresa = ativa?.tipo === "empresarial";
-  const ehConversas = areaAtiva === "conversas";
+  /*
+   * Conversas e Contatos são o MESMO mensageiro (uma instância só): muda apenas o que o painel lateral
+   * lista. Por isso a conversa aberta sobrevive à troca entre as duas áreas.
+   */
+  const ehConversas = areaAtiva === "conversas" || areaAtiva === "contatos";
   const registrarConversaAberta = useCallback(
     (aberta: boolean) => setConversaAberta(aberta),
     [],
@@ -168,6 +171,7 @@ export function AppJaa({
           <MensageiroTecnico
             key={ativa.identidadeId}
             identidadeId={ativa.identidadeId}
+            painel={areaAtiva === "contatos" ? "contatos" : "conversas"}
             tipoIdentidade={ativa.tipo}
             pessoa={pessoal}
             aoAlterarConversaAberta={registrarConversaAberta}
@@ -187,13 +191,6 @@ export function AppJaa({
           // pb-24 no celular: a barra de navegação inferior não pode cobrir o fim do conteúdo.
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-4 md:px-8 md:pb-10">
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-              {areaAtiva === "contatos" && (
-                <AreaContatos
-                  key={ativa.identidadeId}
-                  aoAbrirConversa={abrirConversaCom}
-                />
-              )}
-
               {areaAtiva === "entregas" && <AreaMinhasEntregas aoAbrirConversa={abrirConversaCom} />}
 
               {areaAtiva === "perfil" && (
