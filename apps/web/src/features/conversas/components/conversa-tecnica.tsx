@@ -106,6 +106,9 @@ import {
 } from "../lib/imagem-conversa";
 import { criarUrlsLocais } from "../lib/urls-locais";
 import { BarraContextoCompositor } from "./barra-contexto-compositor";
+import { avisar } from "@/components/ui/avisos";
+import { PerfilDaIdentidade } from "@/features/perfil/components/perfil-da-identidade";
+import { definirConversaAberta } from "../lib/conversa-em-leitura";
 import { CabecalhoConversa } from "./cabecalho-conversa";
 import { useBloqueioConversa } from "../hooks/use-bloqueio-conversa";
 import { AcoesDaConversa, type AcaoConversa, type AlvoAcaoConversa } from "./acoes-conversa";
@@ -188,6 +191,8 @@ type TentativaPedido = { idCliente: string; assinatura: string };
 export type ConversaAberta = {
   id: string;
   outraIdentidade: IdentidadeVisivel;
+  // Vinda do Link do Jaa de uma empresa com cardápio: a conversa já abre com ele à mostra.
+  abrirCardapio?: boolean;
 };
 
 export function ConversaTecnica({
@@ -274,7 +279,31 @@ export function ConversaTecnica({
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   // Catálogo (consulta de cliente) aberto dentro da conversa com uma empresa.
-  const [catalogoAberto, setCatalogoAberto] = useState(false);
+  const [catalogoAberto, setCatalogoAberto] = useState(
+    conversa.abrirCardapio === true && conversa.outraIdentidade.tipo === "empresarial",
+  );
+  /*
+   * O som de mensagem (no app inteiro) precisa saber qual conversa está NA TELA. Com o cardápio no
+   * lugar das mensagens a pessoa não as está vendo: a conversa deixa de contar, e a mensagem toca.
+   * Fechar a conversa ou sair para outra área limpa o registro.
+   */
+  const mensagensAVista = !catalogoAberto;
+  useEffect(() => {
+    definirConversaAberta(mensagensAVista ? conversa.id : null);
+    return () => definirConversaAberta(null);
+  }, [conversa.id, mensagensAVista]);
+  // "Copiar" no menu da mensagem: o texto vai para a área de transferência, com um aviso curto.
+  async function copiarMensagem(texto: string) {
+    try {
+      await navigator.clipboard.writeText(texto);
+      avisar.sucesso("Mensagem copiada");
+    } catch {
+      avisar.erro("Não foi possível copiar a mensagem.");
+    }
+  }
+  // Perfil da outra identidade, aberto pelo nome/foto do cabeçalho.
+  const [perfilAberto, setPerfilAberto] = useState(false);
+  const fecharPerfil = useCallback(() => setPerfilAberto(false), []);
   // Carrinho + pedido: só existem quando uma pessoa conversa com uma empresa.
   const podeComprar =
     tipoIdentidade === "pessoal" &&
@@ -1002,6 +1031,7 @@ export function ConversaTecnica({
           presenca={atividade.presenca}
           digitando={atividade.outraDigitando}
           {...(aoVoltar ? { aoVoltar } : {})}
+          aoAbrirPerfil={() => setPerfilAberto(true)}
           inicio={inicioCabecalho}
           bloqueada={bloqueada}
           acoes={
@@ -1296,6 +1326,8 @@ export function ConversaTecnica({
                       identidadeAtualId={identidadeId}
                       nomeRemetente={outro.nomeExibicao}
                       aoResponder={responder}
+                      aoCopiar={(texto) => void copiarMensagem(texto)}
+                      aoAbrirConversa={aoConversarCom}
                       aoEditar={iniciarEdicao}
                       aoExcluirParaMim={(alvo) => void excluirParaMim(alvo)}
                       aoExcluirParaTodos={(alvo) => void excluirParaTodos(alvo)}
@@ -1526,6 +1558,8 @@ export function ConversaTecnica({
             />
           ) : null;
         })()}
+
+      {perfilAberto && <PerfilDaIdentidade identidade={outro} aoFechar={fecharPerfil} />}
     </section>
   );
 }

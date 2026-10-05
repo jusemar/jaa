@@ -204,6 +204,26 @@ Evitar `any`. Quando o tipo for realmente desconhecido, usar `unknown` e fazer n
 
 O aplicativo deve continuar sendo um aplicativo React Native real. Expo é a infraestrutura e conjunto de ferramentas adotado, não uma limitação arquitetural.
 
+### Ambientes e distribuição do Mobile — SOMENTE DOIS
+
+**Existem dois ambientes e nenhum terceiro** (nada de preview, staging ou homologação). São dois aplicativos Android diferentes, que nunca compartilham sessão, canal de update nem API:
+
+| Ambiente | App | Pacote | Scheme | Canal EAS Update / ambiente EAS |
+| --- | --- | --- | --- | --- |
+| `development` | Jaa Dev | `com.jaa.app.dev` | `jaa-dev` | `development` |
+| `production` | Jaa | `com.jaa.app` | `jaa` | `production` |
+
+- quem decide é `APP_VARIANT` (`development` | `production`; outro valor falha; ausente = `development`, nunca produção). Regras puras em `apps/mobile/src/lib/variante.ts`; configuração única em `apps/mobile/app.config.ts` (**não existe `app.json`**; `import "tsx/cjs"` no topo é o que permite à configuração importar TypeScript do projeto). O slug (`jaa`) e o dono (`jaa-app`) são os do projeto no EAS, iguais nas duas variantes; o slug forma o scheme do Development Client (`exp+jaa`);
+- **development tem dois modos, com o mesmo pacote**: LOCAL (Development Client + Metro + API local, gerado com `npx expo run:android`, fora do `eas.json`) e **APK Development para testadores** (perfil `development` do `eas.json`: APK, distribuição interna, abre direto, sem Metro/adb). Assinaturas diferentes (debug × chave do EAS): no mesmo aparelho é um ou outro. `eas.json` tem só os perfis `development` e `production` (AAB);
+- **versão**: `version` é a versão do produto; `runtimeVersion` = política `appVersion` (update só chega a binário da mesma versão); `versionCode` é do EAS (`appVersionSource: remote` + `autoIncrement`, um contador por pacote) — build não altera código-fonte;
+- **update OTA** (JS/TS, telas, estilos, assets do bundle) é publicação EXPLÍCITA; verifica ao abrir, baixa em segundo plano, aplica na abertura seguinte. **Mudança nativa** (biblioteca, permissão, plugin, SDK) exige subir `version` + novo build, nunca update;
+- **URL da API** (`EXPO_PUBLIC_JAA_API_URL`, pública): local aceita localhost/IP; **distribuído exige HTTPS público e estável** (`validarUrlApi`), vem das variáveis de ambiente do EAS e o app distribuído NÃO tem fallback para localhost. Nenhum segredo vai para o EAS;
+- **comandos** (`apps/mobile/scripts/distribuicao.ts`, ambiente sempre explícito): `npm run mobile:versao`, `mobile:build:dev`, `mobile:update:dev -- "o que mudou"`, `mobile:build:production`, `mobile:update:production` (produção exige digitar `PRODUCTION`). Recusam publicar sem projeto EAS, login ou URL válida;
+- o ambiente exibido no app (rodapé do Perfil) vem do PACOTE instalado, não de `__DEV__`;
+- a API confia nos schemes `jaa://` e `jaa-dev://` (`esquemasMobile`); com `NODE_ENV=production`, só `jaa://`;
+- projeto EAS: `jaa-app/jaa`, id em `PROJETO_EAS` (`app.config.ts`);
+- **pendências**: Development é local (API e banco no PC, celular pela rede Wi-Fi), então o APK Development distribuído pelo EAS não é usado hoje — ele exigiria uma API HTTPS pública, que não existe; iOS não configurado.
+
 ## Web
 
 - Next.js;
@@ -223,6 +243,10 @@ Antes de implementar ou alterar código específico do Next.js, consultar quando
 - conexão realtime para mensageria.
 
 A API é compartilhada por mobile e web.
+
+Execução: `npm run dev -w @jaa/api` (watch, local) e `npm start -w @jaa/api` (processo persistente para hospedagem, sem watch; TypeScript executado por `tsx`, sem etapa de build, porque os pacotes do monorepo são consumidos como código-fonte). Porta em `PORT` (padrão 3333). Healthcheck: `GET /health` → `{ "status": "ok" }`. Migrations nunca rodam na subida da API: são aplicadas explicitamente (`npm run banco:migrar` com a `DATABASE_URL` do alvo).
+
+DEVELOPMENT é LOCAL: API e PostgreSQL rodam no PC de desenvolvimento e o celular acessa pela mesma rede Wi-Fi (Metro na 8081 e API na 3333, pelo IP do PC na rede). Rotina: `npm run mobile:iniciar` / `mobile:parar` (`apps/mobile/scripts/ambiente-local.sh`; atalhos locais `jaa-mobile` e `jaa-mobile-stop`) detecta os IPs do Windows e do WSL, corrige o encaminhamento de portas só quando mudou (UAC), sobe a API e o Metro sem URL fixa (a API é o host de onde o Metro serviu o app) e grava os registros em `~/.cache/jaa`; não roda migrations, não usa USB/adb. Não existe API nem banco públicos de Development. A hospedagem de PRODUÇÃO continua em aberto (seção 32); para quando existir, a API já aceita `PROXIES_CONFIAVEIS` (número de proxies reversos na frente dela: o Fastify lê o IP real só do trecho confiável de `X-Forwarded-For`, nunca `trustProxy: true`; local não define) e deve rodar em UMA instância enquanto presença/digitando ficarem em memória.
 
 ## Realtime
 
@@ -906,6 +930,7 @@ Pendências conhecidas:
 - domínio no servidor (`features/notificacoes`): cada mensagem **criada** gera `notificacao-nova-mensagem` para cada destinatário, **nunca o remetente**. Retry idempotente, edição, exclusão e leitura não notificam. Payload só com dados públicos do autor (`identidadeId`, `nomeExibicao`, `nomeUsuario`), prévia limitada e horário;
 - estado persistente = lista + não lidas; a notificação é só aviso (nada persistido);
 - entrega atual: realtime `notificacao:nova-mensagem` às conexões do destinatário. O Web exibe aviso in-app (máx. 3, um por conversa, deduplicado por id) **exceto** para a conversa aberta e visível; clicar abre a conversa;
+- **som**: Web e Mobile tocam um toque curto só em mensagem RECEBIDA (esse mesmo evento), no máximo uma vez por id; enviar, histórico, lista e reconexão não tocam. A regra é única, `deveTocarSomDeMensagem` em `@jaa/contratos`: **silêncio para a conversa que a pessoa está VENDO**, som para qualquer outra conversa ou área. "Vendo" = mensagens daquela conversa na tela E aplicação à vista — Web: conversa aberta sem o cardápio por cima + `document.visibilityState === "visible"` + `document.hasFocus()` (`lib/conversa-em-leitura.ts`); Mobile: tela da conversa em foco + `AppState` ativo. Mensagem silenciada fica lembrada (não toca numa reentrega). No Mobile (`use-som-mensagens.ts`, `expo-audio` + `assets/sons/mensagem-recebida.wav`) o toque também é omitido enquanto uma mensagem de voz toca ou é gravada. Não é push: só com o app aberto e conectado. Não existe som de envio;
 - pendente: **push Web e mobile reais** (provedor, service worker, tokens de dispositivo, preferências e horário de silêncio) serão outro assinante do mesmo fato de domínio, provavelmente só para destinatários sem conexão ativa. A Notification API do navegador não foi ativada: exige decisão de UX para pedir permissão.
 
 ## Imagens no chat (API, Web e Mobile)
@@ -941,7 +966,7 @@ Modelo de banco (migration `0043_mensagens_com_anexo`):
 - **Mensagem**: `tipo: "audio"`, `anexo: { id, tipo: "audio", duracaoMs }` (o anexo virou união discriminada por `tipo`). Nunca chave, MIME, bucket ou URL. Não é editável; responde e é respondida; prévia sempre `PREVIA_AUDIO` ("Áudio") em resposta, notificação e lista;
 - **Leitura**: `POST /conversas/:conversaId/audios/urls` → `{ audios: [{ mensagemId, url, expiraEm }] }`, mesma regra e mesmo código das imagens (`gerarUrlsAnexos(tipo)`); cada rota só entrega o seu tipo. Exclusão já era por anexo: "para todos" marca tombstone + `removido_em` e apaga o arquivo depois do commit;
 - **Web**: microfone no lugar do "enviar" quando o campo está vazio; `getUserMedia` + `MediaRecorder` (`lib/gravador-audio.ts`, Opus a 32 kbps); gravar → parar → OUVIR a prévia → enviar ou descartar (parar não envia); para sozinho em 10 min. Um modo de compositor por vez (`modoDoCompositor`). Player próprio (`player-audio.tsx`): tocar/pausar, barra com busca, tempo e 1x/1,5x/2x, um áudio por vez, duração vinda do anexo. Balão pendente com Reenviar/Descartar e o mesmo `idCliente`;
-- **Mobile**: `expo-audio` (SDK 57), carregado SOB DEMANDA e protegido (`lib/audio-nativo.ts`) — build sem o módulo nativo avisa "atualize o app" em vez de quebrar a conversa. Grava MP4/AAC mono a 64 kbps; permissão do microfone só ao tocar no botão; sair do app ou da conversa durante a gravação CANCELA (nada grava em segundo plano; `enableBackgroundRecording: false`). Mesmo fluxo e mesmas regras da Web. **Exige Development Build com o `expo-audio`**. Três cuidados que não podem ser desfeitos: (1) as opções de gravação vão ACHATADAS para o gravador nativo (`opcoesDeGravacaoNativas`) — com `android: {...}` aninhado o Android ignora container/codificador e grava 3GPP/AMR-NB, que a API agora recusa e os navegadores não tocam; (2) no FIM da faixa o player PAUSA antes de voltar ao início (`lib/controle-reproducao.ts`) — só `seekTo(0)` faz o ExoPlayer recomeçar sozinho; fim normal não é erro e não renova URL; (3) `RECORD_AUDIO` é declarada no `app.json` e NENHUM plugin pode ter `microphonePermission: false` (o do `expo-image-picker` removia a permissão do manifesto gerado);
+- **Mobile**: `expo-audio` (SDK 57), carregado SOB DEMANDA e protegido (`lib/audio-nativo.ts`) — build sem o módulo nativo avisa "atualize o app" em vez de quebrar a conversa. Grava MP4/AAC mono a 64 kbps; permissão do microfone só ao tocar no botão; sair do app ou da conversa durante a gravação CANCELA (nada grava em segundo plano; `enableBackgroundRecording: false`). Mesmo fluxo e mesmas regras da Web. **Exige Development Build com o `expo-audio`**. Três cuidados que não podem ser desfeitos: (1) as opções de gravação vão ACHATADAS para o gravador nativo (`opcoesDeGravacaoNativas`) — com `android: {...}` aninhado o Android ignora container/codificador e grava 3GPP/AMR-NB, que a API agora recusa e os navegadores não tocam; (2) no FIM da faixa o player PAUSA antes de voltar ao início (`lib/controle-reproducao.ts`) — só `seekTo(0)` faz o ExoPlayer recomeçar sozinho; fim normal não é erro e não renova URL; (3) `RECORD_AUDIO` é declarada no `app.config.ts` e NENHUM plugin pode ter `microphonePermission: false` (o do `expo-image-picker` removia a permissão do manifesto gerado);
 - **pendências**: varredura de órfãos também para áudios; validação de duração do WebM no servidor; indicador "ouvido"; reprodução do WebM/Opus no Safari/iOS antigo não verificada.
 
 ## Conversas com empresa e catálogo do cliente (Fase 2)
@@ -1247,6 +1272,22 @@ O resto abaixo é decisão aprovada para os próximos blocos; **não implementar
 **Interface**: configurações com frases curtas e naturais ("Oportunidades de outras regiões"), nunca jargão técnico ("polígono de atuação").
 
 **Gestor da Plataforma** (futuro) administrará taxonomia, limites (serviços, áreas, raio), regras e moderação: por isso esses valores não podem virar hardcode arquitetural.
+
+## Link do Jaa, visitante e perfil público (Web)
+
+- **Link do Jaa** = `https://<site>/@usuario` (rota `apps/web/src/app/[identificador]`, que só aceita "@" + @usuario válido; o resto é 404). O @usuario já é único entre pessoas e empresas e **não tem rota que o altere** — se um dia puder mudar, será preciso guardar os antigos para não quebrar links. Nenhum id interno na URL e nenhuma tabela nova. O dono copia o link em Perfil ("Link do Jaa"). App Links/deep link nativo **não existem**;
+- **resolução pública**: `GET /publico/identidades/:nomeUsuario` (sem sessão; `identidadePublicaSchema`, `.strict()`), com a MESMA regra de quem pode receber conversa (`buscarIdentidadeContatavelPorNomeUsuario`: pessoa ou empresa ativa); inexistente/fora do formato = mesmo 404. Quem olha é um desconhecido: foto e frase de status só com visibilidade "todos" (`podeVer` sem contato nem exceção); `sobre` só de EMPRESA; `temCardapio` = empresa com produto disponível. Pendente antes de divulgar em escala: rate limit e cache (como no catálogo público);
+- **visitante (sem conta)** vê a identidade, a ENTRADA de sempre já na página (sem botão intermediário: `FluxoAutenticacao` com `moldura`) e, se houver, o cardápio — o mesmo `CatalogoDaEmpresa` e a mesma consulta pública, só para olhar. Tentar adicionar produto traz a entrada à vista com o foco no campo. A página rola inteira: nenhuma barra fixa nem altura fixa. O carrinho é por identidade de quem compra, então **não há carrinho de visitante**: a escolha acontece depois de entrar;
+- **retorno ao destino**: o destino é só `{ nomeUsuario, abrirCardapio }` na memória da página; o endereço `/@usuario` não muda durante o login. Não existe parâmetro de "voltar para" — logo não há open redirect. Depois de entrar/cadastrar (ou já autenticado), o `AppJaa` abre a conversa direta de sempre (`POST /conversas/diretas`, sem duplicar) e, se a empresa tem cardápio, com ele à mostra;
+- **perfil público** (Web): tocar no nome/foto do cabeçalho da conversa abre `PerfilDaIdentidade` numa `Folha` adaptativa (`components/ui/folha.tsx`: sobe de baixo até `md`, painel lateral direito a partir de `md`; desenhada no `<body>` por portal — um `fixed` dentro da coluna da conversa ficava preso e cortado). Usa `GET /identidades/:id/perfil` (já existente): foto em destaque, nome, @usuario, frase de status ("Recado"), "Sobre" e o Link do Jaa (clicável + copiar). Privacidade aplicada no servidor: foto por `visibilidadeFoto`, frase por `visibilidadeStatus` (padrão "contatos"); `sobre` e `cidade` não têm controle de privacidade e vão a qualquer conta autenticada. No Mobile essa tela ainda não existe.
+
+## Entrada, links no chat e demais regras de interface (Web)
+
+- **entrada/cadastro**: textos e exemplos em `features/autenticacao/lib/textos-entrada.ts`. Primeira tela separa "Entrar" (celular ou @usuario + senha) de "Novo no Jaa?" (criar conta com o celular); o código serve para criar a conta E para entrar sem senha — não existe redefinição de senha, e os textos não a prometem. **Placeholders são sempre modelos fictícios** (`(00) 00000-0000`, `@seunome`), nunca dado de conta. O aviso "Sem conexão" só aparece quando a conexão era esperada (com sessão);
+- **Salvar perfil** (Web e Mobile): `perfilFoiAlterado` em `@jaa/contratos` — desabilitado sem alteração, ao desfazer, enquanto salva e depois do sucesso;
+- **links em mensagens** (Web): `segmentarMensagem` divide o texto em trechos e `TextoComLinks` os renderiza como nós do React (nunca HTML cru). Só http/https; externo abre em nova aba com `noopener noreferrer nofollow`; Link do Jaa do próprio site abre a conversa sem recarregar. **Copiar** no menu da mensagem existe quando há texto ou legenda. No Mobile não há linkificação nem "Copiar" ainda;
+- **faixas horizontais do cardápio** (`FaixaRolavel`): a borda esmaece (máscara) só do lado em que há conteúdo escondido. A faixa é `relative` de propósito: sem isso os controles escondidos das opções alargavam a página inteira;
+- a legenda visual "Agindo como" saiu do seletor de identidade (o rótulo acessível continua).
 
 ## Presença e digitando (Fase 1)
 

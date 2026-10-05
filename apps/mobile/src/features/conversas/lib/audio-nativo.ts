@@ -40,6 +40,10 @@ export async function prepararParaTocar(): Promise<void> {
     .catch(() => undefined);
 }
 
+// Enquanto o microfone está aberto, nenhum som do app pode tocar (entraria na gravação).
+let gravando = false;
+export const gravacaoEmCurso = (): boolean => gravando;
+
 /** Microfone do aparelho: MP4/AAC mono a 64 kbps (voz), um arquivo temporário por gravação. */
 export function microfoneDoAparelho(): MicrofoneDoAparelho {
   const audio = obterExpoAudio();
@@ -56,12 +60,14 @@ export function microfoneDoAparelho(): MicrofoneDoAparelho {
       const gravador = new modulo.AudioModule.AudioRecorder(opcoes);
       await gravador.prepareToRecordAsync();
       gravador.record();
+      gravando = true;
       return {
         async parar() {
           try {
             await gravador.stop();
             return gravador.uri;
           } finally {
+            gravando = false;
             // Solta o microfone e devolve o áudio do aparelho ao modo de reprodução.
             await modulo.setAudioModeAsync(MODO_DE_REPRODUCAO).catch(() => undefined);
           }

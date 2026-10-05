@@ -23,6 +23,8 @@ const TAMANHOS = {
   pequeno: "h-8 w-8 text-[10px]",
   medio: "h-11 w-11 text-xs",
   grande: "h-16 w-16 text-lg",
+  // Foto em destaque no perfil de outra identidade.
+  destaque: "h-36 w-36 text-4xl sm:h-40 sm:w-40",
 } as const;
 
 export type TamanhoAvatar = keyof typeof TAMANHOS;

@@ -26,7 +26,8 @@ export function CatalogoDaEmpresa({
   aoAdicionarAoCarrinho,
 }: {
   identidadeEmpresaId: string;
-  aoFechar: () => void;
+  // Ausente quando o cardápio não está sobre uma conversa (página do visitante): não há o que fechar.
+  aoFechar?: (() => void) | undefined;
   // Catálogo recém-carregado do servidor (ex.: para o carrinho atualizar a imagem dos itens).
   aoCarregarCatalogo?: (catalogo: CatalogoPublico) => void;
   // Ausente quando quem olha é a própria empresa (não faz pedido de si mesma).

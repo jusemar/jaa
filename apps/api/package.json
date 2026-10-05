@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/servidor.ts",
+    "start": "tsx src/servidor.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx ../../packages/banco/scripts/com-banco-teste.ts tsx --env-file-if-exists=.env --import ./testes/apoio/exigir-banco-de-teste.ts --test \"testes/**/*.test.ts\"",
     "test:isolado": "npm test",
@@ -23,12 +24,12 @@
     "libphonenumber-js": "^1.13.13",
     "sharp": "^0.35.4",
     "socket.io": "^4.8.3",
+    "tsx": "^4.23.13",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
     "socket.io-client": "^4.8.3",
-    "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   }
 }

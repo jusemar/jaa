@@ -1,6 +1,7 @@
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 
 import { Cores } from "@/constants/theme";
+import { useSomMensagens } from "@/features/conversas/hooks/use-som-mensagens";
 import { useTotalNaoLidas } from "@/features/conversas/hooks/use-total-nao-lidas";
 import { rotuloTotalNaoLidas } from "@/features/conversas/lib/nao-lidas-globais";
 import { useIdentidadeAtiva } from "@/features/identidades/components/provedor-identidade-ativa";
@@ -17,6 +18,8 @@ export default function LayoutAbas() {
   const ehEmpresa = ativa?.tipo === "empresarial";
   // Não lidas da identidade ATUANTE: indicador no item Conversas, visível em qualquer área.
   const naoLidas = useTotalNaoLidas(ativa?.identidadeId ?? null);
+  // Som de mensagem recebida em qualquer área (este layout continua montado com a conversa aberta).
+  useSomMensagens(ativa?.identidadeId ?? null);
 
   return (
     <NativeTabs

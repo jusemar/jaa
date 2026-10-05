@@ -67,8 +67,8 @@ export function SeletorIdentidade({
         {ativa && <AvatarIdentidade identidade={ativa} tamanho="pequeno" />}
         {!compacto && (
           <>
+            {/* Sem a legenda "Agindo como": o nome basta; o significado continua no rótulo acessível do botão. */}
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-[11px] uppercase tracking-wide text-conteudo-suave">Agindo como</span>
               <span data-identidade-ativa={ativa?.identidadeId} data-tipo-identidade-ativa={ativa?.tipo} className="truncate text-sm font-medium">
                 {ativa?.nomeExibicao ?? "—"}
               </span>

@@ -1,4 +1,5 @@
 import {
+  identidadePublicaSchema,
   listaExcecoesPrivacidadeSchema,
   meuPerfilSchema,
   perfilPublicoSchema,
@@ -7,6 +8,7 @@ import {
   type AtualizarPerfilEntrada,
   type AtualizarPrivacidadeEntrada,
   type DecisaoPrivacidade,
+  type IdentidadePublica,
   type ListaExcecoesPrivacidade,
   type MeuPerfil,
   type PerfilPublico,
@@ -37,6 +39,11 @@ export function salvarPrivacidade(entrada: AtualizarPrivacidadeEntrada): Promise
 
 export function buscarPerfilDe(identidadeId: string): Promise<ResultadoApi<PerfilPublico>> {
   return requisitarApi(`/identidades/${encodeURIComponent(identidadeId)}/perfil`, perfilPublicoSchema, comIdentidade());
+}
+
+/** Identidade pelo @usuario do Link do Jaa — consulta PÚBLICA, funciona sem sessão. */
+export function buscarIdentidadePublica(nomeUsuario: string): Promise<ResultadoApi<IdentidadePublica>> {
+  return requisitarApi(`/publico/identidades/${encodeURIComponent(nomeUsuario)}`, identidadePublicaSchema);
 }
 
 export function listarExcecoes(): Promise<ResultadoApi<ListaExcecoesPrivacidade>> {

@@ -39,6 +39,7 @@ import { registrarRotasPedidosEmpresa } from "./features/pedidos/rotas/rotas-ped
 import { registrarRotasCategorias } from "./features/produtos/rotas/rotas-categorias.js";
 import { registrarRotasPersonalizacao } from "./features/produtos/rotas/rotas-personalizacao.js";
 import { registrarRotasProdutosAdministracao } from "./features/produtos/rotas/rotas-produtos-administracao.js";
+import { registrarRotasIdentidadePublica } from "./features/perfil/rotas/rotas-identidade-publica.js";
 import { registrarRotasPerfil } from "./features/perfil/rotas/rotas-perfil.js";
 import { registrarRotasBuscaProfissionais } from "./features/profissionais/rotas/rotas-busca-profissionais.js";
 import { registrarRotasPerfilProfissional } from "./features/profissionais/rotas/rotas-perfil-profissional.js";
@@ -46,7 +47,7 @@ import { registrarRotasIdentidades } from "./features/identidades/rotas/rotas-id
 import type { CanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
 import { registrarRotasMensagens } from "./features/mensagens/rotas/rotas-mensagens.js";
 import { registrarRotasUsuarios } from "./features/usuarios/rotas/rotas-usuarios.js";
-import type { Ambiente } from "./lib/ambiente.js";
+import { confiancaNoProxy, type Ambiente } from "./lib/ambiente.js";
 import {
   armazenamentoIndisponivel,
   armazenamentoPrivadoIndisponivel,
@@ -88,7 +89,9 @@ export async function criarAplicacao({
   armazenamentoPrivado = armazenamentoPrivadoIndisponivel,
   logger,
 }: DependenciasAplicacao) {
-  const servidor = Fastify({ logger });
+  // Atrás do proxy da hospedagem, o IP do cliente vem de X-Forwarded-For — só do trecho confiável.
+  const opcoes: FastifyServerOptions = { logger, trustProxy: confiancaNoProxy(ambiente) };
+  const servidor = Fastify(opcoes);
 
   await servidor.register(cors, {
     origin: ambiente.ORIGENS_WEB_PERMITIDAS,
@@ -114,6 +117,9 @@ export async function criarAplicacao({
     };
   });
 
+  // Healthcheck da hospedagem: diz só que o processo responde. Sem banco, sem segredo, sem versão.
+  servidor.get("/health", async () => ({ status: "ok" }));
+
   registrarRotasBetterAuth(servidor, autenticacao, ambiente.BETTER_AUTH_URL);
   registrarRotasCredenciais(servidor, {
     banco,
@@ -132,6 +138,7 @@ export async function criarAplicacao({
   registrarRotasCategorias(servidor, { banco, autenticacao });
   registrarRotasPersonalizacao(servidor, { banco, autenticacao });
   registrarRotasPerfil(servidor, { banco, autenticacao, armazenamento });
+  registrarRotasIdentidadePublica(servidor, { banco, armazenamento });
   registrarRotasCatalogoPublico(servidor, { banco, autenticacao, armazenamento });
   registrarRotasEnderecos(servidor, { banco, autenticacao, geocodificador });
   registrarRotasPerfilProfissional(servidor, { banco, autenticacao, geocodificador });

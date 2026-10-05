@@ -11,7 +11,8 @@ import {
   type GrupoOpcoesPublico,
   type ProdutoPublico,
 } from "@jaa/contratos";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { FaixaRolavel } from "@/components/ui/faixa-rolavel";
 import {
   IconeCesta,
   IconeCheck,
@@ -327,19 +328,7 @@ function GrupoDeOpcoes({
         </p>
       )}
 
-      <div
-        className={
-          unica
-            ? /*
-               * UMA LINHA sempre: `flex-nowrap` impede a quebra e `overflow-x-auto` faz a rolagem
-               * acontecer AQUI DENTRO, não na página. `min-w-0` deixa esta faixa encolher até a
-               * largura do card — sem ele, o conteúdo mínimo dos cartões vazaria para fora.
-               * As margens negativas colam a rolagem na borda do card sem cortar o contorno da opção.
-               */
-              "-mx-1 mt-3 flex min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto px-1 pb-1"
-            : "mt-3 grid grid-cols-2 gap-2"
-        }
-      >
+      <ListaDeOpcoes unica={unica}>
         {grupo.opcoes.map((opcao) => {
           const marcada = selecionadas.has(opcao.id);
           return (
@@ -429,7 +418,7 @@ function GrupoDeOpcoes({
             </label>
           );
         })}
-      </div>
+      </ListaDeOpcoes>
     </div>
   );
 }
@@ -485,4 +474,15 @@ function Quantidade({
       </button>
     </span>
   );
+}
+
+/**
+ * Opções de um grupo. Escolha ÚNICA: UMA LINHA sempre — `flex-nowrap` impede a quebra e a rolagem
+ * acontece AQUI DENTRO, não na página; `min-w-0` deixa a faixa encolher até a largura do card (sem
+ * ele o conteúdo mínimo dos cartões vazaria) e as margens negativas colam a rolagem na borda do card
+ * sem cortar o contorno da opção. A `FaixaRolavel` esmaece a borda quando há mais opções para o lado.
+ */
+function ListaDeOpcoes({ unica, children }: { unica: boolean; children: ReactNode }) {
+  if (!unica) return <div className="mt-3 grid grid-cols-2 gap-2">{children}</div>;
+  return <FaixaRolavel className="-mx-1 mt-3 flex min-w-0 max-w-full flex-nowrap gap-2 px-1 pb-1">{children}</FaixaRolavel>;
 }

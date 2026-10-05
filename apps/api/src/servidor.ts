@@ -89,10 +89,17 @@ servidor.addHook("onClose", async () => {
   await conexao.encerrar();
 });
 
+// A hospedagem encerra o processo com SIGTERM a cada novo deploy: fecha conexões e o pool antes de sair.
+for (const sinal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(sinal, () => {
+    void servidor.close().finally(() => process.exit(0));
+  });
+}
+
 const iniciar = async () => {
   try {
     await servidor.listen({
-      port: 3333,
+      port: ambiente.PORT ?? 3333,
       host: "0.0.0.0",
     });
   } catch (erro) {

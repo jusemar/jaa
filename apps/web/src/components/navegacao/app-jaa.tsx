@@ -15,6 +15,7 @@ import { AreaProdutos } from "@/features/produtos/components/area-produtos";
 import { AvisosDeAcao } from "@/components/ui/avisos";
 import { Botao, Carregando, Secao } from "@/components/ui/primitivos";
 import { IconeConversa } from "@/components/ui/icones";
+import type { DestinoDoLink } from "@/features/link/lib/link-do-jaa";
 import { areaValida, areasDaIdentidade } from "./areas";
 import { NavegacaoApp } from "./navegacao-app";
 
@@ -41,7 +42,14 @@ export function AppJaa({
   conta,
   aoSair,
   saindo,
+  destinoInicial,
 }: {
+  /*
+   * A pessoa chegou por um Link do Jaa (`/@usuario`): o app abre direto na conversa com aquela
+   * identidade — já autenticada ou logo depois de entrar/cadastrar. É sempre uma conversa do próprio
+   * Jaa (um @usuario), nunca um endereço.
+   */
+  destinoInicial?: DestinoDoLink | undefined;
   conta: ContaAtual;
   aoSair: () => void;
   saindo: boolean;
@@ -50,6 +58,13 @@ export function AppJaa({
   const identidades = useIdentidadeAtiva(identidadePessoalId);
   const [areaPedida, setAreaPedida] = useState<string | null>(null);
   const [conversaAberta, setConversaAberta] = useState(false);
+
+  // Chegando por um Link do Jaa, a área é Conversas — qualquer que seja o # que veio no endereço.
+  // (Antes da leitura abaixo: ela já encontra o endereço certo.)
+  const chegouPorLink = destinoInicial !== undefined;
+  useEffect(() => {
+    if (chegouPorLink) window.location.hash = "conversas";
+  }, [chegouPorLink]);
 
   // Primeira leitura só no cliente (o servidor não conhece o #, e ler no primeiro render quebraria a
   // hidratação) e depois a cada "voltar" do navegador.
@@ -69,8 +84,11 @@ export function AppJaa({
   }
 
   // "Conversar com…" de qualquer área: vai para Conversas e abre a conversa DIRETA com esse @usuario.
-  const [conversaSolicitada, setConversaSolicitada] = useState<string | null>(null);
+  const [conversaSolicitada, setConversaSolicitada] = useState<string | null>(destinoInicial?.nomeUsuario ?? null);
+  // O cardápio abre junto só para a conversa do link; conversas pedidas depois abrem normalmente.
+  const [cardapioDaSolicitada, setCardapioDaSolicitada] = useState(destinoInicial?.abrirCardapio ?? false);
   function abrirConversaCom(nomeUsuario: string) {
+    setCardapioDaSolicitada(false);
     setConversaSolicitada(nomeUsuario);
     abrir("conversas");
   }
@@ -176,6 +194,7 @@ export function AppJaa({
             pessoa={pessoal}
             aoAlterarConversaAberta={registrarConversaAberta}
             abrirConversaCom={conversaSolicitada}
+            abrirCardapioDaSolicitada={cardapioDaSolicitada}
             aoAbrirConversaSolicitada={conversaAtendida}
             /*
              * "Meus pedidos" no cabeçalho da conversa leva para a área que JÁ existe — e só aparece
@@ -199,7 +218,7 @@ export function AppJaa({
                   {!ehEmpresa && (
                     <Secao
                       titulo="Minhas empresas"
-                      descricao="Crie uma empresa para vender pelo Jaa. Para administrá-la, escolha-a em “Agindo como”."
+                      descricao="Crie uma empresa para vender pelo Jaa. Para administrá-la, toque no seu nome (no topo) e escolha a empresa."
                     >
                       <AreaEmpresas
                         aoEmpresaCriada={() => void identidades.recarregar()}

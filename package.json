@@ -2,6 +2,9 @@
   "name": "jaa",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -14,6 +17,13 @@
     "banco:gerar-migration": "npm run gerar-migration -w @jaa/banco",
     "banco:migrar": "npm run migrar -w @jaa/banco",
     "banco:verificar-migrations": "npm run verificar-migrations -w @jaa/banco",
-    "ibge:importar-malha": "npm run ibge:importar-malha -w @jaa/banco --"
+    "ibge:importar-malha": "npm run ibge:importar-malha -w @jaa/banco --",
+    "mobile:iniciar": "apps/mobile/scripts/ambiente-local.sh iniciar",
+    "mobile:parar": "apps/mobile/scripts/ambiente-local.sh parar",
+    "mobile:versao": "tsx apps/mobile/scripts/distribuicao.ts versao",
+    "mobile:build:dev": "tsx apps/mobile/scripts/distribuicao.ts build development",
+    "mobile:update:dev": "tsx apps/mobile/scripts/distribuicao.ts update development",
+    "mobile:build:production": "tsx apps/mobile/scripts/distribuicao.ts build production",
+    "mobile:update:production": "tsx apps/mobile/scripts/distribuicao.ts update production"
   }
 }

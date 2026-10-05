@@ -21,9 +21,12 @@ export function CabecalhoConversa({
   digitando,
   acoes,
   aoVoltar,
+  aoAbrirPerfil,
   inicio,
   bloqueada = false,
 }: {
+  // Tocar no nome ou na foto abre o perfil daquela identidade. Ausente = cabeçalho só informativo.
+  aoAbrirPerfil?: (() => void) | undefined;
   // Antes do avatar, só na janela larga (ex.: reabrir o painel lateral recolhido).
   inicio?: ReactNode;
   outraIdentidade: IdentidadeVisivel;
@@ -67,6 +70,11 @@ export function CabecalhoConversa({
         )}
         {inicio}
 
+        {/*
+          Foto + nome são UM alvo: tocar abre o perfil. Sem `aoAbrirPerfil` continuam texto comum
+          (um botão que não faz nada seria mentira para quem usa teclado ou leitor de tela).
+        */}
+        <Identificacao aoAbrirPerfil={aoAbrirPerfil} nome={outraIdentidade.nomeExibicao}>
         <span className="relative shrink-0">
           <AvatarIdentidade identidade={outraIdentidade} tamanho="medio" />
           {presenca && (
@@ -121,9 +129,36 @@ export function CabecalhoConversa({
                 : `@${outraIdentidade.nomeUsuario}`}
           </p>
         </div>
+        </Identificacao>
       </div>
 
       {acoes && <div className="flex shrink-0 items-center gap-1">{acoes}</div>}
     </header>
+  );
+}
+
+function Identificacao({ aoAbrirPerfil, nome, children }: { aoAbrirPerfil: (() => void) | undefined; nome: string; children: ReactNode }) {
+  const classes = "flex min-w-0 items-center gap-3";
+  if (!aoAbrirPerfil) return <div className={classes}>{children}</div>;
+  return (
+    /*
+     * `div` com papel de botão, e não <button>: aqui dentro há um título (h2) e a linha de atividade
+     * anunciada ao vivo, que um <button> não pode conter. Enter e Espaço acionam, como num botão.
+     */
+    <div
+      role="button"
+      tabIndex={0}
+      data-abrir-perfil
+      title={`Ver perfil de ${nome}`}
+      onClick={aoAbrirPerfil}
+      onKeyDown={(evento) => {
+        if (evento.key !== "Enter" && evento.key !== " ") return;
+        evento.preventDefault();
+        aoAbrirPerfil();
+      }}
+      className={`${classes} -m-1 cursor-pointer rounded-jaa-compacto p-1 hover:bg-realce`}
+    >
+      {children}
+    </div>
   );
 }

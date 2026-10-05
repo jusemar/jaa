@@ -5,6 +5,7 @@ import {
   EVENTO_NOTIFICACAO_NOVA_MENSAGEM,
   EVENTO_PEDIDO_ENTREGA_PROXIMA,
   TEXTO_AVISO_ENTREGA_PROXIMA,
+  deveTocarSomDeMensagem,
   eventoPedidoEntregaProximaSchema,
   resumoNaoLidasSchema,
   type EventoConversaNaoLidas,
@@ -15,6 +16,7 @@ import { avisarEmDestaque } from "@/components/ui/avisos";
 import { requisitarApi } from "@/lib/api";
 import { cabecalhosIdentidadeAtuante } from "@/lib/identidade-atuante";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
+import { conversaVisivelAgora } from "../lib/conversa-em-leitura";
 import { aplicarNaoLidas, combinarResumo, totalNaoLidas, type NaoLidasPorConversa } from "../lib/nao-lidas-globais";
 import { PADRAO_SOM_ENTREGA_PROXIMA, criarTocadorSom, criarTocadorSomMensagem, type ContextoAudioMinimo, type TocadorSomMensagem } from "../lib/som-mensagem";
 
@@ -41,7 +43,7 @@ function obterTocadorEntrega(): TocadorSomMensagem {
  * AVISOS DE MENSAGEM em qualquer área do Jaa (vive no app, não só na tela de Conversas):
  * - total de NÃO LIDAS da identidade ATUANTE, para o indicador da navegação;
  * - SOM curto quando chega mensagem RECEBIDA (`notificacao:nova-mensagem`, que o servidor só manda a
- *   destinatários — nunca a quem enviou);
+ *   destinatários — nunca a quem enviou), EXCETO da conversa que a pessoa está vendo agora;
  * - "Sua entrega é a próxima" (`pedido:entrega-proxima`): aviso em destaque + som próprio. O servidor
  *   manda só ao cliente dono do pedido, uma vez por parada; aqui o mesmo aviso nunca toca duas vezes.
  *
@@ -86,8 +88,15 @@ export function useAvisosMensagens(identidadeAtivaId: string | null): number {
       setEstado((atual) => ({ identidadeId: identidadeAtivaId, porConversa: aplicarNaoLidas(doEstado(atual), evento) }));
     };
     const aoReceberMensagem = (evento: EventoNotificacaoNovaMensagem) => {
-      // Defesa extra: mensagem da própria identidade nunca toca.
-      if (evento.remetente.identidadeId !== identidadeAtivaId) obterTocador().tocar(evento.mensagemId);
+      // Conversa que a pessoa está VENDO agora (aberta + página visível e em foco) não faz barulho.
+      const tocar = deveTocarSomDeMensagem({
+        remetenteIdentidadeId: evento.remetente.identidadeId,
+        conversaId: evento.conversaId,
+        identidadeAtivaId,
+        conversaVisivelId: conversaVisivelAgora(),
+      });
+      if (tocar) obterTocador().tocar(evento.mensagemId);
+      else obterTocador().silenciar(evento.mensagemId);
     };
 
     const aoVirarProxima = (evento: unknown) => {

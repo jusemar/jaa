@@ -28,6 +28,7 @@ import { MENSAGEM_FALHA_GRAVACAO, iniciarGravacao, type MicrofoneDoAparelho } fr
 import { idsDeImagensVisiveis } from "./imagem-conversa.ts";
 import { criarReprodutorUnico } from "./reprodutor-unico.ts";
 import { criarCacheUrlsImagens } from "./urls-imagens.ts";
+import configuracaoExpo from "../../../../app.config.ts";
 
 const EU = "eeeeeeee-0000-4000-8000-000000000000";
 const OUTRA = "ffffffff-0000-4000-8000-000000000000";
@@ -163,7 +164,7 @@ describe("gravação", () => {
     assert.ok(hook.includes("void gravacao.current?.cancelar();"), "desmontar a conversa solta o microfone");
     const nativo = fonte("./audio-nativo.ts");
     assert.ok(nativo.includes("allowsBackgroundRecording: false") && nativo.includes("shouldPlayInBackground: false"));
-    const app = JSON.parse(fonte("../../../../app.json")) as { expo: { plugins: unknown[]; android: { blockedPermissions: string[] } } };
+    const app = { expo: configuracaoExpo } as unknown as { expo: { plugins: unknown[]; android: { blockedPermissions: string[] } } };
     const plugin = app.expo.plugins.find((item) => Array.isArray(item) && item[0] === "expo-audio") as [string, Record<string, unknown>];
     assert.deepEqual([plugin[1].enableBackgroundRecording, plugin[1].enableBackgroundPlayback], [false, false]);
     assert.ok(String(plugin[1].microphonePermission).includes("mensagem de voz"));

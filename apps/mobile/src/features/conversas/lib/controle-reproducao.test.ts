@@ -6,6 +6,7 @@ import { tipoAudioAceito } from "@jaa/contratos";
 import { configurarReprodutor, encerrarNoFim, lerSituacao, type ReprodutorNativo, type SituacaoReproducao } from "./controle-reproducao.ts";
 import { criarReprodutorUnico } from "./reprodutor-unico.ts";
 import { criarCacheUrlsImagens } from "./urls-imagens.ts";
+import configuracaoExpo from "../../../../app.config.ts";
 
 const fonte = (caminho: string) => readFileSync(new URL(caminho, import.meta.url), "utf8");
 const semComentarios = (codigo: string) => codigo.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
@@ -168,7 +169,7 @@ describe("modo de áudio e formatos", () => {
 });
 
 describe("permissão de microfone na configuração FONTE do Expo", () => {
-  const app = JSON.parse(fonte("../../../../app.json")) as { expo: { plugins: unknown[]; android: { permissions: string[]; blockedPermissions: string[] } } };
+  const app = { expo: configuracaoExpo } as unknown as { expo: { plugins: unknown[]; android: { permissions: string[]; blockedPermissions: string[] } } };
   const plugin = (nome: string) => app.expo.plugins.find((item) => Array.isArray(item) && item[0] === nome) as [string, Record<string, unknown>] | undefined;
 
   it("RECORD_AUDIO declarada e não bloqueada; expo-audio a adiciona", () => {

@@ -15,11 +15,15 @@ import { ehCelularBrasileiroNormalizado, normalizarCelularBrasileiro } from "./l
 export const CAMINHO_BASE_AUTENTICACAO = "/api/auth";
 
 /*
- * Esquema do aplicativo (apps/mobile/app.json → expo.scheme). O Better Auth precisa confiar nele para
- * aceitar as requisições do Mobile: é a MESMA autenticação do Web (conta + sessão + OTP por celular),
- * só que com a sessão guardada em armazenamento seguro do aparelho em vez de cookie do navegador.
+ * Schemes do aplicativo (apps/mobile/app.config.ts): `jaa` é o app de produção e `jaa-dev` o "Jaa Dev"
+ * de desenvolvimento. O Better Auth precisa confiar neles para aceitar as requisições do Mobile: é a
+ * MESMA autenticação do Web (conta + sessão + OTP por celular), só que com a sessão guardada em
+ * armazenamento seguro do aparelho em vez de cookie do navegador. A API de produção não reconhece o
+ * app de desenvolvimento: os dois ambientes não se misturam.
  */
-export const ESQUEMA_MOBILE = "mobile";
+export function esquemasMobile(nodeEnv: Ambiente["NODE_ENV"]): string[] {
+  return nodeEnv === "production" ? ["jaa"] : ["jaa", "jaa-dev"];
+}
 
 // Preenchido pela ponte Fastify com o IP resolvido pelo próprio Fastify.
 // Valores enviados pelo cliente neste cabeçalho são descartados antes de chegar aqui.
@@ -53,7 +57,7 @@ export function criarOpcoesAutenticacao({
     baseURL: ambiente.BETTER_AUTH_URL,
     basePath: CAMINHO_BASE_AUTENTICACAO,
     secret: ambiente.BETTER_AUTH_SECRET,
-    trustedOrigins: [...ambiente.ORIGENS_WEB_PERMITIDAS, `${ESQUEMA_MOBILE}://`],
+    trustedOrigins: [...ambiente.ORIGENS_WEB_PERMITIDAS, ...esquemasMobile(ambiente.NODE_ENV).map((esquema) => `${esquema}://`)],
     database: drizzleAdapter(banco, {
       provider: "pg",
       schema,

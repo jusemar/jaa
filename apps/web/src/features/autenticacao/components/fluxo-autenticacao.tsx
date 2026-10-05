@@ -5,9 +5,10 @@ import {
   SENHA_TAMANHO_MINIMO,
   type ContaAtual,
 } from "@jaa/contratos";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { AppJaa } from "@/components/navegacao/app-jaa";
 import { Aviso, Botao, CampoTexto, Cartao } from "@/components/ui/primitivos";
+import type { DestinoDoLink } from "@/features/link/lib/link-do-jaa";
 import { useConexaoRealtime } from "@/lib/realtime/use-realtime-conectado";
 import {
   buscarContaAtual,
@@ -18,13 +19,15 @@ import {
 import { clienteAutenticacao } from "../lib/cliente-autenticacao";
 import { formatarCelularDigitado } from "../lib/formatar-celular";
 import { mensagemDeErroAutenticacao } from "../lib/mensagens-erro";
+import { EXEMPLOS_ENTRADA, TEXTOS_ENTRADA, fraseDoDestino } from "../lib/textos-entrada";
 
 /*
  * ENTRADA NO JAA.
  *
- * O caminho principal é IDENTIFICADOR (celular ou @usuario) + SENHA, porque é o que uma pessoa faz
- * todo dia e não depende de SMS chegar. O código no celular continua existindo — é o CADASTRO, e é
- * também a saída para quem esqueceu a senha ou nunca criou uma.
+ * Duas perguntas respondidas logo na primeira tela: JÁ TENHO CONTA (celular ou @usuario + senha — o
+ * que a pessoa faz todo dia) e SOU NOVO (criar conta com o celular). O código recebido no celular é
+ * o CADASTRO de quem é novo e também a entrada sem senha de quem esqueceu a sua; os textos
+ * (`textos-entrada.ts`) só prometem isso.
  *
  * Nenhuma regra mora aqui: normalização do telefone, OTP, senha, sessão e unicidade do @usuario são
  * do servidor.
@@ -33,13 +36,38 @@ import { mensagemDeErroAutenticacao } from "../lib/mensagens-erro";
 type Etapa =
   | { nome: "carregando" }
   | { nome: "entrar" }
-  | { nome: "telefone" }
-  | { nome: "codigo"; telefone: string }
+  // `motivo` só muda os textos: o código é o mesmo para criar a conta e para entrar sem senha.
+  | { nome: "telefone"; motivo: "criar" | "codigo" }
+  | { nome: "codigo"; telefone: string; motivo: "criar" | "codigo" }
   | { nome: "cadastro" }
   | { nome: "autenticado"; conta: ContaAtual };
 
-export function FluxoAutenticacao() {
+export function FluxoAutenticacao({
+  destino,
+  moldura,
+}: {
+  /*
+   * Para onde a pessoa vai DEPOIS de entrar ou se cadastrar (Link do Jaa). Fica só na memória desta
+   * página — o endereço `/@usuario` continua o mesmo durante todo o login —, então não existe
+   * parâmetro de "voltar para" que alguém possa apontar para fora do Jaa.
+   */
+  destino?: DestinoDoLink | undefined;
+  /*
+   * Página em volta da entrada enquanto NÃO há sessão (ex.: a página pública do link, com a identidade
+   * e o cardápio). Recebe a entrada pronta — os mesmos formulários, sem etapa intermediária — e uma
+   * ação para trazê-la à vista. Sem moldura, a entrada é a tela inteira, como sempre.
+   */
+  moldura?: ((partes: { entrada: ReactNode; focarEntrada: () => void }) => ReactNode) | undefined;
+} = {}) {
   const [etapa, setEtapa] = useState<Etapa>({ nome: "carregando" });
+  const idEntrada = useId();
+  // Tentou algo que exige conta (adicionar produto, conversar): a entrada vem à vista com o foco no campo.
+  function focarEntrada() {
+    const secao = document.getElementById(idEntrada);
+    if (!secao) return;
+    secao.scrollIntoView({ behavior: "smooth", block: "start" });
+    secao.querySelector<HTMLInputElement>("input:not([disabled])")?.focus({ preventScroll: true });
+  }
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -73,6 +101,12 @@ export function FluxoAutenticacao() {
     };
   }, []);
 
+  // Trocar de etapa por escolha da pessoa limpa o erro da etapa anterior.
+  function irPara(proxima: Etapa) {
+    setErro(null);
+    setEtapa(proxima);
+  }
+
   async function executar(acao: () => Promise<void>) {
     setErro(null);
     setEnviando(true);
@@ -99,7 +133,7 @@ export function FluxoAutenticacao() {
     });
   }
 
-  function solicitarCodigo(evento: FormEvent<HTMLFormElement>) {
+  function solicitarCodigo(motivo: "criar" | "codigo", evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const telefone = String(
       new FormData(evento.currentTarget).get("telefone") ?? "",
@@ -112,7 +146,7 @@ export function FluxoAutenticacao() {
         setErro(mensagemDeErroAutenticacao(error));
         return;
       }
-      setEtapa({ nome: "codigo", telefone });
+      setEtapa({ nome: "codigo", telefone, motivo });
     });
   }
 
@@ -180,164 +214,141 @@ export function FluxoAutenticacao() {
   }
 
   if (etapa.nome === "autenticado") {
-    return <AppJaa conta={etapa.conta} aoSair={sair} saindo={enviando} />;
+    return <AppJaa conta={etapa.conta} aoSair={sair} saindo={enviando} destinoInicial={destino} />;
   }
 
-  return (
-    <main className="flex min-h-dvh items-center justify-center bg-fundo px-4 py-10">
-      <section
-        aria-label="Entrar no Jaa"
-        className="flex w-full max-w-sm flex-col gap-4"
-      >
-        <h1 className="text-center text-3xl font-bold text-marca">Jaa</h1>
+  const entrada = (
+    <section id={idEntrada} aria-label="Entrar no Jaa" data-entrada-jaa className="flex w-full scroll-mt-4 flex-col gap-4">
+      {destino && etapa.nome !== "carregando" && (
+        <p data-destino-apos-entrar className="text-center text-sm text-conteudo-suave">
+          {fraseDoDestino(destino.nomeExibicao ?? `@${destino.nomeUsuario}`)}
+        </p>
+      )}
 
-        {etapa.nome === "carregando" && (
-          <p className="text-center text-sm text-conteudo-suave">Carregando…</p>
-        )}
+      {etapa.nome === "carregando" && <p className="text-center text-sm text-conteudo-suave">Carregando…</p>}
 
-        {etapa.nome === "entrar" && (
+      {etapa.nome === "entrar" && (
+        <>
           <Cartao className="p-5">
             <form onSubmit={entrar} className="flex flex-col gap-4">
-              <CampoTexto
-                id="entrar-identificador"
-                rotulo="Celular ou @usuario"
-                name="identificador"
-                required
-                autoComplete="username"
-                placeholder="(31) 98765-4321 ou @junior"
-              />
-              <CampoTexto
-                id="entrar-senha"
-                rotulo="Senha"
-                name="senha"
-                type="password"
-                required
-                autoComplete="current-password"
-              />
+              <h2 className="text-lg font-semibold">{TEXTOS_ENTRADA.entrar.titulo}</h2>
+              <CampoTexto id="entrar-identificador" rotulo="Celular ou @usuario" name="identificador" required autoComplete="username" placeholder={EXEMPLOS_ENTRADA.identificador} />
+              <CampoTexto id="entrar-senha" rotulo="Senha" name="senha" type="password" required autoComplete="current-password" />
               <Botao type="submit" disabled={enviando} larguraTotal>
-                {enviando ? "Entrando…" : "Entrar"}
+                {enviando ? "Entrando…" : TEXTOS_ENTRADA.entrar.acao}
               </Botao>
-              <Botao
-                type="button"
-                aparencia="discreto"
-                onClick={() => setEtapa({ nome: "telefone" })}
-              >
-                Entrar com código no celular
-              </Botao>
-              <p className="text-center text-xs text-conteudo-suave">
-                Primeira vez por aqui? Use o código no celular para criar sua
-                conta e definir sua senha.
-              </p>
-            </form>
-          </Cartao>
-        )}
-
-        {etapa.nome === "telefone" && (
-          <Cartao className="p-5">
-            <form onSubmit={solicitarCodigo} className="flex flex-col gap-4">
-              <h2 className="text-lg font-semibold">Entrar com código</h2>
-              <CampoCelular />
-              <Botao type="submit" disabled={enviando} larguraTotal>
-                {enviando ? "Enviando…" : "Enviar código"}
-              </Botao>
-              <Botao
-                type="button"
-                aparencia="discreto"
-                onClick={() => setEtapa({ nome: "entrar" })}
-              >
-                Voltar
+              <Botao type="button" aparencia="discreto" data-entrar-com-codigo onClick={() => irPara({ nome: "telefone", motivo: "codigo" })}>
+                {TEXTOS_ENTRADA.entrar.semSenha}
               </Botao>
             </form>
           </Cartao>
-        )}
 
-        {etapa.nome === "codigo" && (
-          <Cartao className="p-5">
-            <form
-              onSubmit={(evento) => verificarCodigo(etapa.telefone, evento)}
-              className="flex flex-col gap-4"
-            >
-              <h2 className="text-lg font-semibold">Código de verificação</h2>
-              <p className="text-sm text-conteudo-suave">
-                Enviado para {etapa.telefone}
-              </p>
-              <CampoTexto
-                id="codigo-otp"
-                rotulo="Código"
-                name="codigo"
-                required
-                placeholder="000000"
-                autoComplete="one-time-code"
-                inputMode="numeric"
-              />
-              <Botao type="submit" disabled={enviando} larguraTotal>
-                {enviando ? "Verificando…" : "Verificar"}
-              </Botao>
-              <Botao
-                type="button"
-                aparencia="discreto"
-                onClick={() => setEtapa({ nome: "telefone" })}
-              >
-                Trocar número
-              </Botao>
-            </form>
+          {/* Quem é novo não precisa adivinhar: um bloco próprio, com a ação de criar conta. */}
+          <Cartao className="flex flex-col gap-3 p-5">
+            <h2 className="text-lg font-semibold">{TEXTOS_ENTRADA.novo.titulo}</h2>
+            <p className="text-sm text-conteudo-suave">{TEXTOS_ENTRADA.novo.descricao}</p>
+            <Botao type="button" aparencia="secundario" data-criar-conta larguraTotal onClick={() => irPara({ nome: "telefone", motivo: "criar" })}>
+              {TEXTOS_ENTRADA.novo.acao}
+            </Botao>
           </Cartao>
-        )}
+        </>
+      )}
 
-        {etapa.nome === "cadastro" && (
-          <Cartao className="p-5">
-            <form onSubmit={concluirCadastro} className="flex flex-col gap-4">
-              <h2 className="text-lg font-semibold">Complete seu cadastro</h2>
-              <CampoTexto
-                id="cadastro-nome"
-                rotulo="Nome"
-                name="nomeExibicao"
-                required
-                placeholder="Seu nome"
-                autoComplete="name"
-              />
-              <CampoTexto
-                id="cadastro-usuario"
-                rotulo="@usuario"
-                name="nomeUsuario"
-                required
-                placeholder="junior"
-                autoComplete="username"
-                dica="É assim que as pessoas encontram você no Jaa."
-              />
-              <CampoTexto
-                id="cadastro-senha"
-                rotulo="Senha"
-                name="senha"
-                type="password"
-                required
-                minLength={SENHA_TAMANHO_MINIMO}
-                maxLength={SENHA_TAMANHO_MAXIMO}
-                autoComplete="new-password"
-                dica={`Use pelo menos ${SENHA_TAMANHO_MINIMO} caracteres.`}
-              />
-              <CampoTexto
-                id="cadastro-confirmar-senha"
-                rotulo="Confirmar senha"
-                name="confirmarSenha"
-                type="password"
-                required
-                minLength={SENHA_TAMANHO_MINIMO}
-                maxLength={SENHA_TAMANHO_MAXIMO}
-                autoComplete="new-password"
-              />
-              <Botao type="submit" disabled={enviando} larguraTotal>
-                Concluir cadastro
-              </Botao>
-              <Botao type="button" aparencia="discreto" onClick={sair}>
-                Sair
-              </Botao>
-            </form>
-          </Cartao>
-        )}
+      {etapa.nome === "telefone" && (
+        <Cartao className="p-5">
+          <form onSubmit={(evento) => solicitarCodigo(etapa.motivo, evento)} className="flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">{TEXTOS_ENTRADA.celular[etapa.motivo].titulo}</h2>
+            <p className="text-sm text-conteudo-suave">{TEXTOS_ENTRADA.celular[etapa.motivo].descricao}</p>
+            <CampoCelular />
+            <Botao type="submit" disabled={enviando} larguraTotal>
+              {enviando ? "Enviando…" : TEXTOS_ENTRADA.celular.acao}
+            </Botao>
+            {TEXTOS_ENTRADA.celular[etapa.motivo].observacao && <p className="text-center text-xs text-conteudo-suave">{TEXTOS_ENTRADA.celular[etapa.motivo].observacao}</p>}
+            <Botao type="button" aparencia="discreto" onClick={() => irPara({ nome: "entrar" })}>
+              Voltar
+            </Botao>
+          </form>
+        </Cartao>
+      )}
 
-        {erro && <Aviso tom="erro">{erro}</Aviso>}
-      </section>
+      {etapa.nome === "codigo" && (
+        <Cartao className="p-5">
+          <form onSubmit={(evento) => verificarCodigo(etapa.telefone, evento)} className="flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">{TEXTOS_ENTRADA.codigo.titulo}</h2>
+            <p className="text-sm text-conteudo-suave">{TEXTOS_ENTRADA.codigo.descricao(etapa.telefone)}</p>
+            <CampoTexto id="codigo-otp" rotulo="Código" name="codigo" required placeholder={EXEMPLOS_ENTRADA.codigo} autoComplete="one-time-code" inputMode="numeric" />
+            <Botao type="submit" disabled={enviando} larguraTotal>
+              {enviando ? "Verificando…" : TEXTOS_ENTRADA.codigo.acao}
+            </Botao>
+            <Botao type="button" aparencia="discreto" onClick={() => irPara({ nome: "telefone", motivo: etapa.motivo })}>
+              {TEXTOS_ENTRADA.codigo.trocar}
+            </Botao>
+          </form>
+        </Cartao>
+      )}
+
+      {etapa.nome === "cadastro" && (
+        <Cartao className="p-5">
+          <form onSubmit={concluirCadastro} className="flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">{TEXTOS_ENTRADA.cadastro.titulo}</h2>
+            <p className="text-sm text-conteudo-suave">{TEXTOS_ENTRADA.cadastro.descricao}</p>
+            <CampoTexto id="cadastro-nome" rotulo="Nome" name="nomeExibicao" required placeholder={EXEMPLOS_ENTRADA.nome} autoComplete="name" />
+            <CampoTexto
+              id="cadastro-usuario"
+              rotulo="@usuario"
+              name="nomeUsuario"
+              required
+              placeholder={EXEMPLOS_ENTRADA.usuario}
+              autoComplete="username"
+              dica="É assim que as pessoas encontram você no Jaa."
+            />
+            <CampoTexto
+              id="cadastro-senha"
+              rotulo="Senha"
+              name="senha"
+              type="password"
+              required
+              minLength={SENHA_TAMANHO_MINIMO}
+              maxLength={SENHA_TAMANHO_MAXIMO}
+              autoComplete="new-password"
+              dica={`Use pelo menos ${SENHA_TAMANHO_MINIMO} caracteres.`}
+            />
+            <CampoTexto
+              id="cadastro-confirmar-senha"
+              rotulo="Confirmar senha"
+              name="confirmarSenha"
+              type="password"
+              required
+              minLength={SENHA_TAMANHO_MINIMO}
+              maxLength={SENHA_TAMANHO_MAXIMO}
+              autoComplete="new-password"
+            />
+            <Botao type="submit" disabled={enviando} larguraTotal>
+              {TEXTOS_ENTRADA.cadastro.acao}
+            </Botao>
+            <Botao type="button" aparencia="discreto" onClick={sair}>
+              Sair
+            </Botao>
+          </form>
+        </Cartao>
+      )}
+
+      {erro && <Aviso tom="erro">{erro}</Aviso>}
+    </section>
+  );
+
+  if (moldura) return <>{moldura({ entrada, focarEntrada })}</>;
+
+  return (
+    /*
+     * `items-start` + margem automática no bloco: centraliza quando sobra altura e, quando NÃO sobra
+     * (celular baixo, teclado aberto), o conteúdo começa no topo e rola — nada fica cortado acima.
+     */
+    <main className="flex min-h-dvh items-start justify-center bg-fundo px-4 py-10">
+      <div className="my-auto flex w-full max-w-sm flex-col gap-4">
+        <h1 className="text-center text-3xl font-bold text-marca">Jaa</h1>
+        {entrada}
+      </div>
     </main>
   );
 }
@@ -355,7 +366,7 @@ function CampoCelular() {
       type="tel"
       inputMode="tel"
       autoComplete="tel-national"
-      placeholder="(31) 98765-4321"
+      placeholder={EXEMPLOS_ENTRADA.celular}
       maxLength={15}
       required
       value={valor}

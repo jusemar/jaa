@@ -110,11 +110,17 @@ describe("entrar com telefone ou @usuario", () => {
     assert.equal(conta.json().nomeUsuario, "joao_senha");
   });
 
+  it("GET /health responde só que o processo está de pé, sem sessão e sem segredo", async () => {
+    const resposta = await fetch(`${ctx.urlServidor}/health`);
+    assert.equal(resposta.status, 200);
+    assert.deepEqual(await resposta.json(), { status: "ok" });
+  });
+
   it("o app Mobile (sem Origin, com expo-origin) entra por senha e a sessão vale em /conta/contexto", async () => {
     // Exatamente o que o `expoClient` do Better Auth manda: nada de Origin, `expo-origin` com o scheme.
     const resposta = await fetch(`${ctx.urlServidor}/autenticacao/entrar`, {
       method: "POST",
-      headers: { "content-type": "application/json", "expo-origin": "mobile://" },
+      headers: { "content-type": "application/json", "expo-origin": "jaa-dev://" },
       body: JSON.stringify({ identificador: "@joao_senha", senha: SENHA }),
     });
     assert.equal(resposta.status, 200, await resposta.clone().text());

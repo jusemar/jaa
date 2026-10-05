@@ -3,8 +3,10 @@
 import {
   ROTULO_STATUS,
   ROTULO_VISIBILIDADE,
+  perfilFoiAlterado,
   statusEscolhidoSchema,
   visibilidadePerfilSchema,
+  type CamposPerfilEditados,
   type MeuPerfil,
   type StatusEscolhido,
   type VisibilidadePerfil,
@@ -17,6 +19,7 @@ import { executarComFeedback } from "@/features/profissional/lib/feedback";
 import { buscarMeuPerfil, enviarFotoPerfil, removerFoto, salvarPerfil, salvarPrivacidade } from "../lib/api-perfil";
 import { AreaPerfilProfissional } from "@/features/profissional/components/area-perfil-profissional";
 import { EntradaPerfilProfissional } from "@/features/profissional/components/entrada-perfil-profissional";
+import { LinkDoJaa } from "@/features/link/components/link-do-jaa";
 import { FormularioSenha } from "./formulario-senha";
 
 /*
@@ -31,7 +34,12 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
   const [perfil, setPerfil] = useState<MeuPerfil | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
-  const [salvando, setSalvando] = useState(false);
+  /*
+   * Campos do bloco "Meu perfil" como estão na tela. O botão Salvar compara isto com o ÚLTIMO estado
+   * salvo (`perfil`): sem diferença fica desabilitado — a mesma regra do app (`perfilFoiAlterado`).
+   */
+  const [campos, setCampos] = useState<CamposPerfilEditados | null>(null);
+  const [salvandoPerfil, setSalvandoPerfil] = useState(false);
   // Perfil profissional abre DENTRO de Perfil (sem item novo no menu); só para a pessoa.
   const [profissionalAberto, setProfissionalAberto] = useState(false);
 
@@ -39,8 +47,10 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
     let ativo = true;
     void buscarMeuPerfil().then((resposta) => {
       if (!ativo) return;
-      if (resposta.ok) setPerfil(resposta.dados);
-      else setErro(resposta.mensagem);
+      if (resposta.ok) {
+        setPerfil(resposta.dados);
+        setCampos(camposDe(resposta.dados));
+      } else setErro(resposta.mensagem);
     });
     return () => {
       ativo = false;
@@ -60,33 +70,34 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
   // Toast (mesmo sistema do resto do Jaa) + o aviso inline de sempre, que continua na tela.
   function enviarDados(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
-    if (salvando) return;
-    const dados = new FormData(evento.currentTarget);
-    setSalvando(true);
-    void executarComFeedback(
-      salvarPerfil({
-        nomeExibicao: String(dados.get("nomeExibicao") ?? ""),
-        fraseStatus: String(dados.get("fraseStatus") ?? ""),
-        cidade: String(dados.get("cidade") ?? ""),
-        sobre: String(dados.get("sobre") ?? ""),
-      }),
-      "Perfil salvo",
-      avisar,
-    )
-      .then((resposta) => aplicar(resposta, "Perfil salvo."))
-      .finally(() => setSalvando(false));
+    // Um envio por vez, e só quando algo mudou (Enter no campo não burla o botão desabilitado).
+    if (salvandoPerfil || !perfil || !campos || !perfilFoiAlterado(perfil, campos)) return;
+    setSalvandoPerfil(true);
+    setAviso(null);
+    void executarComFeedback(salvarPerfil({ nomeExibicao: campos.nome, fraseStatus: campos.frase, cidade: campos.cidade, sobre: campos.sobre }), "Perfil salvo", avisar)
+      .then((resposta) => {
+        aplicar(resposta, "Perfil salvo.");
+        // A resposta da API vira o novo "último estado salvo": o botão desabilita até a próxima edição.
+        // Em erro, os campos ficam como a pessoa deixou.
+        if (resposta.ok) setCampos(camposDe(resposta.dados));
+      })
+      .finally(() => setSalvandoPerfil(false));
   }
 
+  const editar = (campo: keyof CamposPerfilEditados) => (evento: { target: { value: string } }) => {
+    setAviso(null);
+    setCampos((atuais) => (atuais ? { ...atuais, [campo]: evento.target.value } : atuais));
+  };
+
   function mudarPrivacidade(campo: string, valor: string) {
-    setSalvando(true);
     void executarComFeedback(salvarPrivacidade({ [campo]: valor } as never), "Preferência salva", avisar)
-      .then((resposta) => aplicar(resposta, "Preferência salva."))
-      .finally(() => setSalvando(false));
+      .then((resposta) => aplicar(resposta, "Preferência salva."));
   }
 
   if (profissionalAberto && !ehEmpresa) return <AreaPerfilProfissional aoVoltar={() => setProfissionalAberto(false)} />;
 
-  if (!perfil) return erro ? <Aviso tom="erro">{erro}</Aviso> : <Carregando />;
+  if (!perfil || !campos) return erro ? <Aviso tom="erro">{erro}</Aviso> : <Carregando />;
+  const alterado = perfilFoiAlterado(perfil, campos);
 
   return (
     <div className="flex flex-col gap-8">
@@ -95,23 +106,37 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
           <FotoDoPerfil perfil={perfil} aoTrocar={(atualizado) => setPerfil(atualizado)} aoErrar={setErro} />
 
           <form onSubmit={enviarDados} className="flex flex-col gap-4">
-            <CampoTexto id="perfil-nome" rotulo="Nome" name="nomeExibicao" defaultValue={perfil.nomeExibicao} maxLength={50} required autoComplete="name" />
+            <CampoTexto id="perfil-nome" rotulo="Nome" name="nomeExibicao" value={campos.nome} onChange={editar("nome")} maxLength={50} required autoComplete="name" />
             <CampoTexto id="perfil-usuario" rotulo="@usuario" value={`@${perfil.nomeUsuario}`} readOnly disabled dica="O @usuario é seu endereço no Jaa e não muda por aqui." />
             <CampoTexto
               id="perfil-frase"
               rotulo="Frase de status"
               name="fraseStatus"
-              defaultValue={perfil.fraseStatus ?? ""}
+              value={campos.frase}
+              onChange={editar("frase")}
               maxLength={140}
               placeholder={ehEmpresa ? "Entregamos até 22h" : "Respondo à noite"}
               dica="Texto curto que aparece junto do seu nome. Opcional."
             />
-            <CampoTexto id="perfil-cidade" rotulo="Cidade" name="cidade" defaultValue={perfil.cidade ?? ""} maxLength={80} placeholder="Belo Horizonte" dica="Opcional." />
-            <CampoTextoLongo id="perfil-sobre" rotulo={ehEmpresa ? "Sobre a empresa" : "Sobre você"} name="sobre" defaultValue={perfil.sobre ?? ""} maxLength={500} dica="Opcional, até 500 caracteres." />
-            <Botao type="submit" disabled={salvando}>
-              {salvando ? "Salvando…" : "Salvar perfil"}
+            <CampoTexto id="perfil-cidade" rotulo="Cidade" name="cidade" value={campos.cidade} onChange={editar("cidade")} maxLength={80} placeholder="Belo Horizonte" dica="Opcional." />
+            <CampoTextoLongo id="perfil-sobre" rotulo={ehEmpresa ? "Sobre a empresa" : "Sobre você"} name="sobre" value={campos.sobre} onChange={editar("sobre")} maxLength={500} dica="Opcional, até 500 caracteres." />
+            <Botao type="submit" data-salvar-perfil disabled={salvandoPerfil || !alterado || campos.nome.trim() === ""}>
+              {salvandoPerfil ? "Salvando…" : "Salvar perfil"}
             </Botao>
           </form>
+        </Cartao>
+      </Secao>
+
+      <Secao
+        titulo="Link do Jaa"
+        descricao={
+          ehEmpresa
+            ? "Envie este endereço para seus clientes: ele abre a conversa com a empresa (e o cardápio) direto no navegador."
+            : "Envie este endereço para quem quiser falar com você: ele abre a conversa direto no navegador."
+        }
+      >
+        <Cartao className="p-4">
+          <LinkDoJaa nomeUsuario={perfil.nomeUsuario} />
         </Cartao>
       </Secao>
 
@@ -152,10 +177,8 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
               name="buscavelPorTelefone"
               checked={perfil.privacidade.buscavelPorTelefone}
               onChange={(evento) => {
-                setSalvando(true);
                 void executarComFeedback(salvarPrivacidade({ buscavelPorTelefone: evento.target.checked }), "Preferência salva", avisar)
-                  .then((resposta) => aplicar(resposta, "Preferência salva."))
-                  .finally(() => setSalvando(false));
+                  .then((resposta) => aplicar(resposta, "Preferência salva."));
               }}
               className="mt-0.5 h-5 w-5 shrink-0"
             />
@@ -253,4 +276,9 @@ function FotoDoPerfil({ perfil, aoTrocar, aoErrar }: { perfil: MeuPerfil; aoTroc
       </div>
     </div>
   );
+}
+
+// O que está salvo, na forma dos campos da tela (vazio no lugar de `null`).
+function camposDe(perfil: MeuPerfil): CamposPerfilEditados {
+  return { nome: perfil.nomeExibicao, frase: perfil.fraseStatus ?? "", cidade: perfil.cidade ?? "", sobre: perfil.sobre ?? "" };
 }

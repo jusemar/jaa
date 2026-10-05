@@ -36,7 +36,9 @@ describe("ListaEmpresas", () => {
 describe("SeletorIdentidade", () => {
   it("mostra QUEM a pessoa é agora — avatar, nome e @usuario, não um select técnico", () => {
     const html = renderToStaticMarkup(createElement(SeletorIdentidade, { operaveis: [pessoal, empresarial], ativa: pessoal, erro: null, aoSelecionar: () => {} }));
-    assert.ok(texto(html).includes("Agindo como"));
+    // A legenda visual "Agindo como" saiu; o significado continua no rótulo acessível do botão.
+    assert.ok(!texto(html).includes("Agindo como"));
+    assert.ok(html.includes('aria-label="Agindo como Junior Rocha. Trocar identidade"'));
     assert.ok(texto(html).includes("Junior Rocha"));
     assert.ok(html.includes('data-tipo-identidade-ativa="pessoal"'));
     // O menu abre por interação: fechado, não despeja a lista inteira na tela.

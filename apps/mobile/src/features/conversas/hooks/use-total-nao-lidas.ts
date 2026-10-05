@@ -7,8 +7,8 @@ import { aplicarNaoLidas, combinarResumo, totalNaoLidas, type NaoLidasPorConvers
 
 /*
  * Total de não lidas da identidade ATUANTE, visível em qualquer área (o indicador no item Conversas da
- * navegação) — a parte de contagem do `useAvisosMensagens` da Web. O som de mensagem que a Web toca
- * ainda não existe no app.
+ * navegação) — a parte de contagem do `useAvisosMensagens` da Web. O som de mensagem recebida fica em
+ * `use-som-mensagens.ts`.
  */
 export function useTotalNaoLidas(identidadeAtivaId: string | null): number {
   const [estado, setEstado] = useState<{ identidadeId: string | null; porConversa: NaoLidasPorConversa }>({ identidadeId: null, porConversa: new Map() });

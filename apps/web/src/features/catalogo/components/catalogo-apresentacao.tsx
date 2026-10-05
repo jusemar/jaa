@@ -2,6 +2,7 @@
 
 import { QUANTIDADE_MAXIMA_POR_ITEM, type EmpresaPublica, type GrupoOpcoesPublico, type ProdutoPublico } from "@jaa/contratos";
 import { useMemo, useState } from "react";
+import { FaixaRolavel } from "@/components/ui/faixa-rolavel";
 import { IconeBusca, IconeCesta, IconeFechar, IconeImagem, IconeLoja, IconeMais, IconeMenos, IconeVoltar } from "@/components/ui/icones";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { filtrarProdutos, secaoAtiva, type SecaoCardapio } from "../lib/cardapio";
@@ -101,7 +102,7 @@ export function Cardapio({
           o cardápio trabalha por categoria, então cada chip troca o conteúdo inteiro abaixo.
         */}
         {secoes.length > 1 && (
-          <div role="tablist" aria-label="Categorias do cardápio" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+          <FaixaRolavel role="tablist" aria-label="Categorias do cardápio" className="-mx-1 flex gap-2 px-1 pb-1">
             {secoes.map((secao) => (
               <ChipCategoria
                 key={secao.id}
@@ -111,7 +112,7 @@ export function Cardapio({
                 aoEscolher={() => aoEscolherSecao(secao.id)}
               />
             ))}
-          </div>
+          </FaixaRolavel>
         )}
       </div>
 

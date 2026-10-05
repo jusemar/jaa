@@ -10,6 +10,8 @@ export function criarReprodutorUnico() {
       if (pausarAtual && pausarAtual !== pausar) pausarAtual();
       pausarAtual = pausar;
     },
+    /** Há uma mensagem de voz tocando agora? */
+    ocupado: () => pausarAtual !== null,
     /** Chamado quando o player pausa, termina ou sai da tela. */
     liberar(pausar: () => void) {
       if (pausarAtual === pausar) pausarAtual = null;

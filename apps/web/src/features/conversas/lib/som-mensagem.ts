@@ -1,5 +1,6 @@
 /*
- * SOM DE MENSAGEM RECEBIDA: dois toques curtos gerados pela Web Audio API do próprio navegador — sem
+ * SOM DE MENSAGEM RECEBIDA (quando tocar é decidido por `deveTocarSomDeMensagem`, em @jaa/contratos:
+ * nunca para a conversa que a pessoa está vendo, nunca para a própria mensagem): dois toques curtos gerados pela Web Audio API do próprio navegador — sem
  * arquivo, sem serviço externo, sem dependência. Volume baixo; é complemento do indicador visual.
  *
  * AUTOPLAY: o navegador só deixa tocar som depois de uma interação da pessoa com a página. O contexto
@@ -84,6 +85,11 @@ export function criarTocadorSom(criarContexto: () => ContextoAudioMinimo | null,
         contexto = null;
       }
     },
+    /**
+     * Mensagem que chegou mas NÃO deve soar (a conversa dela está à vista): fica lembrada, para uma
+     * reentrega do mesmo evento não tocar depois. true = ainda não era conhecida.
+     */
+    silenciar: lembrar,
     /** true = este aviso (id) ainda não tinha tocado (e o som foi pedido, se o áudio estiver liberado). */
     tocar(mensagemId: string): boolean {
       if (!lembrar(mensagemId)) return false;

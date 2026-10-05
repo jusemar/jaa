@@ -1,4 +1,4 @@
-import { ROTULO_STATUS, ROTULO_VISIBILIDADE, statusEscolhidoSchema, visibilidadePerfilSchema, type MeuPerfil, type StatusEscolhido, type VisibilidadePerfil } from "@jaa/contratos";
+import { ROTULO_STATUS, ROTULO_VISIBILIDADE, perfilFoiAlterado, statusEscolhidoSchema, visibilidadePerfilSchema, type MeuPerfil, type StatusEscolhido, type VisibilidadePerfil } from "@jaa/contratos";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Switch, View } from "react-native";
@@ -7,6 +7,7 @@ import { Botao } from "@/components/ui/botao";
 import { CampoTexto } from "@/components/ui/campo-texto";
 import { Icone } from "@/components/ui/icone";
 import { MenuAcoes } from "@/components/ui/menu-acoes";
+import { SobreApp } from "@/components/ui/sobre-app";
 import { Aviso, Carregando, Cartao, Secao } from "@/components/ui/superficies";
 import { Tela } from "@/components/ui/tela";
 import { Texto } from "@/components/ui/texto";
@@ -29,6 +30,9 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // Confirmação e erro do bloco "Meu perfil", exibidos junto do botão Salvar (onde a pessoa está olhando).
+  const [perfilSalvo, setPerfilSalvo] = useState(false);
+  const [erroPerfil, setErroPerfil] = useState<string | null>(null);
   const [nome, setNome] = useState("");
   const [frase, setFrase] = useState("");
   const [cidade, setCidade] = useState("");
@@ -57,9 +61,10 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
     };
   }, []);
 
+  // Status e privacidade: atualiza só o que está salvo, sem desfazer o que a pessoa digita no perfil.
   function aplicar(resposta: Awaited<ReturnType<typeof salvarPerfil>>, mensagem: string) {
     if (resposta.ok) {
-      receber(resposta.dados);
+      setPerfil(resposta.dados);
       setErro(null);
       setAviso(mensagem);
     } else {
@@ -68,12 +73,40 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
     }
   }
 
-  function enviarDados() {
-    if (salvando) return;
+  async function enviarDados() {
+    // Um envio por vez, e só quando algo mudou em relação ao que está salvo.
+    if (salvando || !perfil || !perfilFoiAlterado(perfil, { nome, frase, cidade, sobre })) return;
     setSalvando(true);
-    void salvarPerfil({ nomeExibicao: nome, fraseStatus: frase, cidade, sobre })
-      .then((resposta) => aplicar(resposta, "Perfil salvo."))
-      .finally(() => setSalvando(false));
+    setPerfilSalvo(false);
+    setErroPerfil(null);
+    setAviso(null);
+    setErro(null);
+    try {
+      const resposta = await salvarPerfil({ nomeExibicao: nome, fraseStatus: frase, cidade, sobre });
+      if (!resposta.ok) {
+        // Os campos continuam como a pessoa deixou: nada do que ela digitou se perde.
+        setErroPerfil(resposta.mensagem);
+        return;
+      }
+      // A resposta da API vira o novo "último estado salvo": o botão desabilita até a próxima edição.
+      receber(resposta.dados);
+      setPerfilSalvo(true);
+      // Nome e demais dados da identidade no resto do app (topo, "Agindo como") vêm do contexto da conta.
+      await recarregarContexto();
+    } catch {
+      setErroPerfil("Não foi possível salvar o perfil. Verifique a conexão e tente novamente.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  // Voltar a editar tira a confirmação da tela: "Perfil salvo" só vale enquanto nada mudou.
+  function editar(definir: (valor: string) => void) {
+    return (valor: string) => {
+      setPerfilSalvo(false);
+      setErroPerfil(null);
+      definir(valor);
+    };
   }
 
   function mudarPrivacidade(entrada: Parameters<typeof salvarPrivacidade>[0]) {
@@ -136,6 +169,7 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
 
   if (!perfil) return <Tela>{erro ? <Aviso tom="erro">{erro}</Aviso> : <Carregando />}</Tela>;
 
+  const alterado = perfilFoiAlterado(perfil, { nome, frase, cidade, sobre });
   const rotuloFoto = ehEmpresa ? "logo da empresa" : "foto";
   const acoesFoto = opcoesDaFoto(perfil.fotoUrl !== null).map((opcao) =>
     opcao === "camera"
@@ -179,19 +213,28 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
             </Texto>
           </View>
           <MenuAcoes titulo={ehEmpresa ? "Logo da empresa" : "Foto do perfil"} aberto={menuFotoAberto} aoFechar={() => setMenuFotoAberto(false)} acoes={acoesFoto} />
-          <CampoTexto rotulo="Nome" value={nome} onChangeText={setNome} maxLength={50} autoComplete="name" />
+          <CampoTexto rotulo="Nome" value={nome} onChangeText={editar(setNome)} maxLength={50} autoComplete="name" />
           <CampoTexto rotulo="@usuario" value={`@${perfil.nomeUsuario}`} editable={false} style={estilos.somenteLeitura} dica="O @usuario é seu endereço no Jaa e não muda por aqui." />
           <CampoTexto
             rotulo="Frase de status"
             value={frase}
-            onChangeText={setFrase}
+            onChangeText={editar(setFrase)}
             maxLength={140}
             placeholder={ehEmpresa ? "Entregamos até 22h" : "Respondo à noite"}
             dica="Texto curto que aparece junto do seu nome. Opcional."
           />
-          <CampoTexto rotulo="Cidade" value={cidade} onChangeText={setCidade} maxLength={80} placeholder="Belo Horizonte" dica="Opcional." />
-          <CampoTexto rotulo={ehEmpresa ? "Sobre a empresa" : "Sobre você"} value={sobre} onChangeText={setSobre} maxLength={500} multiline style={estilos.textoLongo} dica="Opcional, até 500 caracteres." />
-          <Botao rotulo="Salvar perfil" carregando={salvando} textoCarregando="Salvando…" disabled={nome.trim() === ""} onPress={enviarDados} />
+          <CampoTexto rotulo="Cidade" value={cidade} onChangeText={editar(setCidade)} maxLength={80} placeholder="Belo Horizonte" dica="Opcional." />
+          <CampoTexto rotulo={ehEmpresa ? "Sobre a empresa" : "Sobre você"} value={sobre} onChangeText={editar(setSobre)} maxLength={500} multiline style={estilos.textoLongo} dica="Opcional, até 500 caracteres." />
+          <Botao rotulo="Salvar perfil" carregando={salvando} textoCarregando="Salvando…" disabled={salvando || !alterado || nome.trim() === ""} onPress={() => void enviarDados()} />
+          {perfilSalvo && !alterado && (
+            <View accessibilityLiveRegion="polite" style={estilos.confirmacao}>
+              <Icone nome="check" tamanho={16} cor="marca" />
+              <Texto variante="corpoMedio" cor="marca">
+                Perfil salvo.
+              </Texto>
+            </View>
+          )}
+          {erroPerfil && <Aviso tom="erro">{erroPerfil}</Aviso>}
         </Cartao>
       </Secao>
 
@@ -253,6 +296,8 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
       </Aviso>
 
       {__DEV__ && <Botao aparencia="secundario" rotulo="Diagnóstico do contexto (desenvolvimento)" onPress={() => router.push("/diagnostico")} />}
+
+      <SobreApp />
     </Tela>
   );
 }
@@ -296,6 +341,7 @@ const estilos = StyleSheet.create({
     right: -2,
     width: 26,
   },
+  confirmacao: { alignItems: "center", flexDirection: "row", gap: Espaco.dois, justifyContent: "center" },
   somenteLeitura: { opacity: 0.6 },
   textoLongo: { minHeight: 96, paddingVertical: Espaco.dois, textAlignVertical: "top" },
   status: { flexDirection: "row", flexWrap: "wrap", gap: Espaco.dois },

@@ -1,8 +1,10 @@
 import { expoClient } from "@better-auth/expo/client";
 import { createAuthClient } from "better-auth/react";
 import { phoneNumberClient } from "better-auth/client/plugins";
+import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { URL_API } from "@/lib/configuracao";
+import { IDENTIDADE_DA_VARIANTE, varianteDeclarada } from "@/lib/variante";
 import { CAMINHO_ENTRAR_COM_SENHA, mensagemFalhaEntrar, montarEntradaComSenha } from "./entrar-com-senha";
 
 /**
@@ -18,8 +20,9 @@ export const clienteAutenticacao = createAuthClient({
   plugins: [
     phoneNumberClient(),
     expoClient({
-      // Precisa bater com expo.scheme do app.json e com o trustedOrigins da API.
-      scheme: "mobile",
+      // O scheme da variante em execução (`jaa-dev` ou `jaa`), o mesmo do app.config.ts; a API precisa
+      // confiar nele (trustedOrigins).
+      scheme: IDENTIDADE_DA_VARIANTE[varianteDeclarada(Constants.expoConfig?.extra?.variante) ?? "production"].scheme,
       storagePrefix: "jaa",
       storage: SecureStore,
     }),

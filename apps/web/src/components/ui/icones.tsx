@@ -229,6 +229,13 @@ export const IconeResponder = (props: PropsIcone) => (
   </Icone>
 );
 
+export const IconeCopiar = (props: PropsIcone) => (
+  <Icone {...props}>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+  </Icone>
+);
+
 export const IconeLapis = (props: PropsIcone) => (
   <Icone {...props}>
     <path d="M12 20h9" />

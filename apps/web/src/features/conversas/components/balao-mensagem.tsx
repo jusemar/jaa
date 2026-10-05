@@ -3,6 +3,7 @@ import type { EstadoMensagem, Mensagem } from "@jaa/contratos";
 import {
   IconeCheck,
   IconeCheckDuplo,
+  IconeCopiar,
   IconeLapis,
   IconeLixeira,
   IconeResponder,
@@ -11,6 +12,7 @@ import {
   formatarDataHoraCompleta,
   formatarHorarioMensagem,
 } from "../lib/horarios";
+import { textoCopiavel } from "../lib/links-mensagem";
 import { rotuloAutorResposta } from "../lib/respostas";
 import type { EstadoImagem } from "../lib/urls-imagens";
 import { ImagemMensagem } from "./imagem-mensagem";
@@ -18,6 +20,7 @@ import { PlayerAudio } from "./player-audio";
 import { CardPedido } from "@/features/pedidos/components/apresentacao-pedido";
 import { MenuMensagem, type AcaoMensagem } from "./menu-mensagem";
 import { ReferenciaResposta } from "./referencia-resposta";
+import { TextoComLinks } from "./texto-com-links";
 
 /*
  * BALÃO no padrão da referência de UI/UX aprovada: cartão de cantos suaves com sombra curta, horário
@@ -44,6 +47,9 @@ export function BalaoMensagem({
   identidadeAtualId,
   nomeRemetente,
   aoResponder,
+  aoCopiar,
+  aoAbrirConversa,
+  origemDoSite,
   aoEditar,
   aoExcluirParaMim,
   aoExcluirParaTodos,
@@ -68,6 +74,12 @@ export function BalaoMensagem({
   identidadeAtualId: string;
   nomeRemetente: string;
   aoResponder?: (mensagem: Mensagem) => void;
+  // Copia o texto (ou a legenda) para a área de transferência; só existe quando há texto.
+  aoCopiar?: (texto: string) => void;
+  // Link do Jaa (`/@usuario`) dentro da mensagem: abre a conversa sem recarregar a página.
+  aoAbrirConversa?: ((nomeUsuario: string) => void) | undefined;
+  // Origem deste site para reconhecer links internos (padrão: a do navegador).
+  origemDoSite?: string | null;
   aoEditar?: (mensagem: Mensagem) => void;
   aoExcluirParaMim?: (mensagem: Mensagem) => void;
   aoExcluirParaTodos?: (mensagem: Mensagem) => void;
@@ -94,6 +106,9 @@ export function BalaoMensagem({
   // Imagem e áudio se respondem, mas não se editam.
   // Card de pedido não se responde (o pedido tem a sua própria tela); mensagem excluída também não.
   if (aoResponder && !excluida && !ehPedido) acoes.push({ id: "responder", rotulo: "Responder", Icone: IconeResponder, executar: () => aoResponder(mensagem) });
+  // Copiar não muda nada na mensagem: vale para própria e recebida, sempre que houver texto (ou legenda).
+  const copiavel = ehPedido ? null : textoCopiavel(mensagem);
+  if (aoCopiar && copiavel !== null) acoes.push({ id: "copiar", rotulo: "Copiar", Icone: IconeCopiar, executar: () => aoCopiar(copiavel) });
   if (propria && !excluida && !ehPedido && !ehImagem && !ehAudio && aoEditar) acoes.push({ id: "editar", rotulo: "Editar", Icone: IconeLapis, executar: () => aoEditar(mensagem) });
   if (aoExcluirParaMim) acoes.push({ id: "apagar-para-mim", rotulo: "Apagar para mim", Icone: IconeLixeira, executar: () => aoExcluirParaMim(mensagem), perigosa: true });
   if (propria && !excluida && aoExcluirParaTodos) {
@@ -180,7 +195,7 @@ export function BalaoMensagem({
             )}
             {mensagem.conteudo && (
               <span data-conteudo data-legenda className="whitespace-pre-wrap [overflow-wrap:anywhere]">
-                {mensagem.conteudo}
+                <TextoComLinks texto={mensagem.conteudo} {...(origemDoSite !== undefined ? { origemDoSite } : {})} aoAbrirConversa={aoAbrirConversa} />
               </span>
             )}
           </>
@@ -189,7 +204,7 @@ export function BalaoMensagem({
             data-conteudo
             className="whitespace-pre-wrap [overflow-wrap:anywhere]"
           >
-            {mensagem.conteudo}
+            <TextoComLinks texto={mensagem.conteudo} {...(origemDoSite !== undefined ? { origemDoSite } : {})} aoAbrirConversa={aoAbrirConversa} />
           </span>
         )}
 

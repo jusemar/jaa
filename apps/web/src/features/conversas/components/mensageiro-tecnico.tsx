@@ -59,8 +59,11 @@ export function MensageiroTecnico({
   aoAlterarConversaAberta,
   aoAbrirPedidos,
   abrirConversaCom,
+  abrirCardapioDaSolicitada = false,
   aoAbrirConversaSolicitada,
 }: {
+  // A conversa pedida veio do Link do Jaa de uma empresa com cardápio: abre com ele à mostra.
+  abrirCardapioDaSolicitada?: boolean;
   identidadeId: string;
   // O que o painel lateral lista. A conversa aberta ao lado é a mesma nos dois.
   painel?: PainelMensageiro;
@@ -194,13 +197,13 @@ export function MensageiroTecnico({
     // Fora do caminho síncrono do efeito: a abertura atualiza estado.
     void Promise.resolve().then(async () => {
       aoAbrirConversaSolicitada?.();
-      await abrirCom(abrirConversaCom);
+      await abrirCom(abrirConversaCom, abrirCardapioDaSolicitada);
     });
     // Só reage a um NOVO pedido de conversa.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirConversaCom]);
 
-  async function abrirCom(nomeUsuario: string) {
+  async function abrirCom(nomeUsuario: string, abrirCardapio = false) {
     setErro(null);
     setAbrindo(true);
     try {
@@ -212,7 +215,7 @@ export function MensageiroTecnico({
       const outra: IdentidadeVisivel | undefined =
         aberta.dados.participantes.find((p) => p.identidadeId !== identidadeId);
       if (outra)
-        setConversaAberta({ id: aberta.dados.id, outraIdentidade: outra });
+        setConversaAberta({ id: aberta.dados.id, outraIdentidade: outra, ...(abrirCardapio ? { abrirCardapio: true } : {}) });
     } finally {
       setAbrindo(false);
     }

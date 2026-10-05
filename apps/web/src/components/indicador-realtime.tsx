@@ -1,17 +1,18 @@
 "use client";
 
-import { useRealtimeConectado } from "@/lib/realtime/use-realtime-conectado";
+import { useRealtimeEmFalha } from "@/lib/realtime/use-realtime-conectado";
 
 /*
  * Estado da conexão em tempo real.
  *
- * Só APARECE quando a conexão cai: num mensageiro, "conectado" é o esperado e anunciá-lo o tempo
+ * Só APARECE quando a conexão cai (com sessão — sem sessão não há conexão a esperar): num mensageiro, "conectado" é o esperado e anunciá-lo o tempo
  * todo é ruído. Quando cai, porém, a pessoa precisa saber na hora — senão acha que a mensagem foi
  * entregue e ela não foi. Fica no topo, centralizado e flutuando — sem empurrar o conteúdo e sem
  * disputar espaço com os avisos de mensagem nova, que ficam no rodapé.
  */
 export function IndicadorRealtime() {
-  const conectado = useRealtimeConectado();
+  // Só é falha quando a conexão era esperada: antes de entrar (login, página de um link) não há aviso.
+  const conectado = !useRealtimeEmFalha();
 
   return (
     <p

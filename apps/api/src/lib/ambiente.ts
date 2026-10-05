@@ -18,6 +18,15 @@ const opcional = <T extends z.ZodType>(schema: T) =>
 const ambienteSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]),
+    // Porta HTTP. A hospedagem costuma informá-la; sem ela, a de desenvolvimento local (3333).
+    PORT: opcional(z.coerce.number().int().min(1).max(65535)),
+    /*
+     * Quantos proxies REVERSOS da própria hospedagem ficam na frente da API (ex.: 1).
+     * Ausente ou 0 = nenhum (desenvolvimento local): o IP é o da conexão e `X-Forwarded-For` é ignorado.
+     * Com N, vale o N-ésimo endereço a partir do FIM do cabeçalho — o que o proxy confiável escreveu,
+     * e não o que o cliente inventou. É esse IP que alimenta o limite de tentativas de login e de OTP.
+     */
+    PROXIES_CONFIAVEIS: opcional(z.coerce.number().int().min(0).max(5)),
     DATABASE_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32, "BETTER_AUTH_SECRET deve ter pelo menos 32 caracteres."),
     BETTER_AUTH_URL: z.url(),
@@ -108,6 +117,15 @@ export function situacaoArmazenamentoPublico(ambiente: VariaveisR2): SituacaoArm
 
 export function situacaoArmazenamentoPrivado(ambiente: VariaveisR2): SituacaoArmazenamento {
   return situacao(ambiente.R2_CONTA_ID, [ambiente.R2_BUCKET_PRIVADO, ambiente.R2_ACCESS_KEY_ID_PRIVADO, ambiente.R2_SECRET_ACCESS_KEY_PRIVADO]);
+}
+
+/**
+ * Opção `trustProxy` do Fastify: confia só nos N saltos mais próximos (o proxy da hospedagem). Nunca
+ * `true`, que aceitaria como IP qualquer valor que o cliente escrevesse em `X-Forwarded-For`.
+ */
+export function confiancaNoProxy(ambiente: Pick<Ambiente, "PROXIES_CONFIAVEIS">): false | ((endereco: string, salto: number) => boolean) {
+  const saltos = ambiente.PROXIES_CONFIAVEIS ?? 0;
+  return saltos > 0 ? (_endereco, salto) => salto < saltos : false;
 }
 
 /** Só NOMES das variáveis de cada bucket (para avisos de log; valores nunca). */

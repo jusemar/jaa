@@ -6,22 +6,22 @@ import { ehTeclaDeFechar } from "../lib/trava-rolagem";
 
 /*
  * MENU DA MENSAGEM: uma seta discreta no canto superior direito do PRÓPRIO balão abre as ações
- * (responder, editar, apagar). Só aparecem as ações permitidas; quem autoriza cada uma é a API.
+ * (responder, copiar, editar, apagar). Só aparecem as ações permitidas; quem autoriza cada uma é a API.
  *
  * Não depende de hover: a seta é um botão de verdade (foco por teclado, clique e toque) e fica sempre
  * visível em telas sem hover. Fecha ao escolher uma opção, ao clicar fora e com Esc.
  */
 
 export type AcaoMensagem = {
-  id: "responder" | "editar" | "apagar-para-mim" | "apagar-para-todos";
+  id: "responder" | "copiar" | "editar" | "apagar-para-mim" | "apagar-para-todos";
   rotulo: string;
   Icone: ComponentType<SVGProps<SVGSVGElement>>;
   executar: () => void;
   perigosa?: boolean;
 };
 
-// Altura do menu com as quatro ações + folga para o compositor (px).
-const ALTURA_RESERVADA_MENU = 260;
+// Altura do menu com as cinco ações + folga para o compositor (px).
+const ALTURA_RESERVADA_MENU = 300;
 
 export function MenuMensagem({
   acoes,

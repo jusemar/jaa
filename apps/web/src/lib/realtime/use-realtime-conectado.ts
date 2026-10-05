@@ -30,6 +30,20 @@ export function useRealtimeConectado(): boolean {
   return useSyncExternalStore(assinarEstado, obterEstado, obterEstadoNoServidor);
 }
 
+function obterFalha() {
+  const socket = obterClienteRealtime();
+  // `active` = alguém pediu a conexão (há sessão) e ela não foi encerrada de propósito.
+  return socket.active && !socket.connected;
+}
+
+/**
+ * A conexão DEVERIA existir e não existe (caiu ou não consegue conectar). Sem sessão ninguém pediu
+ * conexão: quem está na entrada ou na página pública de um link não está "sem conexão".
+ */
+export function useRealtimeEmFalha(): boolean {
+  return useSyncExternalStore(assinarEstado, obterFalha, () => false);
+}
+
 /**
  * Mantém o realtime conectado somente enquanto houver sessão com cadastro completo.
  * A API recusa qualquer outro caso; isto só evita tentativas que já se sabe que falhariam.

@@ -83,6 +83,29 @@ export const perfilPublicoSchema = z.object({
 
 export type PerfilPublico = z.infer<typeof perfilPublicoSchema>;
 
+/**
+ * IDENTIDADE PÚBLICA — o que QUALQUER PESSOA vê ao abrir o Link do Jaa de uma identidade
+ * (`/@usuario`), inclusive sem conta. É o mínimo para reconhecer com quem se vai falar:
+ * - foto e frase de status só quando o dono as deixou visíveis para TODOS (visitante não é contato);
+ * - "sobre" só de EMPRESA (é a apresentação do negócio); o de pessoa fica para quem tem conta;
+ * - `temCardapio`: empresa com ao menos um produto disponível.
+ * Nunca telefone, e-mail, cidade, status, presença, conta, vínculos ou id interno de empresa.
+ */
+export const identidadePublicaSchema = z
+  .object({
+    identidadeId: z.uuid(),
+    tipo: z.enum(["pessoal", "empresarial"]),
+    nomeExibicao: z.string(),
+    nomeUsuario: z.string(),
+    fotoUrl: z.url().nullable(),
+    fraseStatus: z.string().nullable(),
+    sobre: z.string().nullable(),
+    temCardapio: z.boolean(),
+  })
+  .strict();
+
+export type IdentidadePublica = z.infer<typeof identidadePublicaSchema>;
+
 /** PERFIL PRÓPRIO: inclui o que só o dono vê (as próprias preferências). */
 export const meuPerfilSchema = perfilPublicoSchema.omit({ ehContato: true }).extend({
   privacidade: z.object({
@@ -154,4 +177,23 @@ export function podeVer({
   if (visibilidade === "todos") return true;
   if (visibilidade === "ninguem") return false;
   return ehContato;
+}
+
+/** O que a pessoa edita no bloco "Meu perfil" (texto como está no campo, ainda não aparado). */
+export type CamposPerfilEditados = { nome: string; frase: string; cidade: string; sobre: string };
+
+// A API guarda texto aparado e `null` no lugar de vazio: espaço nas pontas não é alteração.
+const campoIgualAoSalvo = (digitado: string, salvo: string | null) => digitado.trim() === (salvo ?? "");
+
+/**
+ * Algum campo difere do ÚLTIMO estado salvo? É o que habilita o botão Salvar do perfil — a mesma
+ * regra na Web e no app: sem alteração fica desabilitado; desfazer a edição desabilita de novo.
+ */
+export function perfilFoiAlterado(salvo: Pick<MeuPerfil, "nomeExibicao" | "fraseStatus" | "cidade" | "sobre">, campos: CamposPerfilEditados): boolean {
+  return !(
+    campoIgualAoSalvo(campos.nome, salvo.nomeExibicao) &&
+    campoIgualAoSalvo(campos.frase, salvo.fraseStatus) &&
+    campoIgualAoSalvo(campos.cidade, salvo.cidade) &&
+    campoIgualAoSalvo(campos.sobre, salvo.sobre)
+  );
 }

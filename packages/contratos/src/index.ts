@@ -33,3 +33,4 @@ export * from "./mensagens/mensagem.ts";
 export * from "./mensagens/estado-mensagem.ts";
 export * from "./realtime/eventos.ts";
 export * from "./realtime/atividade-conversa.ts";
+export * from "./realtime/som-mensagem.ts";
