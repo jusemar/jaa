@@ -84,6 +84,12 @@ export function registrarRotasPedidos(
           codigo: "CONVERSA_NAO_ENCONTRADA",
           mensagem: "Conversa não encontrada.",
         });
+      // Fora do horário: nada foi criado. A mensagem diz quando a empresa volta a receber pedidos.
+      case "empresa-fechada":
+        return responder(resposta, 409, {
+          codigo: "EMPRESA_FECHADA",
+          mensagem: resultado.mensagem,
+        });
       case "endereco-nao-encontrado":
         return responder(resposta, 404, {
           codigo: "ENDERECO_NAO_ENCONTRADO",

@@ -1,5 +1,6 @@
 "use client";
 
+import { APARENCIA_INDISPONIVEL, acaoOuExplicacao } from "@/components/ui/acao-indisponivel";
 import {
   ROTULO_PAGAMENTO_ENTREGA,
   enderecoTemLocalizacaoConfirmada,
@@ -133,6 +134,7 @@ export function PainelCarrinho({
   frete,
   enviando,
   erro,
+  bloqueio,
   aoAlterarQuantidade,
   aoRemover,
   aoTrocarEndereco,
@@ -141,6 +143,11 @@ export function PainelCarrinho({
   aoLimpar,
 }: {
   carrinho: Carrinho;
+  /*
+   * Empresa fechada agora (texto do servidor): os itens continuam no carrinho para quando ela abrir,
+   * mas "Confirmar pedido" fica com cara de indisponível e explica ao toque.
+   */
+  bloqueio?: { motivo: string; aoExplicar: () => void } | undefined;
   // Destino já escolhido e com ponto confirmado; sem ele não há como confirmar o pedido.
   endereco: EnderecoCliente | null;
   frete: FreteEntrega;
@@ -509,16 +516,24 @@ export function PainelCarrinho({
 
           <button
             type="button"
-            disabled={!podeConfirmar}
-            onClick={confirmar}
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-jaa-compacto bg-marca px-4 text-sm font-medium text-marca-conteudo shadow-suave transition-colors hover:bg-marca/90 disabled:cursor-not-allowed disabled:opacity-50"
+            data-confirmar-pedido
+            // Fechada: NÃO usa `disabled`, para o toque poder explicar o motivo.
+            disabled={!bloqueio && !podeConfirmar}
+            {...acaoOuExplicacao(bloqueio?.motivo, bloqueio?.aoExplicar, confirmar)}
+            className={`flex h-12 w-full items-center justify-center gap-2 rounded-jaa-compacto bg-marca px-4 text-sm font-medium text-marca-conteudo shadow-suave transition-colors hover:bg-marca/90 disabled:cursor-not-allowed disabled:opacity-50 ${bloqueio ? APARENCIA_INDISPONIVEL : ""}`}
           >
             {enviando ? "Enviando pedido…" : "Confirmar pedido"}
             {!enviando && <IconeSeta className="h-4 w-4" />}
           </button>
         </div>
 
-        {(erroTroco ?? erro) && (
+        {bloqueio && (
+          <p role="status" data-motivo-do-bloqueio className="mt-2 text-xs text-aviso">
+            {bloqueio.motivo} Seus itens continuam aqui.
+          </p>
+        )}
+
+        {!bloqueio && (erroTroco ?? erro) && (
           <p role="alert" className="mt-2 text-xs text-perigo">
             {erroTroco ?? erro}
           </p>

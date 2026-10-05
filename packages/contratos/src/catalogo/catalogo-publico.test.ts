@@ -33,7 +33,10 @@ describe("catálogo público", () => {
       empresa: { identidadeId: uuid, nome: "Pizzaria BH", nomeUsuario: "pizzariabh", slug: "pizzaria-bh", id: uuid, papel: "proprietario", usuarioId: "u" },
       categorias: [{ id: uuid, nome: "Pizzas", posicao: 0, produtos: 7 }],
       produtos: [],
+      // Empresa sem controle de horário: recebe pedidos a qualquer hora (não há selo a mostrar).
+      funcionamento: { estado: { controlado: false, abertoAgora: true, fechaAs: null, proximaAbertura: null, reabreHoje: false, resumo: null, aviso: null }, hoje: 1, semana: [] },
     });
+    assert.deepEqual(Object.keys(catalogo.funcionamento).sort(), ["estado", "hoje", "semana"]);
     assert.deepEqual(Object.keys(catalogo.empresa).sort(), ["identidadeId", "nome", "nomeUsuario", "slug"]);
     // A contagem administrativa de produtos por categoria não é assunto do cliente.
     assert.deepEqual(Object.keys(catalogo.categorias[0] ?? {}).sort(), ["id", "nome", "posicao"]);

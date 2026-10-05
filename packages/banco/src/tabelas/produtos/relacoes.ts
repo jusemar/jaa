@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import { empresas } from "../empresas/empresas.js";
 import { gruposOpcoesProduto } from "./grupos-opcoes-produto.js";
+import { opcoesProdutoDias } from "./opcoes-produto-dias.js";
 import { opcoesProduto } from "./opcoes-produto.js";
 import { produtos } from "./produtos.js";
 
@@ -14,6 +15,11 @@ export const gruposOpcoesProdutoRelacoes = relations(gruposOpcoesProduto, ({ one
   opcoes: many(opcoesProduto),
 }));
 
-export const opcoesProdutoRelacoes = relations(opcoesProduto, ({ one }) => ({
+export const opcoesProdutoRelacoes = relations(opcoesProduto, ({ one, many }) => ({
   grupo: one(gruposOpcoesProduto, { fields: [opcoesProduto.grupoId], references: [gruposOpcoesProduto.id] }),
+  dias: many(opcoesProdutoDias),
+}));
+
+export const opcoesProdutoDiasRelacoes = relations(opcoesProdutoDias, ({ one }) => ({
+  opcao: one(opcoesProduto, { fields: [opcoesProdutoDias.opcaoId], references: [opcoesProduto.id] }),
 }));

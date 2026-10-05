@@ -316,6 +316,27 @@
       "when": 1791134070481,
       "tag": "0044_mensagens_de_audio",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791213738422,
+      "tag": "0045_programacao_semanal_de_opcoes",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1791214342950,
+      "tag": "0046_marco_da_programacao_semanal",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791226975613,
+      "tag": "0047_horario_de_funcionamento_da_empresa",
+      "breakpoints": true
     }
   ]
 }

@@ -88,7 +88,11 @@ describe("catálogo do cliente", () => {
   it("detalhe: disponível abre com empresa; indisponível, de outra empresa ou inexistente → 404", async () => {
     const aberto = await detalhe(pizzaria.identidadeId, calabresa.id, B);
     assert.equal(aberto.statusCode, 200);
-    assert.deepEqual(aberto.json(), {
+    // `hoje` depende do relógio; o restante do funcionamento é fixo para quem nunca configurou horário.
+    const { funcionamento, ...restante } = aberto.json();
+    assert.deepEqual(funcionamento.estado, { controlado: false, abertoAgora: true, fechaAs: null, proximaAbertura: null, reabreHoje: false, resumo: null, aviso: null });
+    assert.deepEqual(funcionamento.semana, []);
+    assert.deepEqual(restante, {
       empresa: { identidadeId: pizzaria.identidadeId, nome: "Pizzaria BH", nomeUsuario: `${PREFIXO}_pizza`, slug: `${PREFIXO}-pizzaria` },
       produto: {
         id: calabresa.id,

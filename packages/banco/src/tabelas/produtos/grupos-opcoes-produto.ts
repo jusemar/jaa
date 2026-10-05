@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, foreignKey, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { produtos } from "./produtos.js";
 
 /**
@@ -24,6 +24,19 @@ export const gruposOpcoesProduto = pgTable(
     instrucao: text(),
     minimoEscolhas: integer().notNull().default(0),
     maximoEscolhas: integer().notNull().default(1),
+    /*
+     * PROGRAMAÇÃO SEMANAL (opt-in, por grupo): desligada, o grupo oferece suas opções disponíveis todos
+     * os dias, como sempre. Ligada, só são oferecidas as opções associadas ao dia de hoje da empresa
+     * (`opcoes_produto_dias`). Não muda mínimo/máximo: decide apenas QUAIS opções existem no dia.
+     */
+    programacaoSemanal: boolean().notNull().default(false),
+    /*
+     * Quando a programação deste grupo foi configurada pela PRIMEIRA vez (ativação inicial ou primeiro
+     * dia salvo). Nulo = nunca configurada: é o que separa "ativar pela primeira vez" (a semana nasce
+     * com todas as opções em todos os dias, para nada sumir do cardápio) de "religar" (a programação
+     * anterior é retomada como estava — inclusive dias que o gestor deixou vazios de propósito).
+     */
+    programacaoSemanalIniciadaEm: timestamp({ withTimezone: true }),
     // Ordem de apresentação escolhida pela empresa (menor primeiro); empate resolve pelo id.
     posicao: integer().notNull().default(0),
     criadoEm: timestamp({ withTimezone: true }).notNull().defaultNow(),

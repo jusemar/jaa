@@ -12,6 +12,7 @@ import { registrarRotasBloqueios } from "./features/bloqueios/rotas/rotas-bloque
 import { registrarRotasContatos } from "./features/contatos/rotas/rotas-contatos.js";
 import { registrarRotasConversas } from "./features/conversas/rotas/rotas-conversas.js";
 import { registrarRotasEmpresas } from "./features/empresas/rotas/rotas-empresas.js";
+import { registrarRotasFuncionamento } from "./features/empresas/rotas/rotas-funcionamento.js";
 import {
   geocodificadorIndisponivel,
   type GeocodificadorEndereco,
@@ -130,6 +131,7 @@ export async function criarAplicacao({
   registrarRotasUsuarios(servidor, { banco, autenticacao, armazenamento });
   registrarRotasIdentidades(servidor, { banco, autenticacao, armazenamento });
   registrarRotasEmpresas(servidor, { banco, autenticacao });
+  registrarRotasFuncionamento(servidor, { banco, autenticacao });
   registrarRotasProdutosAdministracao(servidor, {
     banco,
     autenticacao,

@@ -10,6 +10,7 @@ import {
   type ProdutoPublico,
 } from "@jaa/contratos";
 import { useMemo, useState } from "react";
+import { acaoOuExplicacao, type BloqueioDePedido } from "../lib/funcionamento";
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Icone } from "@/components/ui/icone";
 import { Cartao } from "@/components/ui/superficies";
@@ -34,10 +35,13 @@ export function MontagemProduto({
   produto,
   grupos,
   aoAdicionar,
+  bloqueio,
 }: {
   produto: ProdutoPublico;
   grupos: GrupoOpcoesPublico[];
   aoAdicionar: (opcaoIds: string[], quantidade: number, observacao: string | null) => void;
+  // Empresa fechada: dá para montar e ver o preço, mas "Adicionar" explica em vez de adicionar.
+  bloqueio?: BloqueioDePedido | undefined;
 }) {
   const [escolhidas, setEscolhidas] = useState<string[]>(() => escolhasIniciais(grupos));
   const [quantidade, setQuantidade] = useState(1);
@@ -134,10 +138,11 @@ export function MontagemProduto({
           <Quantidade valor={quantidade} aoMudar={setQuantidade} rotulo={produto.nome} />
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: !validacao.valido }}
-            disabled={!validacao.valido}
-            onPress={adicionar}
-            style={({ pressed }) => [estilos.adicionar, !validacao.valido && estilos.inativo, pressed && estilos.pressionado]}>
+            accessibilityState={{ disabled: Boolean(bloqueio) || !validacao.valido }}
+            // Fechada, o botão NÃO fica `disabled`: o toque precisa explicar o motivo.
+            disabled={!bloqueio && !validacao.valido}
+            onPress={acaoOuExplicacao(bloqueio, adicionar)}
+            style={({ pressed }) => [estilos.adicionar, (Boolean(bloqueio) || !validacao.valido) && estilos.inativo, pressed && estilos.pressionado]}>
             <Icone nome="cesta" tamanho={16} cor="marcaConteudo" />
             <Texto variante="corpoMedio" cor="marcaConteudo">
               Adicionar ao pedido
@@ -146,10 +151,16 @@ export function MontagemProduto({
         </View>
 
         {/* O que falta, dito com o nome do grupo: "faltam escolhas" sem dizer onde não ajuda ninguém. */}
-        {!validacao.valido && (
+        {bloqueio ? (
           <Texto variante="mini" cor="aviso">
-            {mensagemDoQueFalta(validacao)}
+            {bloqueio.motivo}
           </Texto>
+        ) : (
+          !validacao.valido && (
+            <Texto variante="mini" cor="aviso">
+              {mensagemDoQueFalta(validacao)}
+            </Texto>
+          )
         )}
       </Cartao>
     </View>

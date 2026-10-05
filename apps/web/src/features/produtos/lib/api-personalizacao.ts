@@ -1,10 +1,13 @@
 import {
   listaGruposOpcoesSchema,
+  programacaoSemanalGrupoSchema,
   type AtualizarGrupoOpcoesEntrada,
   type AtualizarOpcaoEntrada,
   type CriarGrupoOpcoesEntrada,
   type CriarOpcaoEntrada,
+  type DiaSemana,
   type ListaGruposOpcoes,
+  type ProgramacaoSemanalGrupo,
 } from "@jaa/contratos";
 import { requisitarApi, type ResultadoApi } from "@/lib/api";
 
@@ -66,4 +69,24 @@ export function removerOpcao(empresaId: string, produtoId: string, grupoId: stri
   return requisitarApi(`${rotaGrupos(empresaId, produtoId)}/${encodeURIComponent(grupoId)}/opcoes/${encodeURIComponent(opcaoId)}`, listaGruposOpcoesSchema, {
     method: "DELETE",
   });
+}
+
+/*
+ * PROGRAMAÇÃO SEMANAL do grupo: em que dias cada opção JÁ CADASTRADA é oferecida. Não cria opção
+ * nenhuma. Toda operação devolve a programação completa (os sete dias), lida do banco.
+ */
+const rotaProgramacao = (empresaId: string, produtoId: string, grupoId: string) => `${rotaGrupos(empresaId, produtoId)}/${encodeURIComponent(grupoId)}/programacao`;
+
+export function consultarProgramacaoSemanal(empresaId: string, produtoId: string, grupoId: string): Promise<ResultadoApi<ProgramacaoSemanalGrupo>> {
+  return requisitarApi(rotaProgramacao(empresaId, produtoId, grupoId), programacaoSemanalGrupoSchema);
+}
+
+/** Liga/desliga. Ligar pela primeira vez preenche a semana; desligar não apaga os dias. */
+export function definirProgramacaoSemanal(empresaId: string, produtoId: string, grupoId: string, programacaoSemanal: boolean): Promise<ResultadoApi<ProgramacaoSemanalGrupo>> {
+  return requisitarApi(rotaProgramacao(empresaId, produtoId, grupoId), programacaoSemanalGrupoSchema, { method: "PUT", body: JSON.stringify({ programacaoSemanal }) });
+}
+
+/** Substitui as opções de UM dia; os outros dias não mudam. */
+export function definirOpcoesDoDia(empresaId: string, produtoId: string, grupoId: string, dia: DiaSemana, opcaoIds: string[]): Promise<ResultadoApi<ProgramacaoSemanalGrupo>> {
+  return requisitarApi(`${rotaProgramacao(empresaId, produtoId, grupoId)}/dias/${dia}`, programacaoSemanalGrupoSchema, { method: "PUT", body: JSON.stringify({ opcaoIds }) });
 }

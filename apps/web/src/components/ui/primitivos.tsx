@@ -222,6 +222,7 @@ export function Interruptor({
   aoMudar,
   disabled,
   id,
+  somenteControle = false,
 }: {
   rotulo: string;
   descricao?: string;
@@ -229,7 +230,28 @@ export function Interruptor({
   aoMudar: (ligado: boolean) => void;
   disabled?: boolean;
   id: string;
+  // Só a chave, para linhas de tabela onde o rótulo já está na coluna: `rotulo` vira o nome acessível.
+  somenteControle?: boolean;
 }) {
+  if (somenteControle) {
+    return (
+      <button
+        type="button"
+        id={id}
+        role="switch"
+        aria-checked={ligado}
+        aria-label={rotulo}
+        disabled={disabled}
+        onClick={() => aoMudar(!ligado)}
+        className="flex min-h-11 shrink-0 items-center disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-9"
+      >
+        <span className={`relative h-6 w-11 rounded-full transition-colors ${ligado ? "bg-marca" : "bg-borda"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-superficie shadow-suave transition-all ${ligado ? "left-[22px]" : "left-0.5"}`} />
+        </span>
+        <span className="sr-only">{ligado ? "Ligado" : "Desligado"}</span>
+      </button>
+    );
+  }
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="flex min-w-0 flex-col gap-0.5">

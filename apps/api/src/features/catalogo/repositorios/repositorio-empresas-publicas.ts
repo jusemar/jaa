@@ -10,6 +10,8 @@ export interface EmpresaPublicaRegistro {
   nome: string;
   nomeUsuario: string;
   slug: string;
+  // Fuso da operação da empresa (decide o "dia de hoje" dela). Uso interno; não é serializado.
+  fusoHorario: string;
 }
 
 const colunasEmpresaPublica = {
@@ -18,6 +20,7 @@ const colunasEmpresaPublica = {
   nome: identidades.nomeExibicao,
   nomeUsuario: identidades.nomeUsuario,
   slug: empresas.slug,
+  fusoHorario: empresas.fusoHorario,
 };
 
 // Só empresas cujo status permite operação pública (hoje: "ativa").

@@ -1,12 +1,14 @@
 "use client";
 
-import { QUANTIDADE_MAXIMA_POR_ITEM, type EmpresaPublica, type GrupoOpcoesPublico, type ProdutoPublico } from "@jaa/contratos";
+import { QUANTIDADE_MAXIMA_POR_ITEM, type EmpresaPublica, type FuncionamentoPublico, type GrupoOpcoesPublico, type ProdutoPublico } from "@jaa/contratos";
 import { useMemo, useState } from "react";
+import { APARENCIA_INDISPONIVEL, acaoOuExplicacao } from "@/components/ui/acao-indisponivel";
 import { FaixaRolavel } from "@/components/ui/faixa-rolavel";
 import { IconeBusca, IconeCesta, IconeFechar, IconeImagem, IconeLoja, IconeMais, IconeMenos, IconeVoltar } from "@/components/ui/icones";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { filtrarProdutos, secaoAtiva, type SecaoCardapio } from "../lib/cardapio";
-import { MontagemProduto } from "./montagem-produto";
+import { FuncionamentoDaEmpresa } from "./funcionamento-da-empresa";
+import { MontagemProduto, type BloqueioDePedido } from "./montagem-produto";
 
 /*
  * CARDÁPIO do cliente dentro da conversa: busca, categorias da empresa e cards de produto.
@@ -28,8 +30,14 @@ export function Cardapio({
   aoVer,
   aoAdicionar,
   aoFechar,
+  funcionamento,
+  bloqueio,
 }: {
   empresa: EmpresaPublica;
+  // Aberta ou fechada agora + a semana, como o servidor informou. Ausente enquanto não se sabe.
+  funcionamento?: FuncionamentoPublico | undefined;
+  // Empresa fechada: as ações de pedir ficam com cara de indisponíveis e explicam ao toque.
+  bloqueio?: BloqueioDePedido | undefined;
   /*
    * Seções já montadas e ORDENADAS por quem cuida dos dados (montagem primeiro, depois a ordem da
    * empresa, "Outros" no fim). Aqui é só apresentação: uma seção por vez, nunca categorias juntas.
@@ -61,21 +69,25 @@ export function Cardapio({
   return (
     <div className="flex flex-col gap-2.5">
       {/* Cabeçalho do cardápio dentro da conversa: quem é a loja e como sair dela. */}
-      <div className="flex items-center gap-2 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
-        <h3 className="fonte-display flex min-w-0 flex-1 items-center gap-2 text-sm font-bold sm:text-base">
-          <IconeLoja className="h-5 w-5 shrink-0 text-marca" />
-          <span className="truncate">Cardápio de {empresa.nome}</span>
-        </h3>
-        {aoFechar && (
-          <button
-            type="button"
-            onClick={aoFechar}
-            className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-jaa-compacto px-3 text-xs font-medium text-conteudo-suave transition-colors hover:bg-realce hover:text-conteudo"
-          >
-            <IconeFechar className="h-4 w-4" />
-            <span className="hidden sm:inline">Fechar</span>
-          </button>
-        )}
+      <div className="flex flex-col gap-1 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
+        <div className="flex items-center gap-2">
+          <h3 className="fonte-display flex min-w-0 flex-1 items-center gap-2 text-sm font-bold sm:text-base">
+            <IconeLoja className="h-5 w-5 shrink-0 text-marca" />
+            <span className="truncate">Cardápio de {empresa.nome}</span>
+          </h3>
+          {aoFechar && (
+            <button
+              type="button"
+              onClick={aoFechar}
+              className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-jaa-compacto px-3 text-xs font-medium text-conteudo-suave transition-colors hover:bg-realce hover:text-conteudo"
+            >
+              <IconeFechar className="h-4 w-4" />
+              <span className="hidden sm:inline">Fechar</span>
+            </button>
+          )}
+        </div>
+        {/* Primeira coisa que o cliente lê: dá para pedir agora? Se não, quando? */}
+        {funcionamento && <FuncionamentoDaEmpresa funcionamento={funcionamento} />}
       </div>
 
       <div className="flex flex-col gap-3 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
@@ -125,6 +137,7 @@ export function Cardapio({
           key={`${montagem.produto.id}-${montagem.chave}`}
           produto={montagem.produto}
           grupos={montagem.grupos}
+          bloqueio={aoAdicionar ? bloqueio : undefined}
           {...(aoAdicionar
             ? {
                 aoAdicionar: (opcaoIds: string[], quantidade: number, observacao: string | null) =>
@@ -151,6 +164,7 @@ export function Cardapio({
                 key={produto.id}
                 produto={produto}
                 aoVer={aoVer}
+                bloqueio={bloqueio}
                 {...(aoAdicionar ? { aoAdicionar: (escolhido: ProdutoPublico) => aoAdicionar(escolhido, 1, [], null) } : {})}
               />
             ))}
@@ -186,8 +200,10 @@ function CardProduto({
   produto,
   aoVer,
   aoAdicionar,
+  bloqueio,
 }: {
   produto: ProdutoPublico;
+  bloqueio?: BloqueioDePedido | undefined;
   aoVer: (produto: ProdutoPublico) => void;
   aoAdicionar?: ((produto: ProdutoPublico) => void) | undefined;
 }) {
@@ -228,8 +244,9 @@ function CardProduto({
           <button
             type="button"
             aria-label={`Adicionar ${produto.nome}`}
-            onClick={() => aoAdicionar(produto)}
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-jaa-compacto bg-marca text-marca-conteudo shadow-suave transition-colors hover:bg-marca/90 sm:h-9 sm:w-9"
+            data-adicionar-produto
+            {...acaoOuExplicacao(bloqueio?.motivo, bloqueio?.aoExplicar, () => aoAdicionar(produto))}
+            className={`grid h-10 w-10 shrink-0 place-items-center rounded-jaa-compacto bg-marca text-marca-conteudo shadow-suave transition-colors hover:bg-marca/90 sm:h-9 sm:w-9 ${bloqueio ? APARENCIA_INDISPONIVEL : ""}`}
           >
             <IconeMais className="h-4 w-4" />
           </button>
@@ -245,8 +262,12 @@ export function DetalheProdutoCatalogo({
   grupos,
   aoVoltar,
   aoAdicionar,
+  funcionamento,
+  bloqueio,
 }: {
   empresa: EmpresaPublica;
+  funcionamento?: FuncionamentoPublico | undefined;
+  bloqueio?: BloqueioDePedido | undefined;
   produto: ProdutoPublico;
   // Vazio = produto comum: adiciona com quantidade, sem montagem.
   grupos: GrupoOpcoesPublico[];
@@ -255,15 +276,16 @@ export function DetalheProdutoCatalogo({
 }) {
   return (
     <article aria-label="Detalhe do produto" className="painel-entrando flex flex-col gap-2.5 text-sm">
-      <div className="flex items-center gap-2 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
+      <div className="flex flex-col gap-1 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
         <button
           type="button"
           onClick={aoVoltar}
-          className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-jaa-compacto px-2 text-xs font-medium text-conteudo-suave transition-colors hover:bg-realce hover:text-conteudo"
+          className="flex min-h-9 shrink-0 items-center gap-1.5 self-start rounded-jaa-compacto px-2 text-xs font-medium text-conteudo-suave transition-colors hover:bg-realce hover:text-conteudo"
         >
           <IconeVoltar className="h-4 w-4" />
           Cardápio
         </button>
+        {funcionamento && <FuncionamentoDaEmpresa funcionamento={funcionamento} />}
       </div>
 
       <header className="flex gap-3 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
@@ -283,16 +305,16 @@ export function DetalheProdutoCatalogo({
 
       {aoAdicionar &&
         (grupos.length > 0 ? (
-          <MontagemProduto produto={produto} grupos={grupos} aoAdicionar={(opcaoIds, quantidade, observacao) => aoAdicionar(produto, quantidade, opcaoIds, observacao)} />
+          <MontagemProduto produto={produto} grupos={grupos} bloqueio={bloqueio} aoAdicionar={(opcaoIds, quantidade, observacao) => aoAdicionar(produto, quantidade, opcaoIds, observacao)} />
         ) : (
-          <AdicionarAoCarrinho produto={produto} aoAdicionar={(quantidade) => aoAdicionar(produto, quantidade, [], null)} />
+          <AdicionarAoCarrinho produto={produto} bloqueio={bloqueio} aoAdicionar={(quantidade) => aoAdicionar(produto, quantidade, [], null)} />
         ))}
     </article>
   );
 }
 
 /** Quantidade (inteira, de 1 ao limite) antes de adicionar ao carrinho — para produto sem montagem. */
-function AdicionarAoCarrinho({ produto, aoAdicionar }: { produto: ProdutoPublico; aoAdicionar: (quantidade: number) => void }) {
+function AdicionarAoCarrinho({ produto, aoAdicionar, bloqueio }: { produto: ProdutoPublico; aoAdicionar: (quantidade: number) => void; bloqueio?: BloqueioDePedido | undefined }) {
   const [quantidade, setQuantidade] = useState(1);
   const limitar = (valor: number) => Math.min(Math.max(Math.trunc(valor), 1), QUANTIDADE_MAXIMA_POR_ITEM);
 
@@ -332,12 +354,18 @@ function AdicionarAoCarrinho({ produto, aoAdicionar }: { produto: ProdutoPublico
       </span>
       <button
         type="button"
-        onClick={() => aoAdicionar(quantidade)}
-        className="flex h-10 flex-1 items-center justify-center gap-2 rounded-jaa-compacto bg-marca px-4 text-sm font-medium text-marca-conteudo shadow-suave transition-colors hover:bg-marca/90"
+        data-adicionar-produto
+        {...acaoOuExplicacao(bloqueio?.motivo, bloqueio?.aoExplicar, () => aoAdicionar(quantidade))}
+        className={`flex h-10 flex-1 items-center justify-center gap-2 rounded-jaa-compacto bg-marca px-4 text-sm font-medium text-marca-conteudo shadow-suave transition-colors hover:bg-marca/90 ${bloqueio ? APARENCIA_INDISPONIVEL : ""}`}
       >
         <IconeCesta className="h-4 w-4" />
         Adicionar ao pedido
       </button>
+      {bloqueio && (
+        <p role="status" data-motivo-do-bloqueio className="w-full text-[11px] text-aviso">
+          {bloqueio.motivo}
+        </p>
+      )}
     </div>
   );
 }

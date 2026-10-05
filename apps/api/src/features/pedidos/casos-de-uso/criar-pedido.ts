@@ -1,5 +1,7 @@
 import type { Banco } from "@jaa/banco";
 import {
+  calcularFuncionamento,
+  diaOperacionalDaEmpresa,
   enderecoTemLocalizacaoConfirmada,
   type FormaPagamentoEntrega,
 } from "@jaa/contratos";
@@ -8,6 +10,7 @@ import {
   buscarEmpresaPublicaPorIdentidade,
   type EmpresaPublicaRegistro,
 } from "../../catalogo/repositorios/repositorio-empresas-publicas.js";
+import { buscarFuncionamentoDaEmpresa } from "../../empresas/repositorios/repositorio-funcionamento.js";
 import { listarIdsParticipantesDaConversa } from "../../conversas/repositorios/repositorio-conversas.js";
 import type { CanalEventosMensagens } from "../../mensagens/lib/eventos-mensagens.js";
 import { buscarMensagemNaConversa } from "../../mensagens/repositorios/repositorio-mensagens.js";
@@ -32,6 +35,8 @@ type ResultadoCriarPedido =
     }
   | { tipo: "empresa-nao-encontrada" }
   | { tipo: "conversa-nao-encontrada" }
+  // Fora do horário de funcionamento. `mensagem` já diz quando a empresa volta a receber pedidos.
+  | { tipo: "empresa-fechada"; mensagem: string }
   | { tipo: "itens-invalidos" }
   | { tipo: "escolhas-invalidas"; mensagem: string }
   | { tipo: "endereco-nao-encontrado" }
@@ -65,7 +70,13 @@ export async function criarPedido(
   {
     banco,
     eventosMensagens,
-  }: { banco: Banco; eventosMensagens: CanalEventosMensagens },
+    agora = () => new Date(),
+  }: {
+    banco: Banco;
+    eventosMensagens: CanalEventosMensagens;
+    // Relógio do SERVIDOR. Parâmetro só para o teste fixar o dia; nunca vem do cliente.
+    agora?: () => Date;
+  },
   clienteIdentidadeId: string,
   operadorUsuarioId: string,
   entrada: EntradaPedido,
@@ -86,6 +97,20 @@ export async function criarPedido(
     !participantes.includes(empresa.identidadeId)
   ) {
     return { tipo: "conversa-nao-encontrada" };
+  }
+
+  /*
+   * HORÁRIO DE FUNCIONAMENTO: decidido AQUI, no instante da confirmação, com o relógio do servidor e
+   * o fuso da empresa — não importa quando o carrinho foi montado nem o que a tela mostrava. Fechada,
+   * nada é criado (o carrinho continua com o cliente). É a mesma regra que o cardápio exibe.
+   *
+   * Exceção: a repetição de uma tentativa que JÁ virou pedido (rede caiu depois do commit) continua
+   * devolvendo aquele pedido, mesmo que a empresa tenha fechado nesse meio-tempo.
+   */
+  const configuracao = await buscarFuncionamentoDaEmpresa(banco, empresa.empresaId);
+  const funcionamento = configuracao ? calcularFuncionamento(configuracao, agora(), configuracao.fusoHorario).estado : null;
+  if (funcionamento && !funcionamento.abertoAgora && !(await buscarPedidoPorTentativa(banco, clienteIdentidadeId, entrada.idCliente))) {
+    return { tipo: "empresa-fechada", mensagem: funcionamento.aviso ?? "Esta empresa está fechada agora." };
   }
 
   /*
@@ -126,11 +151,16 @@ export async function criarPedido(
   const produtoIds = entrada.itens.map((item) => item.produtoId);
   const produtos = await listarProdutosDisponiveisPorIds(banco, empresa.empresaId, produtoIds);
   /*
-   * Grupos lidos do BANCO (só opções disponíveis) e passados pela MESMA serialização da consulta de
-   * cliente: a regra de mínimo/máximo e o acréscimo de cada opção valem exatamente como a pessoa viu.
+   * Grupos lidos do BANCO (só opções oferecidas HOJE) e passados pela MESMA serialização da consulta
+   * de cliente: a regra de mínimo/máximo e o acréscimo de cada opção valem exatamente como a pessoa viu.
+   *
+   * O dia é o dia operacional da EMPRESA no instante da confirmação. Opção de grupo com programação
+   * semanal que não é de hoje — carrinho montado ontem, ou id enviado à mão — não está entre os
+   * grupos e é recusada como qualquer opção desconhecida.
    */
+  const dia = diaOperacionalDaEmpresa(agora(), empresa.fusoHorario);
   const gruposPorProduto = new Map(
-    [...(await listarGruposDisponiveisPorProdutos(banco, empresa.empresaId, produtoIds))].map(([produtoId, grupos]) => [
+    [...(await listarGruposDisponiveisPorProdutos(banco, empresa.empresaId, produtoIds, dia))].map(([produtoId, grupos]) => [
       produtoId,
       serializarGruposPublicos(grupos),
     ]),

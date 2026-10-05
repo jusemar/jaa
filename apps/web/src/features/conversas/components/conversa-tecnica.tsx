@@ -66,6 +66,7 @@ import {
   rotuloAutorResposta,
 } from "../lib/respostas";
 import { CatalogoDaEmpresa } from "@/features/catalogo/components/catalogo-da-empresa";
+import { useFuncionamento } from "@/features/catalogo/hooks/use-funcionamento";
 import {
   PainelCarrinho,
   PainelPedidoVazio,
@@ -873,6 +874,22 @@ export function ConversaTecnica({
     setPainelPedido("automatico");
   }
 
+  /*
+   * A empresa está recebendo pedidos agora? Só interessa a quem tem carrinho com ela. O estado e o
+   * texto vêm do servidor; a recusa de verdade acontece lá, na confirmação.
+   */
+  const { funcionamento: funcionamentoDaEmpresa, atualizar: atualizarFuncionamento } = useFuncionamento(carrinho ? conversa.outraIdentidade.identidadeId : null);
+  const motivoDoBloqueio = funcionamentoDaEmpresa && !funcionamentoDaEmpresa.estado.abertoAgora ? funcionamentoDaEmpresa.estado.aviso : null;
+  const bloqueioDoPedido = motivoDoBloqueio
+    ? {
+        motivo: motivoDoBloqueio,
+        aoExplicar: () => {
+          avisar.alerta(motivoDoBloqueio);
+          atualizarFuncionamento();
+        },
+      }
+    : undefined;
+
   async function confirmarPedido(confirmacao: ConfirmacaoPedido) {
     if (!carrinho) return;
     // Pedido de entrega não é criado sem destino; o servidor confere de novo.
@@ -915,6 +932,8 @@ export function ConversaTecnica({
             : { forma: "cartao" },
       });
       if (!resultado.ok) {
+        // A empresa fechou entre montar e confirmar: nada foi criado e o carrinho fica como está.
+        if (resultado.codigo === "EMPRESA_FECHADA") atualizarFuncionamento();
         // Falha de rede/servidor: mantém a tentativa para reenviar com o mesmo idCliente.
         setErroPedido(
           resultado.status === 0 || resultado.status >= 500
@@ -1202,6 +1221,7 @@ export function ConversaTecnica({
                 frete={freteEntrega}
                 enviando={enviandoPedido}
                 erro={erroPedido}
+                bloqueio={bloqueioDoPedido}
                 aoAlterarQuantidade={alterarQuantidade}
                 aoRemover={remover}
                 aoTrocarEndereco={() => setEscolhendoEndereco(true)}

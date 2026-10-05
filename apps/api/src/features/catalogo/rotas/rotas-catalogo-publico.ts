@@ -58,6 +58,7 @@ export function registrarRotasCatalogoPublico(
       produtos: resultado.produtos.map((produto) =>
         serializarProdutoPublico(produto, { urlPublica, personalizavel: resultado.personalizaveis.has(produto.id) }),
       ),
+      funcionamento: resultado.funcionamento,
     };
     return catalogo;
   });
@@ -73,6 +74,7 @@ export function registrarRotasCatalogoPublico(
       empresa: serializarEmpresaPublica(resultado.empresa),
       produto: serializarProdutoPublico(resultado.produto, { urlPublica, personalizavel: grupos.length > 0 }),
       grupos,
+      funcionamento: resultado.funcionamento,
     };
     return detalhe;
   });

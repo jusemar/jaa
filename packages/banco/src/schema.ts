@@ -8,12 +8,14 @@ export * from "./tabelas/autenticacao/better-auth.js";
 
 export * from "./tabelas/empresas/empresas.js";
 export * from "./tabelas/empresas/membros-empresa.js";
+export * from "./tabelas/empresas/periodos-funcionamento-empresa.js";
 export * from "./tabelas/empresas/relacoes.js";
 
 export * from "./tabelas/produtos/categorias-produto.js";
 export * from "./tabelas/produtos/produtos.js";
 export * from "./tabelas/produtos/grupos-opcoes-produto.js";
 export * from "./tabelas/produtos/opcoes-produto.js";
+export * from "./tabelas/produtos/opcoes-produto-dias.js";
 export * from "./tabelas/produtos/relacoes.js";
 
 export * from "./tabelas/enderecos/enderecos-cliente.js";

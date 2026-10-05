@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { DIAS_SEMANA, horarioLocal, type DiaSemana } from "../profissionais/horarios-atendimento.ts";
 
 /*
  * PERSONALIZAÇÃO DO PRODUTO — grupos de opções CONFIGURÁVEIS pela empresa.
@@ -187,6 +188,8 @@ export const grupoOpcoesProdutoSchema = z.object({
   minimoEscolhas: z.number().int(),
   maximoEscolhas: z.number().int(),
   posicao: z.number().int(),
+  // Programação semanal ligada: as opções oferecidas dependem do dia (ver `programacaoSemanalGrupoSchema`).
+  programacaoSemanal: z.boolean(),
   opcoes: z.array(opcaoProdutoSchema),
 });
 
@@ -315,4 +318,94 @@ export function precoUnitarioComEscolhas(
         .reduce((soma, opcao) => soma + opcao.precoAdicionalCentavos, 0),
     precoBaseCentavos,
   );
+}
+
+/*
+ * PROGRAMAÇÃO SEMANAL de um grupo de opções (opt-in por grupo; vale para qualquer grupo de qualquer
+ * produto — o Jaa não conhece "guarnições" nem "carne").
+ *
+ * - desligada: o grupo oferece suas opções disponíveis todos os dias, como sempre;
+ * - ligada: uma opção só é oferecida no dia em que está programada E se estiver disponível
+ *   (disponibilidade normal + programação do dia). Indisponível continua indisponível.
+ *
+ * Ela NÃO cria obrigatoriedade: mínimo e máximo de escolhas continuam sendo a única regra de quantas
+ * opções o cliente escolhe. Um grupo de mínimo 0 pode ficar sem opção nenhuma num dia.
+ *
+ * Os dias são ISO (1 = segunda … 7 = domingo) — o mesmo `DiaSemana` dos horários de atendimento.
+ */
+export const ROTULO_DIA_SEMANA: Record<DiaSemana, string> = { 1: "Segunda", 2: "Terça", 3: "Quarta", 4: "Quinta", 5: "Sexta", 6: "Sábado", 7: "Domingo" };
+
+/** Nome do dia no meio de uma frase ("terça-feira possui apenas 1 opção"). */
+export const NOME_DIA_SEMANA: Record<DiaSemana, string> = { 1: "segunda-feira", 2: "terça-feira", 3: "quarta-feira", 4: "quinta-feira", 5: "sexta-feira", 6: "sábado", 7: "domingo" };
+
+/** Dia da programação, restrito aos sete valores ISO (o tipo é `DiaSemana`, não um número qualquer). */
+export const diaDaProgramacaoSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)], {
+  error: "Dia da semana de 1 (segunda) a 7 (domingo).",
+});
+
+/** Opções oferecidas em UM dia. A mesma opção pode constar em vários dias (nada é duplicado). */
+export const programacaoDoDiaSchema = z.object({
+  diaSemana: diaDaProgramacaoSchema,
+  opcaoIds: z.array(z.uuid()),
+});
+export type ProgramacaoDoDia = z.infer<typeof programacaoDoDiaSchema>;
+
+/** Programação completa de um grupo: se está ligada e as opções de cada um dos sete dias. */
+export const programacaoSemanalGrupoSchema = z.object({
+  grupoId: z.uuid(),
+  programacaoSemanal: z.boolean(),
+  dias: z.array(programacaoDoDiaSchema).length(DIAS_SEMANA.length),
+});
+export type ProgramacaoSemanalGrupo = z.infer<typeof programacaoSemanalGrupoSchema>;
+
+/** Liga ou desliga a programação do grupo. Desligar NÃO apaga os dias já programados. */
+export const definirProgramacaoSemanalEntradaSchema = z.object({ programacaoSemanal: z.boolean() });
+export type DefinirProgramacaoSemanalEntrada = z.input<typeof definirProgramacaoSemanalEntradaSchema>;
+
+/** Substitui as opções de UM dia (o gestor edita "só a terça"). Sem repetição; lista vazia é válida. */
+export const definirOpcoesDoDiaEntradaSchema = z.object({
+  opcaoIds: z
+    .array(z.uuid())
+    .max(MAXIMO_OPCOES_POR_GRUPO)
+    .refine((ids) => new Set(ids).size === ids.length, "A mesma opção não pode aparecer duas vezes no dia."),
+});
+export type DefinirOpcoesDoDiaEntrada = z.input<typeof definirOpcoesDoDiaEntradaSchema>;
+
+/**
+ * Quantas opções o cliente realmente encontra no dia: programadas para ele E disponíveis. É a mesma
+ * conta que o servidor faz para o cardápio (disponibilidade normal + programação do dia).
+ */
+export function opcoesOferecidasNoDia(grupo: { opcoes: ReadonlyArray<{ id: string; disponibilidade: DisponibilidadeOpcao }> }, opcaoIdsDoDia: readonly string[]): number {
+  const programadas = new Set(opcaoIdsDoDia);
+  return grupo.opcoes.filter((opcao) => programadas.has(opcao.id) && opcao.disponibilidade === "disponivel").length;
+}
+
+/**
+ * AVISO AO GESTOR (só aviso — nada é corrigido sozinho): o grupo exige mais escolhas do que o dia
+ * oferece. Com mínimo 0 nunca há aviso: dia vazio é uma configuração válida. Não depende do nome do
+ * grupo; vale para qualquer um.
+ */
+export function avisoDeMinimoDoDia(
+  grupo: { minimoEscolhas: number; opcoes: ReadonlyArray<{ id: string; disponibilidade: DisponibilidadeOpcao }> },
+  dia: ProgramacaoDoDia,
+): string | null {
+  if (grupo.minimoEscolhas <= 0) return null;
+  const oferecidas = opcoesOferecidasNoDia(grupo, dia.opcaoIds);
+  if (oferecidas >= grupo.minimoEscolhas) return null;
+  const exige = `Este grupo exige pelo menos ${grupo.minimoEscolhas} ${grupo.minimoEscolhas === 1 ? "escolha" : "escolhas"}`;
+  const possui = oferecidas === 0 ? "não possui nenhuma opção disponível" : `possui apenas ${oferecidas} ${oferecidas === 1 ? "opção disponível" : "opções disponíveis"}`;
+  return `${exige}, mas ${NOME_DIA_SEMANA[dia.diaSemana]} ${possui}. Nesse dia o grupo não aparece para o cliente.`;
+}
+
+/**
+ * DIA OPERACIONAL da empresa: o dia da semana que vale para a operação dela NESTE instante — é ele que
+ * escolhe a programação semanal do cardápio. Calculado no SERVIDOR, no fuso da EMPRESA; o relógio e o
+ * fuso de quem compra nunca entram.
+ *
+ * Hoje é o dia do calendário local da empresa (vira à meia-noite dela). É o ÚNICO ponto que define
+ * "que dia é hoje para a empresa": quando existirem horários de funcionamento (ex.: turno que termina
+ * às 2h ainda pertencer ao dia anterior), a regra muda aqui e todo o resto acompanha.
+ */
+export function diaOperacionalDaEmpresa(instante: Date, fusoHorario: string): DiaSemana {
+  return horarioLocal(instante, fusoHorario).diaSemana;
 }

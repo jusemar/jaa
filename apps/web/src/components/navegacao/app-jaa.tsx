@@ -11,6 +11,7 @@ import { SeletorIdentidade } from "@/features/identidades/components/seletor-ide
 import { useIdentidadeAtiva } from "@/features/identidades/hooks/use-identidade-ativa";
 import { AreaPedidosEmpresa } from "@/features/pedidos/components/area-pedidos-empresa";
 import { AreaPerfil } from "@/features/perfil/components/area-perfil";
+import { HorariosDeFuncionamento } from "@/features/empresas/components/horarios-de-funcionamento";
 import { AreaProdutos } from "@/features/produtos/components/area-produtos";
 import { AvisosDeAcao } from "@/components/ui/avisos";
 import { Botao, Carregando, Secao } from "@/components/ui/primitivos";
@@ -208,13 +209,21 @@ export function AppJaa({
 
         {ativa && !ehConversas && (
           // pb-24 no celular: a barra de navegação inferior não pode cobrir o fim do conteúdo.
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-4 md:px-8 md:pb-10">
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+          /*
+           * MESMA superfície do painel de Conversas (`bg-superficie`), e não o cinza do fundo: Produtos,
+           * Pedidos, Logística e Perfil são a mesma aplicação que a lista de conversas. Quem separa os
+           * blocos aqui dentro são as bordas (`border-borda`) e a superfície suave, como lá.
+           */
+          <div data-area-de-trabalho className="min-h-0 flex-1 overflow-y-auto bg-superficie px-4 pb-24 pt-4 md:px-8 md:pb-10">
+            {/* Produtos tem tela de duas colunas (formulário + prévia do cliente): precisa de mais largura. */}
+            <div className={`mx-auto flex w-full flex-col gap-6 ${areaAtiva === "produtos" ? "max-w-6xl" : "max-w-3xl"}`}>
               {areaAtiva === "entregas" && <AreaMinhasEntregas aoAbrirConversa={abrirConversaCom} />}
 
               {areaAtiva === "perfil" && (
                 <div className="flex flex-col gap-8">
                   <AreaPerfil key={ativa.identidadeId} ehEmpresa={ehEmpresa} />
+                  {/* Da EMPRESA: quando ela recebe pedidos. Fica no perfil dela, junto dos dados públicos. */}
+                  {ativa.tipo === "empresarial" && <HorariosDeFuncionamento key={ativa.empresa.id} empresaId={ativa.empresa.id} />}
                   {!ehEmpresa && (
                     <Secao
                       titulo="Minhas empresas"

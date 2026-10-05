@@ -2,9 +2,12 @@
 
 import type { CatalogoPublico, GrupoOpcoesPublico, ProdutoPublico } from "@jaa/contratos";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { avisar } from "@/components/ui/avisos";
+import { useFuncionamento } from "../hooks/use-funcionamento";
 import { obterCatalogo, obterProdutoDoCatalogo } from "../lib/api-catalogo";
 import { montarSecoes, produtoParaMontarNaSecao, secaoAtiva } from "../lib/cardapio";
 import { Cardapio, DetalheProdutoCatalogo } from "./catalogo-apresentacao";
+import type { BloqueioDePedido } from "./montagem-produto";
 
 /*
  * Cardápio aberto a partir de uma conversa com empresa. Usa a consulta PÚBLICA do mesmo domínio
@@ -53,6 +56,29 @@ export function CatalogoDaEmpresa({
   // Cresce a cada item adicionado: é o que reinicia o montador para a pessoa montar outro.
   const [montagensFeitas, setMontagensFeitas] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
+  /*
+   * Aberta ou fechada: vem com o catálogo e é reconsultada sozinha (a tela não fica dizendo "aberto"
+   * depois que a empresa fechou). O mais recente vence; quem decide de verdade é o servidor, na
+   * confirmação do pedido.
+   */
+  const acompanhamento = useFuncionamento(identidadeEmpresaId);
+  const funcionamento = acompanhamento.funcionamento ?? catalogo?.funcionamento ?? undefined;
+  const motivo = funcionamento && !funcionamento.estado.abertoAgora ? funcionamento.estado.aviso : null;
+  const { atualizar } = acompanhamento;
+  const bloqueio = useMemo<BloqueioDePedido | undefined>(
+    () =>
+      motivo
+        ? {
+            motivo,
+            // Tocar numa ação indisponível explica o motivo — e confere de novo, caso já tenha aberto.
+            aoExplicar: () => {
+              avisar.alerta(motivo);
+              atualizar();
+            },
+          }
+        : undefined,
+    [motivo, atualizar],
+  );
 
   useEffect(() => {
     let ativo = true;
@@ -123,11 +149,12 @@ export function CatalogoDaEmpresa({
 
   const adicionar = useCallback(
     (produto: ProdutoPublico, quantidade: number, grupos: GrupoOpcoesPublico[], opcaoIds: string[], observacao: string | null) => {
-      if (!catalogo || !aoAdicionarAoCarrinho) return;
+      // Segunda barreira: fechada, nada entra no pedido mesmo que algum botão escape.
+      if (!catalogo || !aoAdicionarAoCarrinho || bloqueio) return;
       aoAdicionarAoCarrinho(catalogo.empresa, produto, quantidade, { grupos, opcaoIds, observacao });
       setMontagensFeitas((feitas) => feitas + 1);
     },
-    [catalogo, aoAdicionarAoCarrinho],
+    [catalogo, aoAdicionarAoCarrinho, bloqueio],
   );
 
   return (
@@ -148,6 +175,9 @@ export function CatalogoDaEmpresa({
           aoEscolherSecao={setSecaoEscolhidaId}
           {...(montagem ? { montagem } : {})}
           aoFechar={aoFechar}
+          funcionamento={funcionamento}
+          // Só bloqueia quem poderia pedir: a própria empresa olhando o cardápio não tem ação nenhuma.
+          bloqueio={aoAdicionarAoCarrinho ? bloqueio : undefined}
           aoVer={(produto) => void ver(produto)}
           {...(aoAdicionarAoCarrinho
             ? {
@@ -163,6 +193,8 @@ export function CatalogoDaEmpresa({
           empresa={catalogo.empresa}
           produto={aberto.produto}
           grupos={aberto.grupos}
+          funcionamento={funcionamento}
+          bloqueio={aoAdicionarAoCarrinho ? bloqueio : undefined}
           aoVoltar={() => setAberto(null)}
           {...(aoAdicionarAoCarrinho
             ? {

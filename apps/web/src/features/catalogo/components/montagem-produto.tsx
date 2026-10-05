@@ -12,6 +12,7 @@ import {
   type ProdutoPublico,
 } from "@jaa/contratos";
 import { useMemo, useState, type ReactNode } from "react";
+import { APARENCIA_INDISPONIVEL, acaoOuExplicacao } from "@/components/ui/acao-indisponivel";
 import { FaixaRolavel } from "@/components/ui/faixa-rolavel";
 import {
   IconeCesta,
@@ -47,13 +48,22 @@ function escolhasIniciais(grupos: readonly GrupoOpcoesPublico[]): string[] {
     .filter((id) => id !== "");
 }
 
+/** Por que não dá para pedir agora (texto do servidor) e como mostrar isso a quem tocar na ação. */
+export interface BloqueioDePedido {
+  motivo: string;
+  aoExplicar: () => void;
+}
+
 export function MontagemProduto({
   produto,
   grupos,
   aoAdicionar,
+  bloqueio,
 }: {
   produto: ProdutoPublico;
   grupos: GrupoOpcoesPublico[];
+  // Empresa fechada: dá para montar e ver o preço, mas "Adicionar" explica em vez de adicionar.
+  bloqueio?: BloqueioDePedido | undefined;
   aoAdicionar: (
     opcaoIds: string[],
     quantidade: number,
@@ -212,9 +222,10 @@ export function MontagemProduto({
           <button
             type="button"
             data-adicionar-montagem
-            disabled={!validacao.valido}
-            onClick={adicionar}
-            className="flex h-10 flex-1 items-center justify-center gap-2 rounded-jaa-compacto bg-marca px-4 text-sm font-medium text-marca-conteudo shadow-suave transition-colors hover:bg-marca/90 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+            // Com a empresa fechada o botão NÃO fica `disabled`: o toque precisa explicar o motivo.
+            disabled={!bloqueio && !validacao.valido}
+            {...acaoOuExplicacao(bloqueio?.motivo, bloqueio?.aoExplicar, adicionar)}
+            className={`flex h-10 flex-1 items-center justify-center gap-2 rounded-jaa-compacto bg-marca px-4 text-sm font-medium text-marca-conteudo shadow-suave transition-colors hover:bg-marca/90 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none ${bloqueio ? APARENCIA_INDISPONIVEL : ""}`}
           >
             <IconeCesta className="h-4 w-4" />
             Adicionar ao pedido
@@ -222,10 +233,16 @@ export function MontagemProduto({
         </div>
 
         {/* O que falta, dito com o nome do grupo: "faltam escolhas" sem dizer onde não ajuda ninguém. */}
-        {!validacao.valido && (
-          <p role="status" className="text-[11px] text-aviso sm:col-span-2">
-            {mensagemDoQueFalta(validacao)}
+        {bloqueio ? (
+          <p role="status" data-motivo-do-bloqueio className="text-[11px] text-aviso sm:col-span-2">
+            {bloqueio.motivo}
           </p>
+        ) : (
+          !validacao.valido && (
+            <p role="status" className="text-[11px] text-aviso sm:col-span-2">
+              {mensagemDoQueFalta(validacao)}
+            </p>
+          )
         )}
       </div>
     </div>

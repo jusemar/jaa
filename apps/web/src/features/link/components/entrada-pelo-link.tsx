@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Botao, Carregando } from "@/components/ui/primitivos";
 import { FluxoAutenticacao } from "@/features/autenticacao/components/fluxo-autenticacao";
 import { buscarIdentidadePublica } from "@/features/perfil/lib/api-perfil";
+import { AvisosDeAcao } from "@/components/ui/avisos";
 import { PaginaDoVisitante } from "./pagina-do-visitante";
 
 /*
@@ -43,7 +44,13 @@ export function EntradaPeloLink({ nomeUsuario }: { nomeUsuario: string }) {
       <FluxoAutenticacao
         // O destino usa o @usuario CANÔNICO devolvido pelo servidor, não o texto do endereço.
         destino={{ nomeUsuario: identidade.nomeUsuario, nomeExibicao: identidade.nomeExibicao, abrirCardapio: identidade.temCardapio }}
-        moldura={({ entrada, focarEntrada }) => <PaginaDoVisitante identidade={identidade} entrada={entrada} aoPedirEntrada={focarEntrada} />}
+        moldura={({ entrada, focarEntrada }) => (
+          <>
+            <PaginaDoVisitante identidade={identidade} entrada={entrada} aoPedirEntrada={focarEntrada} />
+            {/* O visitante também precisa dos avisos: é por eles que o cardápio explica "fechada agora". */}
+            <AvisosDeAcao />
+          </>
+        )}
       />
     );
   }

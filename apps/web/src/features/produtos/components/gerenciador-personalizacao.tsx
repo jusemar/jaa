@@ -1,333 +1,211 @@
 "use client";
 
-import {
-  MAXIMO_ESCOLHAS_POR_GRUPO,
-  MAXIMO_GRUPOS_POR_PRODUTO,
-  MAXIMO_OPCOES_POR_GRUPO,
-  grupoDeEscolhaUnica,
-  grupoObrigatorio,
-  type GrupoOpcoesProduto,
-} from "@jaa/contratos";
+import { MAXIMO_GRUPOS_POR_PRODUTO, type GrupoOpcoesProduto } from "@jaa/contratos";
 import { useEffect, useState } from "react";
-import { Aviso, Botao, CampoSelecao, CampoTexto, Carregando, EstadoVazio } from "@/components/ui/primitivos";
-import { formatarPrecoCentavos, interpretarPrecoDigitado } from "../lib/precos";
-import {
-  atualizarOpcao,
-  criarGrupoOpcoes,
-  criarOpcao,
-  listarGruposOpcoes,
-  removerGrupoOpcoes,
-  removerOpcao,
-} from "../lib/api-personalizacao";
+import { avisar } from "@/components/ui/avisos";
+import { DialogoConfirmacao } from "@/components/ui/confirmacao";
+import { IconeCalendario, IconeCamadas, IconeMais, IconeSeta } from "@/components/ui/icones";
+import { MenuMais } from "@/components/ui/menu-mais";
+import { Aviso, Carregando, Selo } from "@/components/ui/primitivos";
+import { resumoDoGrupo } from "../lib/edicao-semana";
+import { regraEmPalavras } from "../lib/regra-do-grupo";
+import { listarGruposOpcoes, removerGrupoOpcoes } from "../lib/api-personalizacao";
+import { EditorDeGrupo } from "./editor-de-grupo";
 
 /*
- * PERSONALIZAÇÃO do produto, administrada pela EMPRESA — é aqui que "Tamanho", "Guarnições (até 5)"
+ * GRUPOS DE OPÇÕES do produto, administrados pela EMPRESA — é aqui que "Tamanho", "Guarnições (até 5)"
  * e "Tipo de carne (apenas 1)" nascem. Nada disso está escrito no Jaa: são grupos que a empresa
  * cadastra, com o mínimo e o máximo que ela quiser.
  *
- * Como no envio de imagem, só aparece para produto JÁ SALVO: um grupo pertence a um produto, e o
- * produto precisa existir primeiro.
+ * Na página do produto aparece só o RESUMO: um cartão por grupo (nome, regra, quantas opções, se é
+ * semanal, se há problema). Tocar no cartão abre o editor do grupo; excluir fica no menu ⋯.
  *
- * Toda operação devolve a lista completa de grupos (a API já responde assim), então a tela nunca
- * fica com uma ordem ou um preço diferente do que está no banco.
+ * Só existe para produto JÁ SALVO: um grupo pertence a um produto. Toda operação devolve a lista
+ * completa (a API já responde assim), então a tela nunca fica diferente do banco, e o resumo usa só
+ * essa lista: nenhuma consulta a mais por grupo.
  */
 
-export function GerenciadorPersonalizacao({ empresaId, produtoId }: { empresaId: string; produtoId: string }) {
+export function GerenciadorPersonalizacao({
+  empresaId,
+  produtoId,
+  aoMudarGrupos,
+}: {
+  empresaId: string;
+  produtoId: string;
+  // A página do produto mostra os grupos também na prévia do cliente.
+  aoMudarGrupos?: (grupos: GrupoOpcoesProduto[]) => void;
+}) {
   const [grupos, setGrupos] = useState<GrupoOpcoesProduto[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  // Um editor por vez. `abertura` muda a cada abertura: o editor recomeça do zero, mas NÃO recomeça
+  // quando o grupo novo ganha id no meio de um salvamento.
+  const [aberto, setAberto] = useState<{ abertura: number; grupoId: string | null } | null>(null);
+  const [excluindo, setExcluindo] = useState<GrupoOpcoesProduto | null>(null);
+
+  function adotar(lista: GrupoOpcoesProduto[]) {
+    setGrupos(lista);
+    aoMudarGrupos?.(lista);
+  }
 
   useEffect(() => {
     let ativo = true;
     void listarGruposOpcoes(empresaId, produtoId).then((resultado) => {
       if (!ativo) return;
-      if (resultado.ok) setGrupos(resultado.dados.grupos);
-      else setErro(resultado.mensagem);
+      if (resultado.ok) {
+        setGrupos(resultado.dados.grupos);
+        aoMudarGrupos?.(resultado.dados.grupos);
+      } else setErro(resultado.mensagem);
     });
     return () => {
       ativo = false;
     };
+    // `aoMudarGrupos` é só o aviso à página: não é motivo para reler os grupos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId, produtoId]);
 
-  /** Executa a operação e adota a lista que o servidor devolveu (nunca um palpite local). */
-  async function aplicar(operacao: () => Promise<Awaited<ReturnType<typeof listarGruposOpcoes>>>) {
-    setErro(null);
-    setOcupado(true);
-    try {
-      const resultado = await operacao();
-      if (resultado.ok) setGrupos(resultado.dados.grupos);
-      else setErro(resultado.mensagem);
-      return resultado.ok;
-    } finally {
-      setOcupado(false);
-    }
-  }
+  if (grupos === null && !erro) return <Carregando texto="Carregando os grupos de opções…" />;
 
-  if (grupos === null && !erro) return <Carregando texto="Carregando as opções do produto…" />;
+  const lista = grupos ?? [];
+  const grupoAberto = aberto?.grupoId ? (lista.find((grupo) => grupo.id === aberto.grupoId) ?? null) : null;
+  const abrir = (grupoId: string | null) => setAberto((atual) => ({ abertura: (atual?.abertura ?? 0) + 1, grupoId }));
 
   return (
-    <section aria-label="Opções para o cliente montar" className="flex flex-col gap-3">
-      <div className="flex flex-col gap-0.5">
-        <h3 className="fonte-display text-base font-semibold">Opções para o cliente montar</h3>
-        <p className="text-sm text-conteudo-suave">
-          Crie grupos como tamanho, acompanhamentos ou tipo de carne. Você define quantas opções o cliente pode escolher em cada grupo, e quanto cada uma
-          acrescenta ao preço. Sem nenhum grupo, o produto é adicionado direto ao pedido.
-        </p>
+    <section aria-label="Grupos de opções" data-grupos-de-opcoes className="flex flex-col">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="fonte-display flex items-center gap-2.5 text-base font-semibold">
+          <IconeCamadas className="h-[1.125rem] w-[1.125rem] text-conteudo-suave" />
+          Grupos de opções
+        </h2>
+        <Selo>{lista.length === 1 ? "1 grupo" : `${lista.length} grupos`}</Selo>
       </div>
+      <p className="mt-1.5 text-sm text-conteudo-suave">
+        Personalizações que o cliente pode escolher ao pedir.{lista.length === 0 ? " Sem nenhum grupo, o produto é adicionado direto ao pedido." : ""}
+      </p>
 
-      {(grupos ?? []).length === 0 ? (
-        <EstadoVazio
-          titulo="Nenhum grupo de opções"
-          descricao="Este produto é vendido como está. Crie um grupo se o cliente precisar escolher algo — por exemplo o tamanho."
+      <ListaDeGrupos grupos={lista} ocupado={ocupado} aoAbrir={abrir} aoPedirExcluir={setExcluindo} />
+
+      {lista.length < MAXIMO_GRUPOS_POR_PRODUTO ? (
+        <button
+          type="button"
+          data-novo-grupo
+          disabled={ocupado}
+          onClick={() => abrir(null)}
+          className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-jaa border border-dashed border-borda bg-superficie px-4 text-sm font-medium text-marca shadow-suave transition-colors hover:border-marca hover:bg-marca-suave/40 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <IconeMais className="h-4 w-4" />
+          Adicionar grupo de opções
+        </button>
+      ) : (
+        <div className="mt-3">
+          <Aviso tom="atencao">Este produto já tem o máximo de {MAXIMO_GRUPOS_POR_PRODUTO} grupos de opções.</Aviso>
+        </div>
+      )}
+
+      {erro && !excluindo && (
+        <div className="mt-3">
+          <Aviso tom="erro">{erro}</Aviso>
+        </div>
+      )}
+
+      {aberto && (aberto.grupoId === null || grupoAberto) && (
+        <EditorDeGrupo
+          key={aberto.abertura}
+          empresaId={empresaId}
+          produtoId={produtoId}
+          grupo={grupoAberto}
+          idsDosGrupos={lista.map((grupo) => grupo.id)}
+          aoFechar={() => setAberto(null)}
+          aoGrupos={adotar}
+          aoCriado={(grupoId) => setAberto((atual) => (atual ? { ...atual, grupoId } : atual))}
+          aoMudarAtivacao={(grupoId, ativa) => adotar(lista.map((item) => (item.id === grupoId ? { ...item, programacaoSemanal: ativa } : item)))}
+          aoPedirExcluir={setExcluindo}
         />
-      ) : (
-        <ol className="flex flex-col gap-3">
-          {(grupos ?? []).map((grupo, indice) => (
-            <CartaoGrupo
-              key={grupo.id}
-              grupo={grupo}
-              passo={indice + 1}
-              ocupado={ocupado}
-              aoCriarOpcao={(entrada) => aplicar(() => criarOpcao(empresaId, produtoId, grupo.id, entrada))}
-              aoAlternarDisponibilidadeOpcao={(opcaoId, disponibilidade) => aplicar(() => atualizarOpcao(empresaId, produtoId, grupo.id, opcaoId, { disponibilidade }))}
-              aoRemoverOpcao={(opcaoId) => aplicar(() => removerOpcao(empresaId, produtoId, grupo.id, opcaoId))}
-              aoRemoverGrupo={() => aplicar(() => removerGrupoOpcoes(empresaId, produtoId, grupo.id))}
-            />
-          ))}
-        </ol>
       )}
 
-      {(grupos ?? []).length < MAXIMO_GRUPOS_POR_PRODUTO ? (
-        <FormularioGrupo ocupado={ocupado} aoCriar={(entrada) => aplicar(() => criarGrupoOpcoes(empresaId, produtoId, entrada))} />
-      ) : (
-        <Aviso tom="atencao">Este produto já tem o máximo de {MAXIMO_GRUPOS_POR_PRODUTO} grupos de opções.</Aviso>
+      {excluindo && (
+        <DialogoConfirmacao
+          titulo="Excluir grupo de opções?"
+          texto={`“${excluindo.nome}” e as opções dele serão removidos deste produto, incluindo a programação semanal. Pedidos já feitos não mudam.`}
+          rotuloConfirmar="Excluir grupo"
+          perigosa
+          ocupado={ocupado}
+          erro={erro}
+          dados={{ "data-confirmar-acao": "apagar-grupo" }}
+          aoCancelar={() => {
+            setErro(null);
+            setExcluindo(null);
+          }}
+          aoConfirmar={() => {
+            setErro(null);
+            setOcupado(true);
+            void removerGrupoOpcoes(empresaId, produtoId, excluindo.id)
+              .then((resultado) => {
+                if (!resultado.ok) {
+                  setErro(resultado.mensagem);
+                  return;
+                }
+                setAberto(null);
+                setExcluindo(null);
+                adotar(resultado.dados.grupos);
+                avisar.sucesso("Grupo excluído");
+              })
+              .finally(() => setOcupado(false));
+          }}
+        />
       )}
-
-      {erro && <Aviso tom="erro">{erro}</Aviso>}
     </section>
   );
 }
 
-/** Um grupo com suas opções, a regra em palavras e as ações de administração. */
-function CartaoGrupo({
-  grupo,
-  passo,
-  ocupado,
-  aoCriarOpcao,
-  aoAlternarDisponibilidadeOpcao,
-  aoRemoverOpcao,
-  aoRemoverGrupo,
-}: {
-  grupo: GrupoOpcoesProduto;
-  passo: number;
-  ocupado: boolean;
-  aoCriarOpcao: (entrada: { nome: string; precoAdicionalCentavos: number }) => Promise<boolean>;
-  aoAlternarDisponibilidadeOpcao: (opcaoId: string, disponibilidade: "disponivel" | "indisponivel") => Promise<boolean>;
-  aoRemoverOpcao: (opcaoId: string) => Promise<boolean>;
-  aoRemoverGrupo: () => Promise<boolean>;
-}) {
-  return (
-    <li data-grupo-admin={grupo.id} className="flex flex-col gap-2 rounded-jaa border border-borda bg-superficie p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col">
-          <p className="fonte-display text-sm font-semibold">
-            {passo}. {grupo.nome}
-          </p>
-          <p className="text-xs text-conteudo-suave">{regraEmPalavras(grupo)}</p>
-          {grupo.instrucao && <p className="text-xs text-conteudo-suave">Dica ao cliente: {grupo.instrucao}</p>}
-        </div>
-        <Botao
-          aparencia="perigo"
-          disabled={ocupado}
-          onClick={() => {
-            // Apagar o grupo apaga as opções dele. Pedidos antigos não mudam: guardam o snapshot.
-            if (window.confirm(`Apagar o grupo “${grupo.nome}” e as opções dele? Pedidos já feitos não mudam.`)) void aoRemoverGrupo();
-          }}
-          className="!min-h-9 text-xs"
-        >
-          Apagar grupo
-        </Botao>
-      </div>
-
-      {grupo.opcoes.length === 0 ? (
-        <Aviso tom="atencao">Este grupo ainda não tem opção nenhuma, então não aparece para o cliente.</Aviso>
-      ) : (
-        <ul className="flex flex-col divide-y divide-borda rounded-jaa border border-borda text-sm">
-          {grupo.opcoes.map((opcao) => {
-            const disponivel = opcao.disponibilidade === "disponivel";
-            return (
-              <li key={opcao.id} data-opcao-admin={opcao.id} className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2">
-                <span className="flex min-w-0 flex-col">
-                  <span className={`truncate ${disponivel ? "" : "text-conteudo-suave line-through"}`}>{opcao.nome}</span>
-                  <span className="text-xs text-conteudo-suave">
-                    {opcao.precoAdicionalCentavos > 0 ? `+${formatarPrecoCentavos(opcao.precoAdicionalCentavos)}` : "Sem acréscimo"}
-                    {!disponivel && " · indisponível"}
-                  </span>
-                </span>
-                <span className="flex shrink-0 gap-1">
-                  <Botao
-                    aparencia="secundario"
-                    disabled={ocupado}
-                    onClick={() => void aoAlternarDisponibilidadeOpcao(opcao.id, disponivel ? "indisponivel" : "disponivel")}
-                    className="!min-h-9 text-xs"
-                  >
-                    {disponivel ? "Deixar indisponível" : "Deixar disponível"}
-                  </Botao>
-                  <Botao
-                    aparencia="perigo"
-                    disabled={ocupado}
-                    onClick={() => {
-                      if (window.confirm(`Apagar a opção “${opcao.nome}”? Pedidos já feitos não mudam.`)) void aoRemoverOpcao(opcao.id);
-                    }}
-                    className="!min-h-9 text-xs"
-                  >
-                    Apagar
-                  </Botao>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {grupo.opcoes.length < MAXIMO_OPCOES_POR_GRUPO ? (
-        <FormularioOpcao idGrupo={grupo.id} ocupado={ocupado} aoCriar={aoCriarOpcao} />
-      ) : (
-        <Aviso tom="atencao">Este grupo já tem o máximo de {MAXIMO_OPCOES_POR_GRUPO} opções.</Aviso>
-      )}
-    </li>
-  );
-}
-
-/** A regra do grupo em português, derivada só de mínimo e máximo. */
-function regraEmPalavras(grupo: GrupoOpcoesProduto): string {
-  const obrigatorio = grupoObrigatorio(grupo) ? "obrigatório" : "opcional";
-  if (grupoDeEscolhaUnica(grupo)) return `Escolha única · ${obrigatorio}`;
-  if (grupo.minimoEscolhas === 0) return `Escolha múltipla · até ${grupo.maximoEscolhas} · opcional`;
-  if (grupo.minimoEscolhas === grupo.maximoEscolhas) return `Escolha múltipla · exatamente ${grupo.minimoEscolhas} · obrigatório`;
-  return `Escolha múltipla · de ${grupo.minimoEscolhas} a ${grupo.maximoEscolhas} · obrigatório`;
-}
-
-type TipoEscolha = "unica" | "multipla";
-
 /**
- * Criação do grupo. A empresa escolhe entre "uma opção" e "várias opções" e diz se é obrigatório —
- * é como as pessoas pensam. Isso é traduzido para mínimo/máximo, que é o que o domínio guarda.
+ * Um CARTÃO por grupo. O cartão inteiro abre a edição (a seta só reforça o gesto); o menu ⋯, ao lado,
+ * guarda o que apaga. Tudo o que aparece vem da lista de grupos já carregada.
  */
-function FormularioGrupo({ ocupado, aoCriar }: { ocupado: boolean; aoCriar: (entrada: { nome: string; instrucao: string | null; minimoEscolhas: number; maximoEscolhas: number }) => Promise<boolean> }) {
-  const [nome, setNome] = useState("");
-  const [instrucao, setInstrucao] = useState("");
-  const [tipo, setTipo] = useState<TipoEscolha>("unica");
-  const [obrigatorio, setObrigatorio] = useState(true);
-  const [maximo, setMaximo] = useState("5");
-  const [erro, setErro] = useState<string | null>(null);
-
-  async function criar() {
-    if (nome.trim() === "") {
-      setErro("Informe o nome do grupo.");
-      return;
-    }
-    const limite = tipo === "unica" ? 1 : Math.trunc(Number(maximo));
-    if (tipo === "multipla" && (!Number.isInteger(limite) || limite < 1 || limite > MAXIMO_ESCOLHAS_POR_GRUPO)) {
-      setErro(`O máximo de escolhas deve ser um número inteiro entre 1 e ${MAXIMO_ESCOLHAS_POR_GRUPO}.`);
-      return;
-    }
-    setErro(null);
-    const criado = await aoCriar({
-      nome: nome.trim(),
-      instrucao: instrucao.trim() === "" ? null : instrucao.trim(),
-      // Obrigatório = pelo menos 1. Máximo é 1 na escolha única e o limite informado na múltipla.
-      minimoEscolhas: obrigatorio ? 1 : 0,
-      maximoEscolhas: limite,
-    });
-    if (criado) {
-      setNome("");
-      setInstrucao("");
-    }
-  }
-
+export function ListaDeGrupos({
+  grupos,
+  ocupado,
+  aoAbrir,
+  aoPedirExcluir,
+}: {
+  grupos: GrupoOpcoesProduto[];
+  ocupado: boolean;
+  aoAbrir: (grupoId: string) => void;
+  aoPedirExcluir: (grupo: GrupoOpcoesProduto) => void;
+}) {
+  if (grupos.length === 0) return null;
   return (
-    <div className="flex flex-col gap-3 rounded-jaa border border-dashed border-borda p-3">
-      <p className="fonte-display text-sm font-semibold">Novo grupo de opções</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <CampoTexto id="grupo-nome" rotulo="Nome do grupo" value={nome} placeholder="Tamanho, Acompanhamentos, Tipo de carne…" onChange={(evento) => setNome(evento.target.value)} />
-        <CampoTexto
-          id="grupo-instrucao"
-          rotulo="Dica ao cliente (opcional)"
-          value={instrucao}
-          placeholder="Explicação curta que aparece abaixo do título"
-          onChange={(evento) => setInstrucao(evento.target.value)}
-        />
-        <CampoSelecao id="grupo-tipo" rotulo="Quantas opções o cliente escolhe" value={tipo} onChange={(evento) => setTipo(evento.target.value as TipoEscolha)}>
-          <option value="unica">Apenas uma</option>
-          <option value="multipla">Várias</option>
-        </CampoSelecao>
-        {tipo === "multipla" && (
-          <CampoTexto
-            id="grupo-maximo"
-            rotulo="Máximo de escolhas"
-            type="number"
-            min={1}
-            max={MAXIMO_ESCOLHAS_POR_GRUPO}
-            value={maximo}
-            onChange={(evento) => setMaximo(evento.target.value)}
-          />
-        )}
-      </div>
-      <label className="flex min-h-11 items-center gap-2 text-sm">
-        <input type="checkbox" checked={obrigatorio} onChange={(evento) => setObrigatorio(evento.target.checked)} className="accent-[var(--cor-marca)]" />
-        O cliente precisa escolher neste grupo para fechar o item
-      </label>
-      <Botao disabled={ocupado} onClick={() => void criar()} className="self-start">
-        Criar grupo
-      </Botao>
-      {erro && <Aviso tom="erro">{erro}</Aviso>}
-    </div>
-  );
-}
-
-/** Criação de opção. O acréscimo é digitado em reais e convertido por texto para centavos inteiros. */
-function FormularioOpcao({ idGrupo, ocupado, aoCriar }: { idGrupo: string; ocupado: boolean; aoCriar: (entrada: { nome: string; precoAdicionalCentavos: number }) => Promise<boolean> }) {
-  const [nome, setNome] = useState("");
-  const [acrescimo, setAcrescimo] = useState("");
-  const [erro, setErro] = useState<string | null>(null);
-
-  async function criar() {
-    if (nome.trim() === "") {
-      setErro("Informe o nome da opção.");
-      return;
-    }
-    // Vazio = sem acréscimo (0), que é o caso mais comum. Só interpreta quando a empresa digita algo.
-    const centavos = acrescimo.trim() === "" ? 0 : interpretarPrecoDigitado(acrescimo);
-    if (centavos === null) {
-      setErro("Informe o acréscimo como 5,00 — ou deixe em branco para não mudar o preço.");
-      return;
-    }
-    setErro(null);
-    const criada = await aoCriar({ nome: nome.trim(), precoAdicionalCentavos: centavos });
-    if (criada) {
-      setNome("");
-      setAcrescimo("");
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="grid gap-2 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
-        <CampoTexto id={`opcao-nome-${idGrupo}`} rotulo="Nova opção" value={nome} placeholder="Nome da opção" onChange={(evento) => setNome(evento.target.value)} />
-        <CampoTexto
-          id={`opcao-acrescimo-${idGrupo}`}
-          rotulo="Acréscimo (R$)"
-          value={acrescimo}
-          inputMode="decimal"
-          placeholder="0,00"
-          onChange={(evento) => setAcrescimo(evento.target.value)}
-        />
-        <Botao aparencia="secundario" disabled={ocupado} onClick={() => void criar()}>
-          Adicionar opção
-        </Botao>
-      </div>
-      {erro && <Aviso tom="erro">{erro}</Aviso>}
-    </div>
+    <ul data-lista-de-grupos className="mt-1 flex flex-col">
+      {grupos.map((grupo) => {
+        const resumo = resumoDoGrupo(grupo);
+        return (
+          <li key={grupo.id} data-grupo-admin={grupo.id} className="mt-3 flex items-center gap-1 rounded-jaa border border-borda bg-superficie py-1 pl-3 pr-1 shadow-cartao transition-colors hover:border-marca sm:pl-4 sm:pr-2 lg:gap-2">
+            <button type="button" data-abrir-grupo aria-label={`Editar ${grupo.nome}`} onClick={() => aoAbrir(grupo.id)} className="flex min-h-16 min-w-0 flex-1 items-center gap-3.5 rounded-jaa-compacto py-3 text-left">
+              {/* O símbolo é só ornamento: some onde a largura é do conteúdo. */}
+              <span aria-hidden className="hidden h-10 w-10 shrink-0 place-items-center rounded-jaa-compacto bg-superficie-suave text-conteudo-suave lg:grid">
+                <IconeCamadas className="h-[1.125rem] w-[1.125rem]" />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <span className="fonte-display text-[15px] font-semibold leading-tight [overflow-wrap:anywhere] sm:text-sm">{grupo.nome}</span>
+                <span className="text-xs text-conteudo-suave">{regraEmPalavras(grupo)}</span>
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <span className="text-[11px] text-conteudo-suave">{resumo.total === 1 ? "1 opção" : `${resumo.total} opções`}</span>
+                  {resumo.semanal && (
+                    <span data-selo-semanal className="inline-flex items-center gap-1 rounded-jaa-compacto bg-marca-suave px-1.5 py-1 text-[11px] font-medium leading-none text-marca-suave-conteudo">
+                      <IconeCalendario className="h-3 w-3" />
+                      Semanal
+                    </span>
+                  )}
+                  {resumo.indisponiveis > 0 && !resumo.problema && <Selo>{resumo.indisponiveis === 1 ? "1 indisponível" : `${resumo.indisponiveis} indisponíveis`}</Selo>}
+                  {resumo.problema && <Selo tom="atencao">{resumo.problema}</Selo>}
+                </span>
+              </span>
+              <IconeSeta className="mx-2 h-4 w-4 shrink-0 text-conteudo-suave" />
+            </button>
+            <MenuMais rotulo={`Ações de ${grupo.nome}`} disabled={ocupado} itens={[{ id: "apagar-grupo", rotulo: "Excluir grupo", perigosa: true, aoEscolher: () => aoPedirExcluir(grupo) }]} />
+          </li>
+        );
+      })}
+    </ul>
   );
 }

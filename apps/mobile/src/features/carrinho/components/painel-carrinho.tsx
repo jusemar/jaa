@@ -49,6 +49,7 @@ export function PainelCarrinho({
   frete,
   enviando,
   erro,
+  bloqueio,
   aoAlterarQuantidade,
   aoRemover,
   aoTrocarEndereco,
@@ -61,6 +62,11 @@ export function PainelCarrinho({
   frete: FreteEntrega;
   enviando: boolean;
   erro: string | null;
+  /*
+   * Empresa fechada agora (texto do servidor): os itens continuam no carrinho para quando ela abrir,
+   * mas "Confirmar pedido" fica com cara de indisponível e explica ao toque.
+   */
+  bloqueio?: { motivo: string; aoExplicar: () => void } | undefined;
   aoAlterarQuantidade: (linhaId: string, quantidade: number) => void;
   aoRemover: (linhaId: string) => void;
   aoTrocarEndereco: () => void;
@@ -297,10 +303,11 @@ export function PainelCarrinho({
             </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ disabled: !podeConfirmar }}
-              disabled={!podeConfirmar}
-              onPress={confirmar}
-              style={({ pressed }) => [estilos.acao, !podeConfirmar && estilos.inativo, pressed && estilos.pressionado]}>
+              accessibilityState={{ disabled: Boolean(bloqueio) || !podeConfirmar }}
+              // Fechada: NÃO usa `disabled`, para o toque poder explicar o motivo.
+              disabled={!bloqueio && !podeConfirmar}
+              onPress={bloqueio ? bloqueio.aoExplicar : confirmar}
+              style={({ pressed }) => [estilos.acao, (Boolean(bloqueio) || !podeConfirmar) && estilos.inativo, pressed && estilos.pressionado]}>
               <Texto variante="corpoMedio" cor="marcaConteudo">
                 {enviando ? "Enviando pedido…" : "Confirmar pedido"}
               </Texto>
@@ -308,7 +315,12 @@ export function PainelCarrinho({
             </Pressable>
           </>
         )}
-        {(erroTroco ?? erro) && (
+        {bloqueio && (
+          <Texto variante="pequeno" cor="aviso" style={estilos.erro}>
+            {bloqueio.motivo} Seus itens continuam aqui.
+          </Texto>
+        )}
+        {!bloqueio && (erroTroco ?? erro) && (
           <Texto variante="pequeno" cor="perigo" accessibilityRole="alert" style={estilos.erro}>
             {erroTroco ?? erro}
           </Texto>

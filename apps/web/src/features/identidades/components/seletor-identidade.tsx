@@ -85,7 +85,17 @@ export function SeletorIdentidade({
         <div
           role="menu"
           aria-label="Escolher identidade"
-          className={`absolute bottom-full z-30 mb-1 flex min-w-60 flex-col overflow-hidden rounded-jaa border border-borda bg-superficie shadow-suave ${compacto ? "left-0" : "left-0 w-full md:bottom-auto md:top-full md:mb-0 md:mt-1"}`}
+          data-menu-de-identidades
+          /*
+           * A direção segue ONDE o seletor está, não só a largura da tela:
+           *  - completo (barra do TOPO, nas telas estreitas): abre PARA BAIXO — para cima ele saía da
+           *    tela e as outras identidades ficavam inalcançáveis;
+           *  - compacto (rodapé da coluna de navegação, a partir de `md`): abre PARA CIMA, como sempre.
+           * Nos dois a altura é limitada à área visível, com rolagem própria se as identidades forem muitas.
+           */
+          className={`absolute left-0 z-30 flex min-w-60 flex-col overflow-y-auto overscroll-contain rounded-jaa border border-borda bg-superficie shadow-suave ${
+            compacto ? "bottom-full mb-1 max-h-[calc(100dvh-6rem)]" : "top-full mt-1 max-h-[calc(100dvh-7rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] w-full"
+          }`}
         >
           <Grupo titulo="Pessoa" itens={pessoais} ativa={ativa} aoSelecionar={aoSelecionar} fechar={() => setAberto(false)} />
           {empresariais.length > 0 && <Grupo titulo="Empresas" itens={empresariais} ativa={ativa} aoSelecionar={aoSelecionar} fechar={() => setAberto(false)} />}

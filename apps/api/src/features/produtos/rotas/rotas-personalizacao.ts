@@ -4,10 +4,14 @@ import {
   atualizarOpcaoEntradaSchema,
   criarGrupoOpcoesEntradaSchema,
   criarOpcaoEntradaSchema,
+  definirOpcoesDoDiaEntradaSchema,
+  definirProgramacaoSemanalEntradaSchema,
+  diaDaProgramacaoSchema,
   MAXIMO_GRUPOS_POR_PRODUTO,
   MAXIMO_OPCOES_POR_GRUPO,
   type ErroApi,
   type ListaGruposOpcoes,
+  type ProgramacaoSemanalGrupo,
 } from "@jaa/contratos";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as z from "zod";
@@ -16,8 +20,11 @@ import { exigirIdentidadeAutenticada, obterIdentidadeExigida } from "../../auten
 import {
   atualizarGrupoOpcoes,
   atualizarOpcaoDoGrupo,
+  consultarProgramacaoSemanal,
   criarGrupoOpcoes,
   criarOpcao,
+  definirOpcoesDoDiaDoGrupo,
+  definirProgramacaoSemanal,
   excluirGrupoOpcoes,
   excluirOpcaoDoGrupo,
   listarGruposAdministrados,
@@ -28,6 +35,8 @@ import { listarGruposDoProduto } from "../repositorios/repositorio-personalizaca
 const parametrosProdutoSchema = z.object({ empresaId: z.uuid(), produtoId: z.uuid() });
 const parametrosGrupoSchema = parametrosProdutoSchema.extend({ grupoId: z.uuid() });
 const parametrosOpcaoSchema = parametrosGrupoSchema.extend({ opcaoId: z.uuid() });
+// O dia vem no endereço como texto ("2"): só 1..7 (segunda … domingo) é aceito.
+const parametrosDiaSchema = parametrosGrupoSchema.extend({ dia: z.coerce.number().pipe(diaDaProgramacaoSchema) });
 
 function responderDadosInvalidos(resposta: FastifyReply, mensagem: string | undefined) {
   const erro: ErroApi = { codigo: "DADOS_INVALIDOS", mensagem: mensagem ?? "Dados inválidos." };
@@ -156,5 +165,54 @@ export function registrarRotasPersonalizacao(servidor: FastifyInstance, dependen
     const resultado = await excluirOpcaoDoGrupo(banco, usuarioId, empresaId, produtoId, grupoId, opcaoId);
     if (resultado.tipo !== "excluida") return responderRecusa(resposta, resultado.tipo);
     return lista(empresaId, produtoId);
+  });
+
+  /*
+   * PROGRAMAÇÃO SEMANAL do grupo (quais opções valem em cada dia). Fica sob o grupo porque é dele:
+   * o cadastro de opções continua um só — estas rotas apenas dizem em que dias cada opção aparece.
+   * Todas devolvem a programação completa (sete dias) depois de alterar.
+   */
+  const rotaProgramacao = "/empresas/:empresaId/produtos/:produtoId/grupos-opcoes/:grupoId/programacao";
+
+  servidor.get(rotaProgramacao, { preHandler }, async (requisicao, resposta) => {
+    const { usuarioId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosGrupoSchema.safeParse(requisicao.params);
+    if (!parametros.success) return responderDadosInvalidos(resposta, "Grupo inválido.");
+
+    const { empresaId, produtoId, grupoId } = parametros.data;
+    const resultado = await consultarProgramacaoSemanal(banco, usuarioId, empresaId, produtoId, grupoId);
+    if (resultado.tipo !== "programacao") return responderRecusa(resposta, resultado.tipo);
+    const corpo: ProgramacaoSemanalGrupo = resultado.programacao;
+    return corpo;
+  });
+
+  // Liga/desliga. Ligar pela 1ª vez preenche a semana; desligar não apaga; religar retoma.
+  servidor.put(rotaProgramacao, { preHandler }, async (requisicao, resposta) => {
+    const { usuarioId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosGrupoSchema.safeParse(requisicao.params);
+    const entrada = definirProgramacaoSemanalEntradaSchema.safeParse(requisicao.body);
+    if (!parametros.success) return responderDadosInvalidos(resposta, "Grupo inválido.");
+    if (!entrada.success) return responderDadosInvalidos(resposta, "Informe se a programação semanal fica ligada ou desligada.");
+
+    const { empresaId, produtoId, grupoId } = parametros.data;
+    const resultado = await definirProgramacaoSemanal(banco, usuarioId, empresaId, produtoId, grupoId, entrada.data.programacaoSemanal);
+    if (resultado.tipo !== "programacao") return responderRecusa(resposta, resultado.tipo);
+    const corpo: ProgramacaoSemanalGrupo = resultado.programacao;
+    return corpo;
+  });
+
+  // Substitui as opções de UM dia (1 = segunda … 7 = domingo); os outros dias não mudam.
+  servidor.put(`${rotaProgramacao}/dias/:dia`, { preHandler }, async (requisicao, resposta) => {
+    const { usuarioId } = obterIdentidadeExigida(requisicao);
+    const parametros = parametrosDiaSchema.safeParse(requisicao.params);
+    const entrada = definirOpcoesDoDiaEntradaSchema.safeParse(requisicao.body);
+    if (!parametros.success) return responderDadosInvalidos(resposta, "Dia inválido: use de 1 (segunda) a 7 (domingo).");
+    if (!entrada.success) return responderDadosInvalidos(resposta, entrada.error.issues[0]?.message);
+
+    const { empresaId, produtoId, grupoId, dia } = parametros.data;
+    const resultado = await definirOpcoesDoDiaDoGrupo(banco, usuarioId, empresaId, produtoId, grupoId, dia, entrada.data.opcaoIds);
+    if (resultado.tipo !== "programacao") return responderRecusa(resposta, resultado.tipo);
+    const corpo: ProgramacaoSemanalGrupo = resultado.programacao;
+    return corpo;
   });
 }

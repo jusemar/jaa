@@ -11,9 +11,14 @@ import { pistasDeRolagem } from "./rolagem-horizontal";
  * A pista só existe quando há o que rolar e some do lado em que a pessoa chegou ao fim. É recalculada
  * ao rolar (toque, mouse, teclado), quando a faixa muda de largura e quando o conteúdo muda.
  */
-const ESMAECER = "1.75rem";
+// As três máscaras possíveis, por extenso: o Tailwind só gera classes que existem inteiras no código.
+const MASCARA = {
+  inicio: "[mask-image:linear-gradient(to_right,transparent_0,black_1.75rem,black_100%)]",
+  fim: "[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_1.75rem),transparent_100%)]",
+  ambos: "[mask-image:linear-gradient(to_right,transparent_0,black_1.75rem,black_calc(100%_-_1.75rem),transparent_100%)]",
+} as const;
 
-export function FaixaRolavel({ children, className = "", ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }) {
+export function FaixaRolavel({ children, className = "", ...props }: Omit<HTMLAttributes<HTMLDivElement>, "style"> & { children: ReactNode }) {
   const faixa = useRef<HTMLDivElement | null>(null);
   const [pistas, setPistas] = useState({ inicio: false, fim: false });
 
@@ -36,10 +41,7 @@ export function FaixaRolavel({ children, className = "", ...props }: HTMLAttribu
     };
   }, [children]);
 
-  const mascara =
-    pistas.inicio || pistas.fim
-      ? `linear-gradient(to right, ${pistas.inicio ? "transparent" : "black"} 0, black ${ESMAECER}, black calc(100% - ${ESMAECER}), ${pistas.fim ? "transparent" : "black"} 100%)`
-      : undefined;
+  const mascara = pistas.inicio && pistas.fim ? MASCARA.ambos : pistas.inicio ? MASCARA.inicio : pistas.fim ? MASCARA.fim : "";
 
   return (
     <div
@@ -53,8 +55,7 @@ export function FaixaRolavel({ children, className = "", ...props }: HTMLAttribu
        * contidos e cortados por ESTA faixa. Sem isso eles se posicionam em relação à página e, estando
        * à direita do que cabe na tela, alargam o documento inteiro — rolagem horizontal na página.
        */
-      className={`relative overflow-x-auto ${className}`}
-      style={{ ...props.style, maskImage: mascara, WebkitMaskImage: mascara }}
+      className={`relative overflow-x-auto ${mascara} ${className}`}
     >
       {children}
     </div>

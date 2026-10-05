@@ -3,6 +3,7 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ParticipanteConversa, SituacaoBloqueio } from "@jaa/contratos";
 import { useEffect, useState } from "react";
+import { DialogoConfirmacao } from "@/components/ui/confirmacao";
 import { obterSituacaoBloqueio } from "../lib/api-bloqueios";
 
 /*
@@ -140,34 +141,20 @@ export function ConfirmarAcaoConversa({
   aoCancelar: () => void;
 }) {
   const { titulo, texto, botao } = EXPLICACAO[acao](item.outraIdentidade.nomeExibicao, item.outraIdentidade.nomeUsuario);
+  // O diálogo é o mesmo do app inteiro (`DialogoConfirmacao`); aqui só entram os textos da conversa.
   return (
-    <div className="fixed inset-0 z-[1100] grid place-items-center bg-black/30 p-4">
-      <div role="alertdialog" aria-modal="true" aria-labelledby="titulo-acao-conversa" data-confirmar-acao={acao} className="flex w-full max-w-sm flex-col gap-3 rounded-jaa border border-borda bg-superficie p-4 shadow-suave">
-        <p id="titulo-acao-conversa" className="font-semibold text-conteudo">
-          {titulo}
-        </p>
-        <p className="text-sm text-conteudo-suave">{texto}</p>
-        {erro && (
-          <p role="alert" className="text-xs text-perigo">
-            {erro}
-          </p>
-        )}
-        <div className="flex flex-wrap justify-end gap-2">
-          <button type="button" disabled={ocupado} onClick={aoCancelar} className="rounded-full border border-borda px-4 py-2 text-sm">
-            Cancelar
-          </button>
-          <button
-            type="button"
-            data-confirmar-acao-sim
-            disabled={ocupado}
-            onClick={aoConfirmar}
-            className={`rounded-full px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${acao === "desbloquear" || acao === "limpar" ? "bg-marca" : "bg-perigo"}`}
-          >
-            {ocupado ? "Aguarde…" : botao}
-          </button>
-        </div>
-      </div>
-    </div>
+    <DialogoConfirmacao
+      titulo={titulo}
+      texto={texto}
+      rotuloConfirmar={botao}
+      perigosa={acao !== "desbloquear" && acao !== "limpar"}
+      ocupado={ocupado}
+      erro={erro}
+      aoConfirmar={aoConfirmar}
+      aoCancelar={aoCancelar}
+      dados={{ "data-confirmar-acao": acao }}
+      idTitulo="titulo-acao-conversa"
+    />
   );
 }
 

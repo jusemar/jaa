@@ -25,6 +25,7 @@ export function serializarGrupoOpcoes({ grupo, opcoes }: GrupoComOpcoes): GrupoO
     minimoEscolhas: grupo.minimoEscolhas,
     maximoEscolhas: grupo.maximoEscolhas,
     posicao: grupo.posicao,
+    programacaoSemanal: grupo.programacaoSemanal,
     opcoes: opcoes.map(serializarOpcao),
   };
 }

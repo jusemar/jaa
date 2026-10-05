@@ -98,8 +98,50 @@ describe("FormularioProduto", () => {
     );
     assert.ok(html.includes('value="39,90"'));
     assert.ok(html.includes("Salvar produto"));
+    assert.ok(/type="submit"[^>]*form="formulario-produto"|form="formulario-produto"[^>]*type="submit"/.test(html), "o botão da barra de ações envia o formulário");
     assert.ok(html.includes('type="file"') && html.includes('accept="image/jpeg,image/png,image/webp"'));
     assert.ok(texto(html).includes("Adicionar imagem"));
+  });
+});
+
+describe("Editar produto: composição da tela", () => {
+  const tela = (produto: Produto | null, extra: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(createElement(FormularioProduto, { produto, categorias, enviando: false, aoSalvar: () => {}, aoCancelar: () => {}, ...extra }));
+
+  it("trilha, título e as ações Prévia (só com produto salvo) e Catálogo", () => {
+    const html = tela(base, { empresaId: base.empresaId });
+    assert.ok(/Cardápio\s*›\s*Produtos\s*›\s*Editar produto/.test(texto(html)) && html.includes("<h1"));
+    assert.ok(html.includes("data-abrir-previa") && html.includes("data-voltar-catalogo"));
+    const novo = tela(null, { empresaId: base.empresaId });
+    assert.ok(texto(novo).includes("Novo produto") && !novo.includes("data-abrir-previa") && texto(novo).includes("Criar produto"));
+    assert.ok(texto(novo).includes("Os grupos de opções (tamanho, acompanhamentos…) são adicionados logo depois de criar o produto."));
+  });
+
+  it("'No cardápio do cliente' mostra nome, descrição, preço e disponibilidade do que está na tela", () => {
+    const html = tela({ ...base, disponibilidade: "indisponivel" }, { empresaId: base.empresaId });
+    const cartao = html.slice(html.indexOf("data-cartao-da-previa"));
+    assert.ok(texto(cartao).includes("Indisponível") && texto(cartao).includes("Pizza Calabresa") && texto(cartao).includes("Molho e calabresa") && texto(cartao).includes("R$ 39,90"));
+    assert.ok(cartao.includes("data-ver-como-cliente") && texto(cartao).includes("Um produto, diferentes dias"));
+  });
+
+  it("duas composições: uma coluna no celular (campos sem cartão em volta) e duas colunas a partir de lg", () => {
+    const html = tela(base, { empresaId: base.empresaId });
+    assert.ok(html.includes("lg:grid-cols-[minmax(0,1fr)_17.5rem]"));
+    assert.ok(html.includes("sm:rounded-jaa sm:border sm:border-borda sm:bg-superficie sm:p-6"), "o cartão do formulário só existe a partir de sm");
+    assert.ok(html.includes("min-[360px]:grid-cols-2"), "preço e disponibilidade lado a lado, menos em tela muito estreita");
+    assert.ok(html.includes("sm:max-lg:grid-cols-2"), "no tablet o cartão do cliente fica lado a lado");
+  });
+
+  it("barra de ações: estado do produto, Cancelar e Salvar — presa acima da navegação no celular", () => {
+    const html = tela(base);
+    const barra = html.slice(html.indexOf("data-barra-de-acoes"));
+    assert.ok(barra.includes('data-estado-do-produto="salvo"') && texto(barra).includes("Todas as alterações salvas") && texto(barra).includes("Cancelar"));
+    assert.ok(html.includes("sticky bottom-[calc(env(safe-area-inset-bottom)-2rem)]") && html.includes("md:static"));
+    assert.ok(tela(null).includes('data-estado-do-produto="nao-salvo"'));
+  });
+
+  it("sem estilo inline na tela", () => {
+    assert.ok(!tela(base, { empresaId: base.empresaId }).includes(" style="));
   });
 });
 
@@ -146,16 +188,15 @@ describe("imagem principal do produto na administração", () => {
       createElement(FormularioProduto, { produto, categorias, enviando: false, aoSalvar: () => {}, aoCancelar: () => {}, aoEnviarImagem: async () => {}, aoRemoverImagem: async () => {} }),
     );
 
-  it("com imagem: mostra a atual e oferece Trocar e Remover", () => {
+  it("com imagem: mostra a atual e oferece Alterar e Remover", () => {
     const html = formulario({ ...base, imagemUrl: URL_A });
     assert.ok(html.includes(`src="${URL_A}"`));
-    assert.ok(texto(html).includes("Trocar imagem") && texto(html).includes("Remover"));
-    assert.ok(!html.includes("📦"));
+    assert.ok(texto(html).includes("Alterar imagem") && texto(html).includes("Remover"));
   });
 
   it("sem imagem: marcador neutro e Adicionar imagem, sem Remover", () => {
     const html = formulario(base);
-    assert.ok(html.includes("📦") && !html.includes("<img"));
+    assert.ok(html.includes("data-imagem-do-produto") && !html.includes("<img"));
     assert.ok(texto(html).includes("Adicionar imagem") && !texto(html).includes("Remover"));
   });
 
@@ -163,7 +204,7 @@ describe("imagem principal do produto na administração", () => {
     assert.ok(formulario({ ...base, imagemUrl: URL_A }).includes(`src="${URL_A}"`));
     const trocada = formulario({ ...base, imagemUrl: URL_B });
     assert.ok(trocada.includes(`src="${URL_B}"`) && !trocada.includes(URL_A));
-    assert.ok(formulario({ ...base, imagemUrl: null }).includes("📦"));
+    assert.ok(!formulario({ ...base, imagemUrl: null }).includes("<img"));
   });
 });
 

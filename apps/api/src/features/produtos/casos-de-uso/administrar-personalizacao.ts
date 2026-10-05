@@ -1,17 +1,21 @@
 import type { Banco } from "@jaa/banco";
-import { MAXIMO_GRUPOS_POR_PRODUTO, MAXIMO_OPCOES_POR_GRUPO, type DisponibilidadeOpcao } from "@jaa/contratos";
+import { MAXIMO_GRUPOS_POR_PRODUTO, MAXIMO_OPCOES_POR_GRUPO, type DiaSemana, type DisponibilidadeOpcao, type ProgramacaoSemanalGrupo } from "@jaa/contratos";
 import { autorizarEmpresa, type PermissaoEmpresa } from "../../empresas/lib/autorizacao-empresas.js";
 import { buscarProdutoDaEmpresa } from "../repositorios/repositorio-produtos.js";
 import {
+  ativarProgramacaoSemanalDoGrupo,
   atualizarGrupo,
   atualizarOpcao,
   buscarGrupoDoProduto,
   buscarOpcaoDoGrupo,
   contarGruposDoProduto,
   contarOpcoesDoGrupo,
+  definirOpcoesDoDia,
+  definirProgramacaoSemanalDoGrupo,
   inserirGrupo,
   inserirOpcao,
   listarGruposDoProduto,
+  listarProgramacaoDoGrupo,
   removerGrupo,
   removerOpcao,
   type GrupoComOpcoes,
@@ -172,4 +176,66 @@ export async function excluirOpcaoDoGrupo(
   if (alcance.tipo !== "ok") return alcance;
   if (!(await buscarGrupoDoProduto(banco, empresaId, produtoId, grupoId))) return { tipo: "grupo-nao-encontrado" };
   return (await removerOpcao(banco, empresaId, grupoId, opcaoId)) ? { tipo: "excluida" } : { tipo: "opcao-nao-encontrada" };
+}
+
+/*
+ * PROGRAMAÇÃO SEMANAL de um grupo. Mesma sequência das demais operações: permissão na empresa →
+ * produto da empresa → grupo do produto. A programação é dado comercial do produto, então usa
+ * `ver-produtos`/`gerenciar-produtos`. Toda operação devolve a programação COMPLETA do grupo (os sete
+ * dias), lida do banco depois de gravar — a tela nunca fica com um palpite local.
+ */
+type ResultadoProgramacao = { tipo: "programacao"; programacao: ProgramacaoSemanalGrupo } | SemAcesso | ProdutoAusente | GrupoAusente | OpcaoAusente;
+
+async function programacaoDoGrupo(banco: Banco, empresaId: string, grupo: GrupoRegistro): Promise<ProgramacaoSemanalGrupo> {
+  return { grupoId: grupo.id, programacaoSemanal: grupo.programacaoSemanal, dias: await listarProgramacaoDoGrupo(banco, empresaId, grupo.id) };
+}
+
+export async function consultarProgramacaoSemanal(banco: Banco, usuarioId: string, empresaId: string, produtoId: string, grupoId: string): Promise<ResultadoProgramacao> {
+  const alcance = await alcancarProduto(banco, usuarioId, empresaId, produtoId, "ver-produtos");
+  if (alcance.tipo !== "ok") return alcance;
+  const grupo = await buscarGrupoDoProduto(banco, empresaId, produtoId, grupoId);
+  if (!grupo) return { tipo: "grupo-nao-encontrado" };
+  return { tipo: "programacao", programacao: await programacaoDoGrupo(banco, empresaId, grupo) };
+}
+
+/**
+ * Liga ou desliga a programação. Ligar pela primeira vez preenche a semana com as opções do grupo
+ * (nada some do cardápio); desligar NÃO apaga os dias; religar retoma o que estava configurado.
+ */
+export async function definirProgramacaoSemanal(
+  banco: Banco,
+  usuarioId: string,
+  empresaId: string,
+  produtoId: string,
+  grupoId: string,
+  ativa: boolean,
+): Promise<ResultadoProgramacao> {
+  const alcance = await alcancarProduto(banco, usuarioId, empresaId, produtoId, "gerenciar-produtos");
+  if (alcance.tipo !== "ok") return alcance;
+  if (!(await buscarGrupoDoProduto(banco, empresaId, produtoId, grupoId))) return { tipo: "grupo-nao-encontrado" };
+
+  const grupo = ativa ? await ativarProgramacaoSemanalDoGrupo(banco, empresaId, grupoId) : await definirProgramacaoSemanalDoGrupo(banco, empresaId, grupoId, false);
+  if (!grupo) return { tipo: "grupo-nao-encontrado" };
+  return { tipo: "programacao", programacao: await programacaoDoGrupo(banco, empresaId, grupo) };
+}
+
+/** Substitui as opções de UM dia. Opção de outro grupo (ou de outra empresa) não é encontrada. */
+export async function definirOpcoesDoDiaDoGrupo(
+  banco: Banco,
+  usuarioId: string,
+  empresaId: string,
+  produtoId: string,
+  grupoId: string,
+  dia: DiaSemana,
+  opcaoIds: readonly string[],
+): Promise<ResultadoProgramacao> {
+  const alcance = await alcancarProduto(banco, usuarioId, empresaId, produtoId, "gerenciar-produtos");
+  if (alcance.tipo !== "ok") return alcance;
+  if (!(await buscarGrupoDoProduto(banco, empresaId, produtoId, grupoId))) return { tipo: "grupo-nao-encontrado" };
+
+  // O repositório confere de novo, dentro da transação, que TODAS as opções são deste grupo.
+  if (!(await definirOpcoesDoDia(banco, empresaId, grupoId, dia, opcaoIds))) return { tipo: "opcao-nao-encontrada" };
+  const grupo = await buscarGrupoDoProduto(banco, empresaId, produtoId, grupoId);
+  if (!grupo) return { tipo: "grupo-nao-encontrado" };
+  return { tipo: "programacao", programacao: await programacaoDoGrupo(banco, empresaId, grupo) };
 }

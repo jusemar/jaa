@@ -33,6 +33,8 @@ import { useCarrinho } from "@/features/carrinho/hooks/use-carrinho";
 import { useFreteEntrega } from "@/features/carrinho/hooks/use-frete-entrega";
 import { escolhasDaMontagem, itensParaPedido, quantidadeTotal, type Carrinho, type EscolhaCarrinho } from "@/features/carrinho/lib/carrinho";
 import { CatalogoDaEmpresa } from "@/features/catalogo/components/catalogo-da-empresa";
+import { useFuncionamento } from "@/features/catalogo/hooks/use-funcionamento";
+import { ehEmpresaFechada, motivoDoBloqueio } from "@/features/catalogo/lib/funcionamento";
 import { EtapaEnderecoEntrega } from "@/features/enderecos/components/etapa-endereco-entrega";
 import { AcompanhamentoDoPedido } from "@/features/pedidos/components/acompanhamento-cliente";
 import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
@@ -604,6 +606,22 @@ function Conversa({
     setTrocaDeEmpresa(null);
   }
 
+  /*
+   * A empresa está recebendo pedidos agora? Só interessa a quem tem carrinho com ela. O estado e o
+   * texto vêm do servidor; a recusa de verdade acontece lá, na confirmação.
+   */
+  const { funcionamento: funcionamentoDaEmpresa, atualizar: atualizarFuncionamento } = useFuncionamento(carrinho ? conversa.outraIdentidade.identidadeId : null);
+  const motivoFechada = motivoDoBloqueio(funcionamentoDaEmpresa);
+  const bloqueioDoPedido = motivoFechada
+    ? {
+        motivo: motivoFechada,
+        aoExplicar: () => {
+          Alert.alert("Empresa fechada", motivoFechada);
+          atualizarFuncionamento();
+        },
+      }
+    : undefined;
+
   async function confirmarPedido(confirmacao: ConfirmacaoPedido) {
     if (!carrinho) return;
     // Pedido de entrega não é criado sem destino; o servidor confere de novo.
@@ -633,6 +651,8 @@ function Conversa({
             : { forma: "cartao" },
       });
       if (!resultado.ok) {
+        // A empresa fechou entre montar e confirmar: nada foi criado e o carrinho fica como está.
+        if (ehEmpresaFechada(resultado)) atualizarFuncionamento();
         // Falha de rede/servidor: mantém a tentativa para reenviar com o mesmo idCliente.
         setErroPedido(resultado.status === 0 || resultado.status >= 500 ? "Falha ao enviar o pedido. Confirme de novo para tentar sem duplicar." : resultado.mensagem);
         return;
@@ -765,6 +785,7 @@ function Conversa({
               frete={freteEntrega}
               enviando={enviandoPedido}
               erro={erroPedido}
+              bloqueio={bloqueioDoPedido}
               aoAlterarQuantidade={alterarQuantidade}
               aoRemover={remover}
               aoTrocarEndereco={() => setEscolhendoEndereco(true)}

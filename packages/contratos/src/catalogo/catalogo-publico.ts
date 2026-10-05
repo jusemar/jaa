@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { funcionamentoPublicoSchema } from "../empresas/funcionamento.ts";
 import { grupoOpcoesPublicoSchema } from "../produtos/personalizacao.ts";
 
 /*
@@ -57,6 +58,8 @@ export const catalogoPublicoSchema = z.object({
   // Na ordem definida pela empresa; produtos sem categoria ficam fora delas (a interface agrupa em "Outros").
   categorias: z.array(categoriaPublicaSchema),
   produtos: z.array(produtoPublicoSchema),
+  // Aberta ou fechada AGORA (regra do servidor, fuso da empresa) e a semana para consulta.
+  funcionamento: funcionamentoPublicoSchema,
 });
 
 export type CatalogoPublico = z.infer<typeof catalogoPublicoSchema>;
@@ -69,6 +72,7 @@ export const produtoPublicoDetalheSchema = z.object({
    * ainda conseguem cumprir o próprio mínimo. Vazio = produto comum (adiciona direto).
    */
   grupos: z.array(grupoOpcoesPublicoSchema),
+  funcionamento: funcionamentoPublicoSchema,
 });
 
 export type ProdutoPublicoDetalhe = z.infer<typeof produtoPublicoDetalheSchema>;

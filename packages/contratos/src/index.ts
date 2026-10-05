@@ -5,6 +5,7 @@ export * from "./identidades/identidade-operavel.ts";
 export * from "./identidades/perfil.ts";
 export * from "./identidades/bloqueio.ts";
 export * from "./empresas/empresa.ts";
+export * from "./empresas/funcionamento.ts";
 export * from "./produtos/produto.ts";
 export * from "./produtos/categoria.ts";
 export * from "./produtos/personalizacao.ts";

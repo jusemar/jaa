@@ -2,7 +2,8 @@
 
 import { PAGINA_PRODUTOS_TAMANHO_PADRAO, type CategoriaProduto, type Produto } from "@jaa/contratos";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Aviso, Botao, CampoSelecao, CampoTexto, Carregando, Secao } from "@/components/ui/primitivos";
+import { avisar } from "@/components/ui/avisos";
+import { Aviso, Botao, CampoSelecao, CampoTexto, Carregando } from "@/components/ui/primitivos";
 import {
   alterarDisponibilidade,
   atualizarProduto,
@@ -14,9 +15,9 @@ import {
   removerImagemProduto,
 } from "../lib/api-produtos";
 import { executarAcaoDeImagem } from "../lib/acao-imagem";
+import { CabecalhoDaPagina } from "./cabecalho-pagina";
 import { FormularioProduto, type DadosFormularioProduto } from "./formulario-produto";
 import { GerenciadorCategorias } from "./gerenciador-categorias";
-import { GerenciadorPersonalizacao } from "./gerenciador-personalizacao";
 import { ControlePaginacao, ListaProdutos, type Paginacao } from "./lista-produtos";
 
 /*
@@ -113,8 +114,9 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
         return;
       }
       await Promise.all([carregar(), carregarCategorias()]);
-      // Produto novo continua aberto: é o único momento em que a imagem pode ser enviada.
-      setTela(tela.produto ? { nome: "lista" } : { nome: "formulario", produto: resultado.dados });
+      // A edição continua aberta: salvar não tira o gestor da tela (e o produto novo libera imagem e grupos).
+      setTela({ nome: "formulario", produto: resultado.dados });
+      avisar.sucesso(tela.produto ? "Produto salvo" : "Produto criado");
     } finally {
       setEnviando(false);
     }
@@ -136,12 +138,14 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
   if (tela.nome === "formulario") {
     const produto = tela.produto;
     return (
-      <Secao titulo={produto ? "Editar produto" : "Novo produto"} descricao={nomeEmpresa} acoes={<Botao aparencia="secundario" onClick={() => setTela({ nome: "lista" })}>Voltar ao catálogo</Botao>}>
+      <div className="flex flex-col gap-4">
         <FormularioProduto
+          // Depois de criar, a mesma tela vira a edição do produto criado.
           key={produto?.id ?? "novo"}
           produto={produto}
           categorias={categorias}
           enviando={enviando}
+          empresaId={empresaId}
           aoSalvar={(dados) => void salvar(dados)}
           aoCancelar={() => setTela({ nome: "lista" })}
           {...(produto
@@ -153,24 +157,24 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
               }
             : {})}
         />
-        {/*
-          Opções para o cliente montar: como o envio de imagem, só para produto JÁ SALVO — o grupo
-          pertence a um produto, que precisa existir antes. Fica depois do formulário porque é uma
-          etapa opcional: a maioria dos produtos é vendida como está.
-        */}
-        {produto && (
-          <div className="border-t border-borda pt-4">
-            <GerenciadorPersonalizacao empresaId={empresaId} produtoId={produto.id} />
-          </div>
-        )}
         {erro && <Aviso tom="erro">{erro}</Aviso>}
-      </Secao>
+      </div>
     );
   }
 
   if (tela.nome === "categorias") {
     return (
-      <Secao titulo="Categorias" descricao={`Seções do catálogo de ${nomeEmpresa}`} acoes={<Botao aparencia="secundario" onClick={() => setTela({ nome: "lista" })}>Voltar ao catálogo</Botao>}>
+      <section aria-label="Categorias" className="flex flex-col gap-6">
+        <CabecalhoDaPagina
+          trilha={[{ rotulo: "Cardápio" }, { rotulo: "Produtos", aoIr: () => setTela({ nome: "lista" }) }, { rotulo: "Categorias" }]}
+          titulo="Categorias"
+          subtitulo={`Seções do catálogo de ${nomeEmpresa}.`}
+          acoes={
+            <Botao aparencia="secundario" onClick={() => setTela({ nome: "lista" })}>
+              Catálogo
+            </Botao>
+          }
+        />
         <GerenciadorCategorias
           empresaId={empresaId}
           categorias={categorias}
@@ -179,23 +183,25 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
             void carregar();
           }}
         />
-      </Secao>
+      </section>
     );
   }
 
   return (
-    <Secao
-      titulo="Produtos"
-      descricao={nomeEmpresa}
-      acoes={
-        <>
-          <Botao aparencia="secundario" onClick={() => setTela({ nome: "categorias" })}>
-            Categorias
-          </Botao>
-          <Botao onClick={() => setTela({ nome: "formulario", produto: null })}>Novo produto</Botao>
-        </>
-      }
-    >
+    <section aria-label="Produtos" className="flex flex-col gap-6">
+      <CabecalhoDaPagina
+        trilha={[{ rotulo: "Cardápio" }, { rotulo: "Produtos" }]}
+        titulo="Produtos"
+        subtitulo={`O cardápio de ${nomeEmpresa}, organizado do seu jeito.`}
+        acoes={
+          <>
+            <Botao aparencia="secundario" onClick={() => setTela({ nome: "categorias" })}>
+              Categorias
+            </Botao>
+            <Botao onClick={() => setTela({ nome: "formulario", produto: null })}>Novo produto</Botao>
+          </>
+        }
+      />
       <form
         className="flex flex-col gap-3 sm:flex-row sm:items-end"
         onSubmit={(evento) => {
@@ -244,6 +250,6 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
         </>
       )}
       {erro && <Aviso tom="erro">{erro}</Aviso>}
-    </Secao>
+    </section>
   );
 }

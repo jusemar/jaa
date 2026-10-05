@@ -1,4 +1,4 @@
-import { QUANTIDADE_MAXIMA_POR_ITEM, type EmpresaPublica, type GrupoOpcoesPublico, type ProdutoPublico } from "@jaa/contratos";
+import { QUANTIDADE_MAXIMA_POR_ITEM, type EmpresaPublica, type FuncionamentoPublico, type GrupoOpcoesPublico, type ProdutoPublico } from "@jaa/contratos";
 import { Image } from "expo-image";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
@@ -8,6 +8,8 @@ import { Texto } from "@/components/ui/texto";
 import { Cores, Espaco, Raio } from "@/constants/theme";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { filtrarProdutos, secaoAtiva, type SecaoCardapio } from "../lib/cardapio";
+import { acaoOuExplicacao, type BloqueioDePedido } from "../lib/funcionamento";
+import { FuncionamentoDaEmpresa } from "./funcionamento-da-empresa";
 import { MontagemProduto, Quantidade } from "./montagem-produto";
 
 /*
@@ -28,8 +30,14 @@ export function Cardapio({
   aoVer,
   aoAdicionar,
   aoFechar,
+  funcionamento,
+  bloqueio,
 }: {
   empresa: EmpresaPublica;
+  // Aberta ou fechada agora + a semana, como o servidor informou. Ausente enquanto não se sabe.
+  funcionamento?: FuncionamentoPublico | undefined;
+  // Empresa fechada: as ações de pedir ficam com cara de indisponíveis e explicam ao toque.
+  bloqueio?: BloqueioDePedido | undefined;
   // Seções já montadas e ORDENADAS por quem cuida dos dados. Aqui é só apresentação: uma seção por vez.
   secoes: SecaoCardapio[];
   // null = ninguém escolheu ainda; a seção inicial é derivada, não gravada.
@@ -50,16 +58,20 @@ export function Cardapio({
   return (
     <View style={estilos.coluna}>
       {/* Cabeçalho do cardápio dentro da conversa: quem é a loja e como sair dela. */}
-      <Cartao style={estilos.cabecalho}>
-        <Icone nome="loja" cor="marca" />
-        <Texto variante="corpoForte" numberOfLines={1} accessibilityRole="header" style={estilos.flex}>
-          Cardápio de {empresa.nome}
-        </Texto>
-        {aoFechar && (
-          <Pressable accessibilityRole="button" accessibilityLabel="Fechar cardápio" onPress={aoFechar} style={({ pressed }) => [estilos.fechar, pressed && estilos.pressionado]}>
-            <Icone nome="fechar" tamanho={16} />
-          </Pressable>
-        )}
+      <Cartao style={estilos.cabecalhoComEstado}>
+        <View style={estilos.tituloDoCabecalho}>
+          <Icone nome="loja" cor="marca" />
+          <Texto variante="corpoForte" numberOfLines={1} accessibilityRole="header" style={estilos.flex}>
+            Cardápio de {empresa.nome}
+          </Texto>
+          {aoFechar && (
+            <Pressable accessibilityRole="button" accessibilityLabel="Fechar cardápio" onPress={aoFechar} style={({ pressed }) => [estilos.fechar, pressed && estilos.pressionado]}>
+              <Icone nome="fechar" tamanho={16} />
+            </Pressable>
+          )}
+        </View>
+        {/* Primeira coisa que o cliente lê: dá para pedir agora? Se não, quando? */}
+        {funcionamento && <FuncionamentoDaEmpresa funcionamento={funcionamento} />}
       </Cartao>
 
       <Cartao style={estilos.filtros}>
@@ -94,6 +106,7 @@ export function Cardapio({
           key={`${montagem.produto.id}-${montagem.chave}`}
           produto={montagem.produto}
           grupos={montagem.grupos}
+          bloqueio={aoAdicionar ? bloqueio : undefined}
           aoAdicionar={aoAdicionar ? (opcaoIds, quantidade, observacao) => aoAdicionar(montagem.produto, quantidade, opcaoIds, observacao) : () => {}}
         />
       ) : encontrados.length === 0 ? (
@@ -110,7 +123,7 @@ export function Cardapio({
         // UMA seção por vez: o que aparece aqui é sempre o conteúdo do chip selecionado.
         <View accessibilityLabel={ativa?.nome ?? "Produtos"} style={estilos.produtos}>
           {encontrados.map((produto) => (
-            <CardProduto key={produto.id} produto={produto} aoVer={aoVer} {...(aoAdicionar ? { aoAdicionar: (escolhido: ProdutoPublico) => aoAdicionar(escolhido, 1, [], null) } : {})} />
+            <CardProduto key={produto.id} produto={produto} aoVer={aoVer} bloqueio={bloqueio} {...(aoAdicionar ? { aoAdicionar: (escolhido: ProdutoPublico) => aoAdicionar(escolhido, 1, [], null) } : {})} />
           ))}
         </View>
       )}
@@ -137,7 +150,17 @@ function ChipCategoria({ ativo, rotulo, total, aoEscolher }: { ativo: boolean; r
  * Card do produto. O corpo inteiro abre o detalhe; o botão à direita é a ação rápida. Produto que
  * precisa ser MONTADO não tem "Adicionar" direto — seria adicionar algo que ainda não foi escolhido.
  */
-function CardProduto({ produto, aoVer, aoAdicionar }: { produto: ProdutoPublico; aoVer: (produto: ProdutoPublico) => void; aoAdicionar?: ((produto: ProdutoPublico) => void) | undefined }) {
+function CardProduto({
+  produto,
+  aoVer,
+  aoAdicionar,
+  bloqueio,
+}: {
+  produto: ProdutoPublico;
+  aoVer: (produto: ProdutoPublico) => void;
+  aoAdicionar?: ((produto: ProdutoPublico) => void) | undefined;
+  bloqueio?: BloqueioDePedido | undefined;
+}) {
   return (
     <Cartao style={estilos.produto}>
       <Pressable accessibilityRole="button" onPress={() => aoVer(produto)} style={estilos.corpoProduto}>
@@ -171,7 +194,13 @@ function CardProduto({ produto, aoVer, aoAdicionar }: { produto: ProdutoPublico;
             </Texto>
           </Pressable>
         ) : (
-          <Pressable accessibilityRole="button" accessibilityLabel={`Adicionar ${produto.nome}`} onPress={() => aoAdicionar(produto)} style={({ pressed }) => [estilos.adicionarRapido, pressed && estilos.pressionado]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Adicionar ${produto.nome}`}
+            // Fechada: parece indisponível, mas continua tocável para explicar o motivo.
+            accessibilityState={{ disabled: Boolean(bloqueio) }}
+            onPress={acaoOuExplicacao(bloqueio, () => aoAdicionar(produto))}
+            style={({ pressed }) => [estilos.adicionarRapido, bloqueio && estilos.inativo, pressed && estilos.pressionado]}>
             <Icone nome="mais" tamanho={16} cor="marcaConteudo" />
           </Pressable>
         )
@@ -186,7 +215,11 @@ export function DetalheProdutoCatalogo({
   grupos,
   aoVoltar,
   aoAdicionar,
+  funcionamento,
+  bloqueio,
 }: {
+  funcionamento?: FuncionamentoPublico | undefined;
+  bloqueio?: BloqueioDePedido | undefined;
   empresa: EmpresaPublica;
   produto: ProdutoPublico;
   // Vazio = produto comum: adiciona com quantidade, sem montagem.
@@ -196,13 +229,14 @@ export function DetalheProdutoCatalogo({
 }) {
   return (
     <View accessibilityLabel="Detalhe do produto" style={estilos.coluna}>
-      <Cartao style={estilos.cabecalho}>
+      <Cartao style={estilos.cabecalhoComEstado}>
         <Pressable accessibilityRole="button" onPress={aoVoltar} style={({ pressed }) => [estilos.voltar, pressed && estilos.pressionado]}>
           <Icone nome="voltar" tamanho={16} />
           <Texto variante="pequenoMedio" cor="conteudoSuave">
             Cardápio
           </Texto>
         </Pressable>
+        {funcionamento && <FuncionamentoDaEmpresa funcionamento={funcionamento} />}
       </Cartao>
 
       <Cartao style={estilos.resumoProduto}>
@@ -230,27 +264,36 @@ export function DetalheProdutoCatalogo({
 
       {aoAdicionar &&
         (grupos.length > 0 ? (
-          <MontagemProduto produto={produto} grupos={grupos} aoAdicionar={(opcaoIds, quantidade, observacao) => aoAdicionar(produto, quantidade, opcaoIds, observacao)} />
+          <MontagemProduto produto={produto} grupos={grupos} bloqueio={bloqueio} aoAdicionar={(opcaoIds, quantidade, observacao) => aoAdicionar(produto, quantidade, opcaoIds, observacao)} />
         ) : (
-          <AdicionarAoCarrinho produto={produto} aoAdicionar={(quantidade) => aoAdicionar(produto, quantidade, [], null)} />
+          <AdicionarAoCarrinho produto={produto} bloqueio={bloqueio} aoAdicionar={(quantidade) => aoAdicionar(produto, quantidade, [], null)} />
         ))}
     </View>
   );
 }
 
 /** Quantidade (inteira, de 1 ao limite) antes de adicionar ao carrinho — para produto sem montagem. */
-function AdicionarAoCarrinho({ produto, aoAdicionar }: { produto: ProdutoPublico; aoAdicionar: (quantidade: number) => void }) {
+function AdicionarAoCarrinho({ produto, aoAdicionar, bloqueio }: { produto: ProdutoPublico; aoAdicionar: (quantidade: number) => void; bloqueio?: BloqueioDePedido | undefined }) {
   const [quantidade, setQuantidade] = useState(1);
   const limitar = (valor: number) => Math.min(Math.max(Math.trunc(valor), 1), QUANTIDADE_MAXIMA_POR_ITEM);
   return (
     <Cartao style={estilos.adicionarAoPedido}>
       <Quantidade valor={quantidade} aoMudar={(valor) => setQuantidade(limitar(valor))} rotulo={produto.nome} />
-      <Pressable accessibilityRole="button" onPress={() => aoAdicionar(quantidade)} style={({ pressed }) => [estilos.botaoAdicionar, pressed && estilos.pressionado]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled: Boolean(bloqueio) }}
+        onPress={acaoOuExplicacao(bloqueio, () => aoAdicionar(quantidade))}
+        style={({ pressed }) => [estilos.botaoAdicionar, bloqueio && estilos.inativo, pressed && estilos.pressionado]}>
         <Icone nome="cesta" tamanho={16} cor="marcaConteudo" />
         <Texto variante="corpoMedio" cor="marcaConteudo">
           Adicionar ao pedido
         </Texto>
       </Pressable>
+      {bloqueio && (
+        <Texto variante="mini" cor="aviso" style={estilos.motivo}>
+          {bloqueio.motivo}
+        </Texto>
+      )}
     </Cartao>
   );
 }
@@ -275,6 +318,10 @@ const estilos = StyleSheet.create({
   fechar: { alignItems: "center", borderRadius: Raio.compacto, height: 36, justifyContent: "center", width: 36 },
   voltar: { alignItems: "center", borderRadius: Raio.compacto, flexDirection: "row", gap: 6, minHeight: 36, paddingHorizontal: Espaco.dois },
   pressionado: { opacity: 0.8 },
+  inativo: { opacity: 0.5 },
+  motivo: { width: "100%" },
+  cabecalhoComEstado: { gap: 2, paddingHorizontal: Espaco.tres, paddingVertical: Espaco.dois },
+  tituloDoCabecalho: { alignItems: "center", flexDirection: "row", gap: Espaco.dois, minHeight: 36 },
   filtros: { gap: Espaco.tres, padding: Espaco.tres },
   busca: { alignItems: "center", backgroundColor: Cores.superficieSuave, borderRadius: Raio.compacto, flexDirection: "row", gap: Espaco.dois, minHeight: 44, paddingHorizontal: Espaco.tres },
   entradaBusca: { color: Cores.conteudo, flex: 1, fontSize: 14, minWidth: 0, paddingVertical: 0 },

@@ -286,3 +286,38 @@ export const IconeCartao = (props: PropsIcone) => (
     <path d="M2.5 10h19M6.5 14.5h3.5" />
   </Icone>
 );
+
+export const IconeOlho = (props: PropsIcone) => (
+  <Icone {...props}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="2.75" />
+  </Icone>
+);
+
+export const IconeCalendario = (props: PropsIcone) => (
+  <Icone {...props}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+    <path d="M3.5 10h17M8 3v4M16 3v4M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" />
+  </Icone>
+);
+
+export const IconeCamadas = (props: PropsIcone) => (
+  <Icone {...props}>
+    <path d="m12 3.5 9 4.5-9 4.5L3 8l9-4.5Z" />
+    <path d="m3 12 9 4.5 9-4.5M3 16l9 4.5 9-4.5" />
+  </Icone>
+);
+
+export const IconeDocumento = (props: PropsIcone) => (
+  <Icone {...props}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
+    <path d="M14 3v5h5M9 13h6M9 17h6" />
+  </Icone>
+);
+
+export const IconeInformacao = (props: PropsIcone) => (
+  <Icone {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5.5M12 7.5h.01" />
+  </Icone>
+);
