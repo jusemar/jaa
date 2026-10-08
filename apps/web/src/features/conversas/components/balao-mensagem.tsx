@@ -17,7 +17,7 @@ import { rotuloAutorResposta } from "../lib/respostas";
 import type { EstadoImagem } from "../lib/urls-imagens";
 import { ImagemMensagem } from "./imagem-mensagem";
 import { PlayerAudio } from "./player-audio";
-import { CardPedido } from "@/features/pedidos/components/apresentacao-pedido";
+import { PedidoNaConversa } from "@/features/pedidos/components/pedido-na-conversa";
 import { MenuMensagem, type AcaoMensagem } from "./menu-mensagem";
 import { ReferenciaResposta } from "./referencia-resposta";
 import { TextoComLinks } from "./texto-com-links";
@@ -53,8 +53,6 @@ export function BalaoMensagem({
   aoEditar,
   aoExcluirParaMim,
   aoExcluirParaTodos,
-  aoAbrirPedido,
-  visaoCliente = false,
   estadoImagem = { situacao: "carregando" },
   aoAbrirImagem,
   aoFalharImagem,
@@ -83,8 +81,6 @@ export function BalaoMensagem({
   aoEditar?: (mensagem: Mensagem) => void;
   aoExcluirParaMim?: (mensagem: Mensagem) => void;
   aoExcluirParaTodos?: (mensagem: Mensagem) => void;
-  aoAbrirPedido?: (pedidoId: string) => void;
-  visaoCliente?: boolean;
   // Imagem: a URL privada vem do cache em memória da conversa (nunca da mensagem).
   estadoImagem?: EstadoImagem;
   aoAbrirImagem?: (mensagem: Mensagem, url: string) => void;
@@ -113,6 +109,18 @@ export function BalaoMensagem({
   if (aoExcluirParaMim) acoes.push({ id: "apagar-para-mim", rotulo: "Apagar para mim", Icone: IconeLixeira, executar: () => aoExcluirParaMim(mensagem), perigosa: true });
   if (propria && !excluida && aoExcluirParaTodos) {
     acoes.push({ id: "apagar-para-todos", rotulo: "Apagar para todos", Icone: IconeLixeira, executar: () => aoExcluirParaTodos(mensagem), perigosa: true });
+  }
+
+  /*
+   * PEDIDO não é balão: a mensagem de pedido É o acompanhamento, na largura da conversa. Só quem fez
+   * o pedido a recebe (para a empresa pedido não é mensagem), então esta é sempre a visão do cliente.
+   */
+  if (ehPedido && mensagem.pedido && !excluida) {
+    return (
+      <li data-mensagem-id={mensagem.id} data-propria={propria} data-mensagem-de-pedido className="mensagem-entrando">
+        <PedidoNaConversa resumo={mensagem.pedido} criadoEm={mensagem.criadoEm} aoConversarCom={aoAbrirConversa} />
+      </li>
+    );
   }
 
   return (
@@ -162,12 +170,6 @@ export function BalaoMensagem({
           <span data-conteudo-excluido className="italic opacity-70">
             Mensagem excluída
           </span>
-        ) : ehPedido && mensagem.pedido ? (
-          <CardPedido
-            pedido={mensagem.pedido}
-            aoAbrir={(pedidoId) => aoAbrirPedido?.(pedidoId)}
-            visaoCliente={visaoCliente}
-          />
         ) : ehAudio ? (
           // Mensagem de voz: player próprio. Sem anexo ativo (fora do tombstone), "Áudio indisponível".
           <PlayerAudio

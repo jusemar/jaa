@@ -57,6 +57,8 @@ describe("estado no topo do cardápio", () => {
     const marcacao = html(createElement(FuncionamentoDaEmpresa, { funcionamento: ABERTA }));
     const botao = tag(marcacao, "data-ver-horarios");
     assert.ok(botao.includes('aria-expanded="false"') && botao.includes("min-h-11") && texto(marcacao).includes("Horários"));
+    // Hierarquia: o estado em destaque e o complemento ("até 14:00") em peso secundário.
+    assert.ok(/<span class="font-semibold text-marca">Aberto agora<\/span><span class="text-conteudo-suave"> · até 14:00<\/span>/.test(marcacao), marcacao);
     assert.ok(!marcacao.includes("data-semana-de-funcionamento"), "a semana não ocupa espaço até ser pedida");
     const codigo = semComentarios(fonte("./funcionamento-da-empresa.tsx"));
     assert.ok(codigo.includes("DIAS_SEMANA.map") && codigo.includes("horariosDoDiaEmTexto(semana, dia)") && codigo.includes("dia === hoje"));

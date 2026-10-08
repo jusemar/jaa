@@ -126,3 +126,25 @@ describe("bloqueio na interface", () => {
     assert.doesNotMatch(fonte, /Mensagens bloqueadas entre vocês/);
   });
 });
+
+describe("confirmação de apagar conversa: legível e por cima de tudo", () => {
+  const ler = async (caminho: string) => readFileSync(new URL(caminho, import.meta.url), "utf8");
+
+  it("o diálogo vai para o <body> (portal): não fica preso no botão '⋯' da lista, que usa translate", async () => {
+    const dialogo = await ler("../../../components/ui/confirmacao.tsx");
+    assert.ok(dialogo.includes("createPortal(dialogo, document.body)"));
+    assert.ok(dialogo.includes("fixed inset-0 z-[1100]"));
+    // O invólucro do "⋯" continua com translate (centralização); por isso o diálogo não pode morar nele.
+    assert.ok((await ler("./lista-conversas.tsx")).includes("-translate-y-1/2"));
+  });
+
+  it("o erro da API aparece inteiro dentro do diálogo, com quebra de linha, e a ação continua disponível", () => {
+    const mensagem = "Não foi possível apagar a conversa agora. Tente novamente em instantes.";
+    const html = renderToStaticMarkup(createElement(ConfirmarAcaoConversa, { acao: "apagar", item: item(PESSOA), ocupado: false, erro: mensagem, aoConfirmar: () => {}, aoCancelar: () => {} }));
+    assert.ok(/role="alert"[^>]*data-erro-da-confirmacao/.test(html) && texto(html).includes(mensagem));
+    assert.ok(/data-erro-da-confirmacao[^>]*overflow-wrap:anywhere/.test(html));
+    assert.ok(html.includes("data-confirmar-acao-sim") && !/data-confirmar-acao-sim[^>]* disabled=""/.test(html));
+    assert.ok(texto(html).includes("Ela sai da sua lista só para você."));
+  });
+});
+

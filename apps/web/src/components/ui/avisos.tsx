@@ -27,6 +27,14 @@ export function AvisosDeAcao() {
         unstyled: true,
         classNames: {
           toast: BASE,
+          /*
+           * Aviso SEM tipo (`avisarEmDestaque`: "Sua entrega é a próxima"). Com o visual do Sonner
+           * desligado, um toast sem classe para o tipo "default" ficava SEM FUNDO: transparente, com
+           * a conversa aparecendo através dele. Fundo sólido do tema, como os demais.
+           */
+          default: "border-marca bg-marca-suave text-marca-suave-conteudo",
+          title: "font-bold",
+          description: "font-normal text-conteudo",
           success: "border-marca/30 bg-marca-suave text-marca-suave-conteudo",
           error: "border-perigo/30 bg-superficie text-perigo",
           warning: "border-aviso/30 bg-superficie text-aviso",

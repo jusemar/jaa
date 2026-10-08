@@ -1,7 +1,7 @@
 import type { Banco } from "@jaa/banco";
 import { empresas, identidades, membrosEmpresa } from "@jaa/banco/schema";
 import type { PapelMembroEmpresa } from "@jaa/contratos";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 
 // Empresa como vista por um membro: dados da empresa + identidade empresarial + papel do membro.
 export interface EmpresaDoMembroRegistro {
@@ -55,12 +55,29 @@ const colunasEmpresaDoMembro = {
  * Qualquer falha desfaz tudo; o banco ainda confere no commit (trigger diferido) que a empresa tem
  * identidade e proprietário. `usuarioId` vem da sessão.
  */
+/** A conta já é proprietária de `maximo` empresas: não cria outra. */
+export class ErroLimiteDeEmpresas extends Error {}
+
+/**
+ * `maximoCriadas`: teto de empresas de que a conta pode ser PROPRIETÁRIA. Conferido DENTRO da transação,
+ * com uma trava por conta — duas criações simultâneas da mesma pessoa não passam as duas. Sem o teto
+ * (infraestrutura e preparação de testes) a inserção é direta.
+ */
 export async function inserirEmpresaComProprietario(
   banco: Banco,
   { usuarioId, nome, nomeUsuario, slug }: { usuarioId: string; nome: string; nomeUsuario: string; slug: string },
+  { maximoCriadas }: { maximoCriadas?: number } = {},
 ): Promise<string> {
   try {
     return await banco.transaction(async (transacao) => {
+      if (maximoCriadas !== undefined) {
+        await transacao.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`jaa:criar-empresa:${usuarioId}`}, 0))`);
+        const [criadas] = await transacao
+          .select({ total: count() })
+          .from(membrosEmpresa)
+          .where(and(eq(membrosEmpresa.usuarioId, usuarioId), eq(membrosEmpresa.papel, "proprietario")));
+        if ((criadas?.total ?? 0) >= maximoCriadas) throw new ErroLimiteDeEmpresas();
+      }
       const [empresa] = await transacao.insert(empresas).values({ slug }).returning({ id: empresas.id });
       if (!empresa) throw new Error("Inserção de empresa não retornou registro.");
       await transacao.insert(identidades).values({ tipo: "empresarial", empresaId: empresa.id, nomeExibicao: nome, nomeUsuario });

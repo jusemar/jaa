@@ -1,6 +1,7 @@
 import { processarFormacoesVencidas, publicarDespacho, type DependenciasDespacho } from "../casos-de-uso/despacho-automatico.js";
 import { listarEmpresasComSaidaPendente } from "../repositorios/repositorio-despacho.js";
 import { despacharPendentes } from "../casos-de-uso/despacho-automatico.js";
+import { expirarPresencasEPublicar } from "./publicar-operacao.js";
 
 /**
  * FECHAMENTO POR TEMPO, do lado do SERVIDOR.
@@ -30,6 +31,8 @@ export function iniciarRotinaDespacho(dependencias: DependenciasDespacho, interv
     if (rodando) return;
     rodando = true;
     try {
+      // Antes de despachar: quem parou de confirmar a localização sai da fila (e todos são avisados).
+      await expirarPresencasEPublicar(dependencias).catch(() => undefined);
       const fechadas = await processarFormacoesVencidas(dependencias);
       // Saídas que já estavam esperando alguém: um entregador pode ter ficado elegível no intervalo.
       for (const empresaId of await listarEmpresasComSaidaPendente(dependencias.banco)) {

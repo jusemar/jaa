@@ -3,7 +3,8 @@
 import { PAGINA_PRODUTOS_TAMANHO_PADRAO, type CategoriaProduto, type Produto } from "@jaa/contratos";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { avisar } from "@/components/ui/avisos";
-import { Aviso, Botao, CampoSelecao, CampoTexto, Carregando } from "@/components/ui/primitivos";
+import { IconeBusca, IconeGrade, IconeMais } from "@/components/ui/icones";
+import { Aviso, Botao, BotaoIcone, Carregando } from "@/components/ui/primitivos";
 import {
   alterarDisponibilidade,
   atualizarProduto,
@@ -43,6 +44,17 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
   const [filtroCategoria, setFiltroCategoria] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+
+  // A busca se aplica sozinha, um instante depois de a pessoa parar de digitar (Enter aplica na hora).
+  useEffect(() => {
+    const termo = busca.trim();
+    if (termo === buscaAplicada) return;
+    const espera = setTimeout(() => {
+      setPagina(1);
+      setBuscaAplicada(termo);
+    }, 350);
+    return () => clearTimeout(espera);
+  }, [busca, buscaAplicada]);
 
   const consulta = useMemo(
     () => ({
@@ -188,56 +200,84 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
   }
 
   return (
-    <section aria-label="Produtos" className="flex flex-col gap-6">
-      <CabecalhoDaPagina
-        trilha={[{ rotulo: "Cardápio" }, { rotulo: "Produtos" }]}
-        titulo="Produtos"
-        subtitulo={`O cardápio de ${nomeEmpresa}, organizado do seu jeito.`}
-        acoes={
-          <>
-            <Botao aparencia="secundario" onClick={() => setTela({ nome: "categorias" })}>
-              Categorias
-            </Botao>
-            <Botao onClick={() => setTela({ nome: "formulario", produto: null })}>Novo produto</Botao>
-          </>
-        }
-      />
+    /*
+     * No celular a lista fica um pouco mais larga que o título: a margem negativa tira 6 px do
+     * respiro de 16 px da área de trabalho SÓ aqui (sobram 10 px), e título, filtros e paginação
+     * recuperam os 16 px com um respiro próprio. A partir de `sm` vale o respiro normal.
+     */
+    <section aria-label="Produtos" data-lista-administrativa className="-mx-1.5 flex flex-col gap-3 sm:mx-0 sm:gap-5">
+      <div className="px-1.5 sm:px-0">
+        <CabecalhoDaPagina
+          compacto
+          trilha={[{ rotulo: "Cardápio" }, { rotulo: "Produtos" }]}
+          titulo="Produtos"
+          subtitulo={`O cardápio de ${nomeEmpresa}, organizado do seu jeito.`}
+          acoes={
+            <>
+              {/* Só ícones: o nome de cada ação fica no rótulo acessível e na dica. */}
+              <BotaoIcone aparencia="secundario" aria-label="Categorias" title="Categorias" data-abrir-categorias onClick={() => setTela({ nome: "categorias" })}>
+                <IconeGrade className="h-5 w-5" />
+              </BotaoIcone>
+              <BotaoIcone aparencia="principal" aria-label="Novo produto" title="Novo produto" data-novo-produto onClick={() => setTela({ nome: "formulario", produto: null })}>
+                <IconeMais className="h-5 w-5" />
+              </BotaoIcone>
+            </>
+          }
+        />
+      </div>
+
+      {/*
+        Filtros numa linha só: busca e categoria lado a lado, sem rótulo ocupando altura (o nome de
+        cada um fica no rótulo acessível) e sem botão — escolher a categoria ou digitar já filtra.
+      */}
       <form
-        className="flex flex-col gap-3 sm:flex-row sm:items-end"
+        data-filtros-de-produtos
+        role="search"
+        className="grid grid-cols-[minmax(0,1fr)_minmax(0,7rem)] gap-2 px-1.5 sm:grid-cols-[minmax(0,1fr)_12rem] sm:gap-3 sm:px-0"
         onSubmit={(evento) => {
           evento.preventDefault();
           setPagina(1);
           setBuscaAplicada(busca.trim());
         }}
       >
-        <div className="flex-1">
-          <CampoTexto id="produtos-busca" rotulo="Buscar" type="search" value={busca} placeholder="Nome do produto" onChange={(evento) => setBusca(evento.target.value)} />
-        </div>
-        <div className="sm:w-56">
-          <CampoSelecao
-            id="produtos-categoria"
-            rotulo="Categoria"
-            value={filtroCategoria}
-            onChange={(evento) => {
-              setPagina(1);
-              setFiltroCategoria(evento.target.value);
-            }}
-          >
-            <option value="">Todas</option>
-            <option value="sem-categoria">Sem categoria</option>
-            {categorias.map((categoria) => (
-              <option key={categoria.id} value={categoria.id}>
-                {categoria.nome}
-              </option>
-            ))}
-          </CampoSelecao>
-        </div>
-        <Botao type="submit" aparencia="secundario">
-          Filtrar
-        </Botao>
+        <label className="flex min-h-11 min-w-0 items-center gap-2 rounded-jaa-compacto bg-superficie-suave px-3 text-conteudo-suave focus-within:ring-2 focus-within:ring-marca/30 sm:min-h-10">
+          <span className="sr-only">Buscar produto</span>
+          <IconeBusca className="h-4 w-4 shrink-0" />
+          <input
+            id="produtos-busca"
+            type="search"
+            value={busca}
+            placeholder="Buscar produto"
+            autoComplete="off"
+            onChange={(evento) => setBusca(evento.target.value)}
+            className="min-w-0 flex-1 bg-transparent text-base text-conteudo outline-none placeholder:text-conteudo-suave sm:text-sm"
+          />
+        </label>
+        <select
+          id="produtos-categoria"
+          aria-label="Filtrar por categoria"
+          value={filtroCategoria}
+          onChange={(evento) => {
+            setPagina(1);
+            setFiltroCategoria(evento.target.value);
+          }}
+          className="min-h-11 w-full min-w-0 truncate rounded-jaa-compacto border border-borda bg-superficie px-2 text-sm text-conteudo sm:min-h-10"
+        >
+          <option value="">Todas</option>
+          <option value="sem-categoria">Sem categoria</option>
+          {categorias.map((categoria) => (
+            <option key={categoria.id} value={categoria.id}>
+              {categoria.nome}
+            </option>
+          ))}
+        </select>
       </form>
 
-      {produtos === null && !erro && <Carregando texto="Carregando catálogo…" />}
+      {produtos === null && !erro && (
+        <div className="px-1.5 sm:px-0">
+          <Carregando texto="Carregando catálogo…" />
+        </div>
+      )}
       {produtos && (
         <>
           <ListaProdutos
@@ -249,7 +289,11 @@ export function AreaProdutos({ empresaId, nomeEmpresa }: { empresaId: string; no
           <ControlePaginacao paginacao={paginacao} aoTrocar={setPagina} />
         </>
       )}
-      {erro && <Aviso tom="erro">{erro}</Aviso>}
+      {erro && (
+        <div className="px-1.5 sm:px-0">
+          <Aviso tom="erro">{erro}</Aviso>
+        </div>
+      )}
     </section>
   );
 }

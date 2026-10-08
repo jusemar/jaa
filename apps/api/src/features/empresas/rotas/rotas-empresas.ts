@@ -2,6 +2,7 @@ import type { Banco } from "@jaa/banco";
 import {
   atualizarEmpresaEntradaSchema,
   criarEmpresaEntradaSchema,
+  MENSAGEM_LIMITE_DE_EMPRESAS,
   type ErroApi,
   type ListaEmpresas,
 } from "@jaa/contratos";
@@ -37,7 +38,7 @@ function responderSlugIndisponivel(resposta: FastifyReply) {
  * Empresas operadas pela CONTA da sessão. Exige cadastro completo (identidade pessoal), mas a empresa
  * nunca é vinculada à identidade pessoal: o vínculo é conta ↔ empresa (membros_empresa).
  */
-export function registrarRotasEmpresas(servidor: FastifyInstance, dependencias: { banco: Banco; autenticacao: Autenticacao }) {
+export function registrarRotasEmpresas(servidor: FastifyInstance, dependencias: { banco: Banco; autenticacao: Autenticacao; maximoEmpresasCriadasPorConta: number }) {
   const preHandler = exigirIdentidadeAutenticada(dependencias);
 
   servidor.post("/empresas", { preHandler }, async (requisicao, resposta) => {
@@ -46,7 +47,7 @@ export function registrarRotasEmpresas(servidor: FastifyInstance, dependencias: 
     const entrada = criarEmpresaEntradaSchema.safeParse(requisicao.body);
     if (!entrada.success) return responderDadosInvalidos(resposta, entrada.error.issues[0]?.message);
 
-    const resultado = await criarEmpresa(dependencias.banco, usuarioId, entrada.data);
+    const resultado = await criarEmpresa(dependencias.banco, usuarioId, entrada.data, dependencias.maximoEmpresasCriadasPorConta);
     switch (resultado.tipo) {
       case "criada":
         return resposta.code(201).send(serializarEmpresa(resultado.empresa));
@@ -54,6 +55,10 @@ export function registrarRotasEmpresas(servidor: FastifyInstance, dependencias: 
         return resposta.code(200).send(serializarEmpresa(resultado.empresa));
       case "slug-indisponivel":
         return responderSlugIndisponivel(resposta);
+      case "limite-de-empresas": {
+        const erro: ErroApi = { codigo: "LIMITE_DE_EMPRESAS_ATINGIDO", mensagem: MENSAGEM_LIMITE_DE_EMPRESAS };
+        return resposta.code(409).send(erro);
+      }
       case "nome-usuario-indisponivel": {
         const erro: ErroApi = { codigo: "NOME_USUARIO_INDISPONIVEL", mensagem: "Este @usuario não está disponível." };
         return resposta.code(409).send(erro);

@@ -24,7 +24,7 @@ import { listarPedidosDaEmpresa } from "@/features/pedidos/lib/api-pedidos";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { criarSaida, liberarSaida, listarEntregadores, listarPosicoesDaEmpresa, listarSaidasDaEmpresa, obterPainelDespacho, obterPainelOperacional } from "../lib/api-entregas";
-import { MapaPercurso } from "./mapa-percurso";
+import { MapaPercursoMapbox } from "./mapa-percurso-mapbox";
 import { formatarEspera } from "./painel-despacho";
 import { SequenciaDaSaida } from "./saida-apresentacao";
 
@@ -376,7 +376,8 @@ export function AreaSaidasEmpresa({
                       >
                         {mapaAberto ? "Ocultar mapa" : "Exibir mapa"}
                       </button>
-                      {mapaAberto && <MapaPercurso saida={saida} posicao={posicoes.find((posicao) => posicao.saidaId === saida.id) ?? null} />}
+                      {/* Mapbox, como na área do entregador: o MESMO percurso que a API guardou para esta ordem. */}
+                      {mapaAberto && <MapaPercursoMapbox saida={saida} posicao={posicoes.find((posicao) => posicao.saidaId === saida.id) ?? null} />}
                       <p className="text-xs text-conteudo-suave">
                         Próxima parada: {proxima?.cliente.nomeExibicao ?? "—"}
                         {proxima ? ` (${formatarEnderecoResumido(proxima.destino)})` : ""}

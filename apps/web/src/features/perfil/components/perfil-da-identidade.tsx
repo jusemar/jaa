@@ -40,7 +40,7 @@ export function PerfilDaIdentidade({ identidade, aoFechar }: { identidade: Ident
     <Folha rotulo={`Perfil de ${identidade.nomeExibicao}`} aoFechar={aoFechar}>
       <div data-perfil-da-identidade className="flex flex-col gap-4 pb-2 pt-6">
         <ApresentacaoIdentidade destaque identidade={carregado ?? identidade} fraseStatus={carregado?.fraseStatus ?? null} sobre={carregado?.sobre ?? null}>
-          <BlocoDoPerfil id="link" titulo="Link do Jaa">
+          <BlocoDoPerfil id="link" titulo="Link do Jaaa">
             {/* Já estamos na conversa desta identidade: abrir o link é só fechar o perfil. */}
             <LinkDoJaa nomeUsuario={identidade.nomeUsuario} aoAbrir={aoFechar} />
           </BlocoDoPerfil>

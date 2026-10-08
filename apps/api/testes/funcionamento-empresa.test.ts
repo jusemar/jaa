@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { consultarCatalogo, consultarProdutoDoCatalogo } from "../src/features/catalogo/casos-de-uso/consultar-catalogo.js";
 import { consultarFuncionamentoPublico } from "../src/features/empresas/casos-de-uso/funcionamento.js";
 import { criarCanalEventosMensagens } from "../src/features/mensagens/lib/eventos-mensagens.js";
+import { criarCanalEventosPedidos } from "../src/features/pedidos/lib/eventos-pedidos.js";
 import { criarPedido } from "../src/features/pedidos/casos-de-uso/criar-pedido.js";
 import { serializarGruposPublicos } from "../src/features/produtos/lib/serializar-personalizacao.js";
 import { definirOpcoesDoDia, definirProgramacaoSemanalDoGrupo } from "../src/features/produtos/repositorios/repositorio-personalizacao.js";
@@ -61,7 +62,7 @@ const corpoDoPedido = (opcaoIds: string[] = [], idCliente = randomUUID()) => ({
   pagamento: { forma: "cartao" as const },
 });
 const pedirEm = (instante: Date, opcaoIds: string[] = [], idCliente = randomUUID()) =>
-  criarPedido({ banco: ctx.banco, eventosMensagens: criarCanalEventosMensagens(), agora: () => instante }, cliente.identidadeId, clienteUsuarioId, corpoDoPedido(opcaoIds, idCliente));
+  criarPedido({ banco: ctx.banco, eventosMensagens: criarCanalEventosMensagens(), eventosPedidos: criarCanalEventosPedidos(), agora: () => instante }, cliente.identidadeId, clienteUsuarioId, corpoDoPedido(opcaoIds, idCliente));
 const totalDePedidos = async () => (await ctx.banco.select({ id: pedidos.id }).from(pedidos).where(eq(pedidos.empresaId, empresaId))).length;
 const estadoEm = async (instante: Date) => (await consultarFuncionamentoPublico(ctx.banco, empresaId, instante))!.estado;
 

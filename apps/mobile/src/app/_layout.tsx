@@ -6,6 +6,9 @@ import { useEffect } from "react";
 import { Cores } from "@/constants/theme";
 import { PortaoSessao } from "@/features/conta/components/portao-sessao";
 import { ProvedorContextoConta } from "@/features/conta/components/provedor-contexto-conta";
+// Define a tarefa de presença na base logo na partida: o sistema pode acordar o app sem tela nenhuma
+// e procura a tarefa pelo nome.
+import "@/features/entregas/lib/presenca-segundo-plano";
 
 SplashScreen.preventAutoHideAsync();
 

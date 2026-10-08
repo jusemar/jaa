@@ -4,6 +4,7 @@ import {
   ROTULO_STATUS_PEDIDO_CLIENTE,
   formatarCep,
   formatarEnderecoResumido,
+  montarTimelineAcompanhamento,
   montarTimelinePedido,
   trocoEsperadoCentavos,
   type DestinoPedido,
@@ -11,7 +12,7 @@ import {
   type ResumoPedido,
 } from "@jaa/contratos";
 import { formatarHorarioMensagem } from "@/features/conversas/lib/horarios";
-import { IconeFechar, IconePedidos, IconeSeta } from "@/components/ui/icones";
+import { IconeCheck, IconeFechar } from "@/components/ui/icones";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 
 // Interface TÉCNICA do Pedido Jaa: card na conversa e detalhe. O Jaa não processa pagamento; só mostra
@@ -51,68 +52,78 @@ function ValoresPedido({ pedido }: { pedido: Pick<ResumoPedido, "subtotalCentavo
   );
 }
 
-export function CardPedido({ pedido, aoAbrir, visaoCliente = false }: { pedido: ResumoPedido; aoAbrir: (pedidoId: string) => void; visaoCliente?: boolean }) {
-  const rotulos = visaoCliente ? ROTULO_STATUS_PEDIDO_CLIENTE : ROTULO_STATUS_PEDIDO;
-  return (
-    /*
-     * O card tem SEMPRE fundo claro e texto escuro, inclusive dentro de um balão próprio (que é
-     * jade com texto quase branco). Herdar a cor do balão deixava o conteúdo do pedido branco sobre
-     * verde-claro, praticamente ilegível. Quem identifica "fui eu que enviei" é o balão em volta.
-     */
-    <div data-card-pedido={pedido.id} className="flex min-w-0 flex-col gap-1.5 rounded-jaa-compacto border border-borda bg-mensagem-recebida p-3 text-left text-conteudo shadow-suave">
-      <p className="flex items-center gap-1.5 text-xs font-bold text-marca">
-        <IconePedidos className="h-4 w-4" />
-        Pedido #{pedido.numero}
-      </p>
-      <ul className="text-xs">
-        {pedido.itens.map((item, indice) => (
-          // O mesmo produto pode aparecer duas vezes com montagens diferentes: a chave leva o índice.
-          <li key={`${item.nomeProduto}-${indice}`}>
-            {item.quantidade}× {item.nomeProduto} — {formatarPrecoCentavos(item.subtotalCentavos)}
-            {/* Resumo da montagem escolhida: o snapshot do pedido, não o cardápio de hoje. */}
-            {item.escolhas.length > 0 && <span className="block text-conteudo-suave">{item.escolhas.join(" · ")}</span>}
-            {item.observacao && <span className="block italic text-conteudo-suave">“{item.observacao}”</span>}
-          </li>
-        ))}
-      </ul>
-      <ValoresPedido pedido={pedido} />
-      <p data-total-pedido className="fonte-display text-sm font-bold">
-        Total: {formatarPrecoCentavos(pedido.totalCentavos)}
-      </p>
-      <LinhaPagamento pedido={pedido} />
-      <p data-status-pedido={pedido.status} className="text-xs text-conteudo-suave">
-        Status: {rotulos[pedido.status]}
-      </p>
-      <button
-        type="button"
-        onClick={() => aoAbrir(pedido.id)}
-        className="flex min-h-9 items-center justify-center gap-1.5 rounded-jaa-compacto bg-marca-suave px-3 text-xs font-medium text-marca-suave-conteudo transition-colors hover:bg-marca-suave/80"
-      >
-        Ver pedido
-        <IconeSeta className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-}
-
 /**
  * Acompanhamento: etapas concluídas (com o horário real), a atual e as futuras. As futuras são
  * derivadas da máquina de estados só para exibir — não existem no histórico até acontecerem.
  */
 export function TimelinePedido({ pedido, visaoCliente = false }: { pedido: Pick<Pedido, "status" | "historico">; visaoCliente?: boolean }) {
-  const etapas = montarTimelinePedido(pedido.status, pedido.historico);
-  const marca = { concluida: "✓", atual: "●", futura: "○" } as const;
+  const etapas = visaoCliente ? montarTimelineAcompanhamento(pedido.status, pedido.historico) : montarTimelinePedido(pedido.status, pedido.historico);
   const rotulos = visaoCliente ? ROTULO_STATUS_PEDIDO_CLIENTE : ROTULO_STATUS_PEDIDO;
 
+  // EMPRESA (gestão): a lista compacta de sempre. O trilho abaixo é a experiência do CLIENTE.
+  if (!visaoCliente) {
+    const marca = { concluida: "✓", atual: "●", futura: "○" } as const;
+    return (
+      <ol aria-label="Acompanhamento do pedido" className="flex flex-col gap-0.5 text-xs">
+        {etapas.map((etapa) => (
+          <li key={etapa.status} data-etapa={etapa.status} data-situacao={etapa.situacao} className={etapa.situacao === "futura" ? "text-conteudo-suave/70" : etapa.situacao === "atual" ? "font-semibold" : ""}>
+            <span aria-hidden>{marca[etapa.situacao]} </span>
+            {rotulos[etapa.status]}
+            {etapa.ocorridoEm && <span className="text-conteudo-suave"> — {formatarHorarioMensagem(etapa.ocorridoEm)}</span>}
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
   return (
-    <ol aria-label="Acompanhamento do pedido" className="flex flex-col gap-0.5 text-xs">
-      {etapas.map((etapa) => (
-        <li key={etapa.status} data-etapa={etapa.status} data-situacao={etapa.situacao} className={etapa.situacao === "futura" ? "text-conteudo-suave/70" : etapa.situacao === "atual" ? "font-semibold" : ""}>
-          <span aria-hidden>{marca[etapa.situacao]} </span>
-          {rotulos[etapa.status]}
-          {etapa.ocorridoEm && <span className="text-conteudo-suave"> — {formatarHorarioMensagem(etapa.ocorridoEm)}</span>}
-        </li>
-      ))}
+    /*
+     * Trilho vertical: cada etapa é um marcador ligado ao seguinte. Concluída = marcador cheio com o
+     * check e a hora real; ATUAL = marcador com anel e o texto em destaque; futura = marcador vazio e
+     * texto apagado. A situação também vai escrita para leitor de tela — a cor nunca é a única pista.
+     * O marcador tem largura fixa e o texto quebra ao lado dele: o alinhamento não se desfaz.
+     */
+    <ol aria-label="Acompanhamento do pedido" className="flex flex-col">
+      {etapas.map((etapa, indice) => {
+        const ultima = indice === etapas.length - 1;
+        const cancelado = etapa.status === "cancelado";
+        const atual = etapa.situacao === "atual";
+        return (
+          <li key={etapa.status} data-etapa={etapa.status} data-situacao={etapa.situacao} aria-current={atual ? "step" : undefined} className="flex gap-3">
+            {/* Trilho CONTÍNUO: o conector encosta nos marcadores e fica verde até a etapa atual. */}
+            <span aria-hidden className="flex w-6 shrink-0 flex-col items-center">
+              <span
+                className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${
+                  etapa.situacao === "concluida"
+                    ? "bg-marca text-marca-conteudo"
+                    : atual
+                      ? cancelado
+                        ? "bg-perigo text-white shadow-[0_0_0_4px] shadow-perigo/20"
+                        : "bg-marca text-marca-conteudo shadow-[0_0_0_4px] shadow-marca/25"
+                      : "border-2 border-borda bg-superficie"
+                }`}
+              >
+                {etapa.situacao === "concluida" ? <IconeCheck className="h-3.5 w-3.5" /> : atual ? <span className="h-2 w-2 rounded-full bg-current" /> : null}
+              </span>
+              {!ultima && <span className={`w-0.5 flex-1 ${etapa.situacao === "concluida" ? "bg-marca" : "bg-borda"}`} />}
+            </span>
+            <span className={`flex min-w-0 flex-1 flex-col [overflow-wrap:anywhere] ${ultima ? "" : "pb-3.5"}`}>
+              {/* A etapa ATUAL ganha uma faixa suave: é o que a pessoa procura primeiro. */}
+              <span className={`flex min-h-6 flex-col justify-center ${atual ? `-my-1 rounded-jaa-compacto px-2.5 py-1.5 ${cancelado ? "bg-perigo/10" : "bg-marca-suave/70"}` : ""}`}>
+                <span
+                  className={
+                    atual ? `text-sm font-bold leading-snug ${cancelado ? "text-perigo" : "text-marca-suave-conteudo"}` : etapa.situacao === "futura" ? "text-sm leading-snug text-conteudo-suave/80" : "text-sm font-medium leading-snug text-conteudo"
+                  }
+                >
+                  {rotulos[etapa.status]}
+                  <span className="sr-only">{etapa.situacao === "concluida" ? " — concluída" : atual ? " — etapa atual" : " — próxima etapa"}</span>
+                </span>
+                {etapa.ocorridoEm && <span className="text-xs text-conteudo-suave">{formatarHorarioMensagem(etapa.ocorridoEm)}</span>}
+              </span>
+            </span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -149,15 +160,52 @@ export function EnderecoDoPedido({ destino, aoVerNoMapa }: { destino: DestinoPed
   );
 }
 
+/** Itens com a MONTAGEM gravada no pedido (snapshot): o que a empresa prepara e o cliente confere. */
+function ItensDoPedido({ pedido }: { pedido: Pick<Pedido, "itens"> }) {
+  return (
+    <ol aria-label="Itens do pedido" className="flex flex-col gap-0.5 text-xs">
+      {pedido.itens.map((item) => (
+        <li key={item.id}>
+          {item.quantidade}× {item.nomeProduto} — {formatarPrecoCentavos(item.precoUnitarioCentavos)} cada = {formatarPrecoCentavos(item.subtotalCentavos)}
+          {/*
+           * SNAPSHOT da montagem: grupo, opção e acréscimo como estavam na compra. Mudar o
+           * cardápio depois não altera este pedido — é o que a empresa precisa preparar e o que o
+           * cliente precisa conferir.
+           */}
+          {item.observacao && (
+            <span data-observacao-pedido className="ml-4 block italic text-conteudo-suave">
+              Observação: {item.observacao}
+            </span>
+          )}
+          {item.escolhas.length > 0 && (
+            <ul data-escolhas-pedido className="ml-4 flex flex-col text-conteudo-suave">
+              {item.escolhas.map((escolha, indice) => (
+                <li key={`${escolha.grupoNome}-${escolha.opcaoNome}-${indice}`}>
+                  {escolha.grupoNome}: {escolha.opcaoNome}
+                  {escolha.precoAdicionalCentavos > 0 && ` (+${formatarPrecoCentavos(escolha.precoAdicionalCentavos)})`}
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function DetalhePedido({
   pedido,
   aoFechar,
+  titulo,
   acoes,
   aoVerPontoNoMapa,
   visaoCliente = false,
 }: {
   pedido: Pedido;
-  aoFechar: () => void;
+  // Sem `aoFechar` não há o X: é o caso da tela exclusiva do pedido, que tem o seu "Voltar".
+  aoFechar?: (() => void) | undefined;
+  // Título próprio de quem usa (a empresa vê o nome do CLIENTE). Ausente: "Pedido #N — <empresa>".
+  titulo?: string | undefined;
   acoes?: React.ReactNode;
   aoVerPontoNoMapa?: ((destino: DestinoPedido) => void) | undefined;
   visaoCliente?: boolean;
@@ -165,45 +213,19 @@ export function DetalhePedido({
   const rotulos = visaoCliente ? ROTULO_STATUS_PEDIDO_CLIENTE : ROTULO_STATUS_PEDIDO;
   return (
     <article aria-label="Detalhe do pedido" className="flex flex-col gap-1.5 rounded-jaa border border-borda bg-superficie p-4 text-sm shadow-cartao">
-      <button
-        type="button"
-        onClick={aoFechar}
-        aria-label="Fechar pedido"
-        className="grid h-9 w-9 shrink-0 place-items-center self-end rounded-jaa-compacto text-conteudo-suave transition-colors hover:bg-realce hover:text-conteudo"
-      >
-        <IconeFechar className="h-4 w-4" />
-      </button>
-      <h3 className="fonte-display text-base font-bold">
-        Pedido #{pedido.numero} — {pedido.empresa.nome}
-      </h3>
+      {aoFechar && (
+        <button
+          type="button"
+          onClick={aoFechar}
+          aria-label="Fechar pedido"
+          className="grid h-9 w-9 shrink-0 place-items-center self-end rounded-jaa-compacto text-conteudo-suave transition-colors hover:bg-realce hover:text-conteudo"
+        >
+          <IconeFechar className="h-4 w-4" />
+        </button>
+      )}
+      <h3 className="fonte-display text-base font-bold [overflow-wrap:anywhere]">{titulo ?? `Pedido #${pedido.numero} — ${pedido.empresa.nome}`}</h3>
       <p className="text-xs text-conteudo-suave">Cliente: {pedido.cliente.nomeExibicao}</p>
-      <ol aria-label="Itens do pedido" className="flex flex-col gap-0.5 text-xs">
-        {pedido.itens.map((item) => (
-          <li key={item.id}>
-            {item.quantidade}× {item.nomeProduto} — {formatarPrecoCentavos(item.precoUnitarioCentavos)} cada = {formatarPrecoCentavos(item.subtotalCentavos)}
-            {/*
-             * SNAPSHOT da montagem: grupo, opção e acréscimo como estavam na compra. Mudar o
-             * cardápio depois não altera este pedido — é o que a empresa precisa preparar e o que o
-             * cliente precisa conferir.
-             */}
-            {item.observacao && (
-              <span data-observacao-pedido className="ml-4 block italic text-conteudo-suave">
-                Observação: {item.observacao}
-              </span>
-            )}
-            {item.escolhas.length > 0 && (
-              <ul data-escolhas-pedido className="ml-4 flex flex-col text-conteudo-suave">
-                {item.escolhas.map((escolha, indice) => (
-                  <li key={`${escolha.grupoNome}-${escolha.opcaoNome}-${indice}`}>
-                    {escolha.grupoNome}: {escolha.opcaoNome}
-                    {escolha.precoAdicionalCentavos > 0 && ` (+${formatarPrecoCentavos(escolha.precoAdicionalCentavos)})`}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
-        ))}
-      </ol>
+      <ItensDoPedido pedido={pedido} />
       <ValoresPedido pedido={pedido} />
       <p data-total-pedido className="fonte-display text-base font-bold">
         Total: {formatarPrecoCentavos(pedido.totalCentavos)}

@@ -5,6 +5,7 @@ import {
   enderecoTemLocalizacaoConfirmada,
   type FormaPagamentoEntrega,
 } from "@jaa/contratos";
+import { garantirContato } from "../../contatos/repositorios/repositorio-contatos.js";
 import { buscarEndereco } from "../../enderecos/repositorios/repositorio-enderecos.js";
 import {
   buscarEmpresaPublicaPorIdentidade,
@@ -13,6 +14,7 @@ import {
 import { buscarFuncionamentoDaEmpresa } from "../../empresas/repositorios/repositorio-funcionamento.js";
 import { listarIdsParticipantesDaConversa } from "../../conversas/repositorios/repositorio-conversas.js";
 import type { CanalEventosMensagens } from "../../mensagens/lib/eventos-mensagens.js";
+import type { CanalEventosPedidos } from "../lib/eventos-pedidos.js";
 import { buscarMensagemNaConversa } from "../../mensagens/repositorios/repositorio-mensagens.js";
 import { listarProdutosDisponiveisPorIds } from "../../produtos/repositorios/repositorio-produtos.js";
 import { listarGruposDisponiveisPorProdutos } from "../../produtos/repositorios/repositorio-personalizacao.js";
@@ -70,10 +72,12 @@ export async function criarPedido(
   {
     banco,
     eventosMensagens,
+    eventosPedidos,
     agora = () => new Date(),
   }: {
     banco: Banco;
     eventosMensagens: CanalEventosMensagens;
+    eventosPedidos: CanalEventosPedidos;
     // Relógio do SERVIDOR. Parâmetro só para o teste fixar o dia; nunca vem do cliente.
     agora?: () => Date;
   },
@@ -212,7 +216,15 @@ export async function criarPedido(
     const pedido = await buscarPedido(banco, pedidoId);
     if (!pedido) throw new Error("Pedido criado não encontrado.");
 
-    // Depois do commit: o card entra na conversa como mensagem normal (realtime, não lidas, notificação).
+    await registrarClienteNaAgendaDaEmpresa(banco, empresa.identidadeId, clienteIdentidadeId);
+
+    /*
+     * Depois do commit, dois avisos diferentes:
+     * - CLIENTE: o card entra na conversa DELE (só dele — para a empresa pedido não é mensagem, então
+     *   ela não recebe mensagem nova, notificação nem não lida por causa de um pedido);
+     * - EMPRESA: "pedido novo", que alimenta a área de Pedidos, o contador dela e o som de pedido.
+     */
+    eventosPedidos.publicar({ tipo: "pedido-criado", empresaIdentidadeId: empresa.identidadeId, pedidoId });
     const card = await buscarMensagemNaConversa(
       banco,
       entrada.conversaId,
@@ -222,7 +234,7 @@ export async function criarPedido(
       eventosMensagens.publicar({
         tipo: "mensagem-criada",
         mensagem: card,
-        destinatariosIdentidadeIds: participantes,
+        destinatariosIdentidadeIds: [clienteIdentidadeId],
       });
 
     return { tipo: "criado", pedido, empresa };
@@ -253,9 +265,26 @@ export async function criarPedido(
       existente.pedido.totalCentavos === total.totalCentavos &&
       mesmosItens;
 
+    // Repetição da mesma tentativa: se o contato não chegou a ser gravado na primeira vez, é agora.
+    if (mesmaTentativa) await registrarClienteNaAgendaDaEmpresa(banco, empresa.identidadeId, clienteIdentidadeId);
     return mesmaTentativa
       ? { tipo: "ja-existente", pedido: existente, empresa }
       : { tipo: "id-cliente-reutilizado" };
+  }
+}
+
+/*
+ * QUEM PEDE VIRA CONTATO DA EMPRESA — da identidade EMPRESARIAL que recebeu o pedido, nunca da pessoa
+ * que a opera. Acontece DEPOIS do commit do pedido e fora da transação dele: é um efeito secundário,
+ * e uma falha aqui não pode desfazer nem recusar um pedido já criado. Idempotente (não duplica nem
+ * altera apelido/favorito de um contato que já existia); o próximo pedido do mesmo cliente repara
+ * uma eventual falha.
+ */
+async function registrarClienteNaAgendaDaEmpresa(banco: Banco, empresaIdentidadeId: string, clienteIdentidadeId: string): Promise<void> {
+  try {
+    await garantirContato(banco, empresaIdentidadeId, clienteIdentidadeId);
+  } catch {
+    // O pedido já existe; a agenda é reparada no próximo pedido.
   }
 }
 

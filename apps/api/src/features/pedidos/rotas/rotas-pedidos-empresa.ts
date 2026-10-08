@@ -63,6 +63,7 @@ export function registrarRotasPedidosEmpresa(
       pedidos: resultado.pedidos.map(serializarPedidoDaEmpresa),
       // Página cheia ⇒ pode haver mais; o cursor é o pedido mais antigo desta página.
       proximoCursor: resultado.pedidos.length === consulta.data.limite ? (resultado.pedidos.at(-1)?.id ?? null) : null,
+      total: resultado.total,
     };
     return lista;
   });

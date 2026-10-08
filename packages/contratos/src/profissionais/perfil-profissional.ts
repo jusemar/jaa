@@ -171,6 +171,8 @@ export const servicoCatalogoSchema = itemCatalogoSchema.extend({
   atributos: z.array(
     itemCatalogoSchema.extend({
       tipoSelecao: z.enum(["unica", "multipla"]),
+      // A atividade só é salva com pelo menos uma opção deste atributo (ex.: Veículo do Entregador).
+      obrigatorio: z.boolean(),
       opcoes: z.array(itemCatalogoSchema),
     }),
   ),

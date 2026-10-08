@@ -82,7 +82,14 @@ export function criarAmbienteIntegracao({
   armazenamento,
   // Bucket PRIVADO fake (imagens de conversa): nenhum teste fala com o Cloudflare de verdade.
   armazenamentoPrivado,
+  /*
+   * Limite de empresas CRIADAS por conta. Os testes de integração montam várias empresas com o mesmo
+   * dono (isolamento multiempresa, logística…), então o padrão AQUI é sem limite; a regra do produto
+   * é exercitada em `limite-de-empresas.test.ts`, que usa o valor real.
+   */
+  maximoEmpresasCriadasPorConta = Number.POSITIVE_INFINITY,
 }: {
+  maximoEmpresasCriadasPorConta?: number;
   telefones: string[];
   prefixoIp: string;
   motorRotas?: MotorDeRotas | undefined;
@@ -357,6 +364,7 @@ export function criarAmbienteIntegracao({
         ...(motorRotas ? { motorRotas } : {}),
         ...(armazenamento ? { armazenamento } : {}),
         ...(armazenamentoPrivado ? { armazenamentoPrivado } : {}),
+        maximoEmpresasCriadasPorConta,
         logger: false,
       });
       configurarRealtime(app, {

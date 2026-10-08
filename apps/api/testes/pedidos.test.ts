@@ -6,8 +6,10 @@ import {
   EVENTO_CONVERSA_NAO_LIDAS,
   EVENTO_MENSAGEM_NOVA,
   EVENTO_NOTIFICACAO_NOVA_MENSAGEM,
+  EVENTO_PEDIDO_NOVO,
   type Empresa,
   type EventoMensagemNova,
+  type EventoPedidoNovo,
   type Mensagem,
   type Pedido,
   type Produto,
@@ -78,10 +80,13 @@ describe("criar pedido a partir da conversa", () => {
   let pedido: Pedido;
 
   it("cliente envia produto e quantidade; servidor calcula 2×R$39,90 + 1×R$12,00 = R$91,80 e grava snapshot", async () => {
-    const [pizzaSocket] = await Promise.all([ctx.conectar(comoPizzaria)]);
-    const novas = coletar<EventoMensagemNova>(pizzaSocket, EVENTO_MENSAGEM_NOVA);
+    const [pizzaSocket, clienteSocket] = await Promise.all([ctx.conectar(comoPizzaria), ctx.conectar(B)]);
+    const novas = coletar<EventoMensagemNova>(clienteSocket, EVENTO_MENSAGEM_NOVA);
+    // EMPRESA: pedido não é conversa — nada de mensagem, notificação ou não lida; só "pedido novo".
+    const mensagensDaEmpresa = coletar<EventoMensagemNova>(pizzaSocket, EVENTO_MENSAGEM_NOVA);
     const notificacoes = coletar<unknown>(pizzaSocket, EVENTO_NOTIFICACAO_NOVA_MENSAGEM);
     const naoLidas = coletar<{ naoLidas: number }>(pizzaSocket, EVENTO_CONVERSA_NAO_LIDAS);
+    const pedidosNovos = coletar<EventoPedidoNovo>(pizzaSocket, EVENTO_PEDIDO_NOVO);
 
     const resposta = await pedir(B, {
       ...pedidoBase(),
@@ -111,8 +116,9 @@ describe("criar pedido a partir da conversa", () => {
     );
     assert.ok(!resposta.body.includes("cartao") && !/cvv|validade|numeroCartao/i.test(resposta.body), "nenhum dado de cartão existe");
 
-    // Card na conversa: mensagem normal que referencia o pedido (realtime, notificação e não lidas).
-    await aguardarAte(() => novas.length === 1 && notificacoes.length === 1 && (naoLidas.at(-1)?.naoLidas ?? 0) >= 1);
+    // Card na conversa DO CLIENTE; a empresa recebe "pedido novo" com o id do pedido.
+    await aguardarAte(() => novas.length === 1 && pedidosNovos.length === 1);
+    assert.deepEqual(pedidosNovos, [{ pedidoId: pedido.id }]);
     const card = novas[0]?.mensagem as Mensagem;
     assert.equal(card.tipo, "pedido");
     assert.equal(card.conteudo, "");
@@ -133,8 +139,33 @@ describe("criar pedido a partir da conversa", () => {
         { nomeProduto: "Refrigerante 2L", quantidade: 1, subtotalCentavos: 1200, escolhas: [], observacao: null },
       ],
     });
-    assert.deepEqual((await ctx.historico(comoPizzaria, conversaBP)).mensagens.at(-1), card);
+    assert.deepEqual((await ctx.historico(B, conversaBP)).mensagens.at(-1), card);
+
+    // PEDIDO × CONVERSA do lado da empresa: sem mensagem, sem notificação, sem não lida, sem card no
+    // histórico e sem a conversa na lista (só o pedido não é atividade de conversa para ela).
+    await esperar(300);
+    assert.equal(mensagensDaEmpresa.length, 0, "empresa não recebe mensagem por causa do pedido");
+    assert.equal(notificacoes.length, 0, "nem notificação de mensagem");
+    assert.equal(naoLidas.filter((evento) => evento.naoLidas > 0).length, 0, "nem não lida");
+    assert.equal((await ctx.historico(comoPizzaria, conversaBP)).mensagens.some((mensagem) => mensagem.tipo === "pedido"), false);
+    const conversasDaEmpresa = (await ctx.api(comoPizzaria, "GET", "/conversas")).json() as { conversas: Array<{ id: string }> };
+    assert.equal(conversasDaEmpresa.conversas.some((conversa) => conversa.id === conversaBP), false);
+    const resumo = (await ctx.api(comoPizzaria, "GET", "/conversas/nao-lidas")).json() as { conversas: Array<{ conversaId: string; naoLidas: number }> };
+    assert.equal(resumo.conversas.some((item) => item.conversaId === conversaBP && item.naoLidas > 0), false);
+    // A empresa enxerga o pedido onde ele vive para ela: em Pedidos.
+    const lista = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos?filtro=recebidos`)).json() as { pedidos: Array<{ id: string }>; total: number };
+    assert.ok(lista.pedidos.some((item) => item.id === pedido.id) && lista.total >= 1);
+
+    // MENSAGEM REAL continua sendo conversa: chega à empresa, notifica, conta e aparece na lista.
+    const enviada = await ctx.api(B, "POST", `/conversas/${conversaBP}/mensagens`, { idCliente: randomUUID(), conteudo: "Pode mandar sem cebola?" });
+    assert.equal(enviada.statusCode, 201, enviada.body);
+    await aguardarAte(() => mensagensDaEmpresa.length === 1 && notificacoes.length === 1 && (naoLidas.at(-1)?.naoLidas ?? 0) === 1);
+    const depois = (await ctx.api(comoPizzaria, "GET", "/conversas")).json() as { conversas: Array<{ id: string; naoLidas: number }> };
+    assert.equal(depois.conversas.find((conversa) => conversa.id === conversaBP)?.naoLidas, 1, "só a mensagem real conta");
+    const historicoDaEmpresa = (await ctx.historico(comoPizzaria, conversaBP)).mensagens;
+    assert.deepEqual(historicoDaEmpresa.map((mensagem) => mensagem.tipo), ["texto"]);
     pizzaSocket.disconnect();
+    clienteSocket.disconnect();
   });
 
   it("snapshot histórico: mudar nome/preço/disponibilidade do produto depois não altera o pedido", async () => {
@@ -157,7 +188,7 @@ describe("criar pedido a partir da conversa", () => {
 
   it("itens inválidos não criam nada: indisponível, de outra empresa, inexistente ou repetido", async () => {
     const pizzaSocket = await ctx.conectar(comoPizzaria);
-    const novas = coletar<EventoMensagemNova>(pizzaSocket, EVENTO_MENSAGEM_NOVA);
+    const novas = coletar<EventoPedidoNovo>(pizzaSocket, EVENTO_PEDIDO_NOVO);
     const pedidosAntes = (await ctx.banco.select({ total: count() }).from(pedidos))[0]?.total ?? 0;
 
     for (const itens of [
@@ -207,7 +238,7 @@ describe("criar pedido a partir da conversa", () => {
 
   it("idempotência: mesma tentativa devolve o mesmo pedido (um card, um evento); conteúdo diferente é conflito", async () => {
     const pizzaSocket = await ctx.conectar(comoPizzaria);
-    const novas = coletar<EventoMensagemNova>(pizzaSocket, EVENTO_MENSAGEM_NOVA);
+    const novas = coletar<EventoPedidoNovo>(pizzaSocket, EVENTO_PEDIDO_NOVO);
     const corpo = pedidoBase({ itens: [{ produtoId: refrigerante.id, quantidade: 3 }], pagamento: { forma: "dinheiro", trocoParaCentavos: 5000 } });
 
     const primeira = await pedir(B, corpo);
@@ -230,6 +261,42 @@ describe("criar pedido a partir da conversa", () => {
     assert.equal(conflito.statusCode, 409);
     assert.equal(conflito.json().codigo, "ID_CLIENTE_REUTILIZADO");
     pizzaSocket.disconnect();
+  });
+});
+
+describe("quem pede vira contato da EMPRESA", () => {
+  type Contato = { identidadeId: string; apelido: string | null };
+  const agenda = async (pessoa: Pessoa): Promise<Contato[]> => {
+    const resposta = await ctx.api(pessoa, "GET", "/contatos");
+    assert.equal(resposta.statusCode, 200, resposta.body);
+    const { contatos } = resposta.json() as { contatos: Array<{ identidade: { identidadeId: string }; apelido: string | null }> };
+    return contatos.map((contato) => ({ identidadeId: contato.identidade.identidadeId, apelido: contato.apelido }));
+  };
+  const daCliente = (lista: Contato[]) => lista.filter((contato) => contato.identidadeId === B.identidadeId);
+
+  it("o cliente entra UMA vez na agenda da identidade empresarial — nunca na pessoal de quem opera, nem na de outra empresa", async () => {
+    assert.equal((await pedir(B, pedidoBase())).statusCode, 201);
+    assert.equal((await pedir(B, pedidoBase())).statusCode, 201);
+
+    assert.equal(daCliente(await agenda(comoPizzaria)).length, 1, "um contato, mesmo com vários pedidos");
+    assert.equal(daCliente(await agenda(A)).length, 0, "a agenda pessoal do proprietário não muda");
+    assert.equal(daCliente(await agenda(como(A, farmacia.identidadeId))).length, 0, "outra empresa da mesma conta não ganha o contato");
+    // Unilateral: o cliente não passa a ter a empresa na agenda dele por causa do pedido.
+    assert.equal((await agenda(B)).filter((contato) => contato.identidadeId === pizzaria.identidadeId).length, 0);
+  });
+
+  it("não mexe no contato que a empresa já tinha (apelido preservado) e pedido recusado não cria contato", async () => {
+    const salvo = await ctx.api(comoPizzaria, "POST", "/contatos", { identidadeId: B.identidadeId, apelido: "Bruna do bairro" });
+    assert.ok(salvo.statusCode < 300, salvo.body);
+    assert.equal((await pedir(B, pedidoBase())).statusCode, 201);
+    assert.equal(daCliente(await agenda(comoPizzaria))[0]?.apelido, "Bruna do bairro");
+
+    // C nunca conseguiu pedir (produto indisponível): não aparece na agenda da empresa.
+    const conversaC = await ctx.abrirConversa(C, `${PREFIXO}_pizza`);
+    const enderecoC = await ctx.criarEnderecoConfirmado(C);
+    const recusado = await pedir(C, pedidoBase({ conversaId: conversaC, enderecoId: enderecoC, itens: [{ produtoId: esgotado.id, quantidade: 1 }] }));
+    assert.equal(recusado.statusCode, 409, recusado.body);
+    assert.equal((await agenda(comoPizzaria)).filter((contato) => contato.identidadeId === C.identidadeId).length, 0);
   });
 });
 
@@ -397,8 +464,8 @@ describe("pedido com produto montado pelo cliente", () => {
     // Observação é instrução de preparo: não entra na conta.
     assert.equal(pedido.totalCentavos, 3 * 2990);
 
-    // O card na conversa também carrega a observação (é o que a empresa lê primeiro).
-    const card = (await ctx.historico(comoPizzaria, conversaBP)).mensagens.at(-1);
+    // O card na conversa do cliente também carrega a observação.
+    const card = (await ctx.historico(B, conversaBP)).mensagens.filter((mensagem) => mensagem.tipo === "pedido").at(-1);
     assert.equal(card?.tipo, "pedido");
     assert.ok(card?.pedido?.itens.some((item) => item.observacao === "sem cebola"));
   });

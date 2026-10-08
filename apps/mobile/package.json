@@ -6,6 +6,7 @@
     "@better-auth/expo": "^1.7.5",
     "@expo/ui": "~57.0.18",
     "@jaa/contratos": "*",
+    "@rnmapbox/maps": "10.3.7",
     "better-auth": "^1.7.5",
     "expo": "~57.0.22",
     "expo-application": "~57.0.3",

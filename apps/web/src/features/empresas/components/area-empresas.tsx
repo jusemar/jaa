@@ -1,6 +1,6 @@
 "use client";
 
-import type { Empresa } from "@jaa/contratos";
+import { AVISO_LIMITE_DE_EMPRESAS, podeCriarEmpresa, type Empresa } from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
 import { criarEmpresa, listarMinhasEmpresas, obterEmpresa } from "../lib/api-empresas";
 import { sugerirSlug } from "../lib/sugerir-slug";
@@ -15,7 +15,11 @@ import { ListaEmpresas } from "./lista-empresas";
  */
 
 export function AreaEmpresas({ aoEmpresaCriada }: { aoEmpresaCriada: () => void }) {
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  // null = a lista ainda não chegou: antes disso não se sabe se a conta já criou a empresa dela.
+  const [empresas, setEmpresas] = useState<Empresa[] | null>(null);
+  const podeCriar = empresas !== null && podeCriarEmpresa(empresas);
+  // Já criou a dela: o botão continua à vista, DESATIVADO, com o motivo ao lado (a API recusaria).
+  const limiteAtingido = empresas !== null && !podeCriar;
   const [aberta, setAberta] = useState<Empresa | null>(null);
   const [criando, setCriando] = useState(false);
   const [nome, setNome] = useState("");
@@ -83,12 +87,26 @@ export function AreaEmpresas({ aoEmpresaCriada }: { aoEmpresaCriada: () => void 
     <section aria-label="Minhas empresas" className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Minhas empresas</h2>
-        <button type="button" onClick={() => setCriando((atual) => !atual)} className="rounded-jaa border px-3 py-1.5 text-sm">
-          {criando ? "Cancelar" : "+ Criar empresa"}
-        </button>
+        <span className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            data-criar-empresa
+            disabled={!podeCriar}
+            aria-describedby={limiteAtingido ? "limite-de-empresas" : undefined}
+            onClick={() => podeCriar && setCriando((atual) => !atual)}
+            className="rounded-jaa border px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {podeCriar && criando ? "Cancelar" : "+ Criar empresa"}
+          </button>
+          {limiteAtingido && (
+            <span id="limite-de-empresas" data-limite-de-empresas className="text-xs text-conteudo-suave">
+              {AVISO_LIMITE_DE_EMPRESAS}
+            </span>
+          )}
+        </span>
       </div>
 
-      {criando && (
+      {podeCriar && criando && (
         <form aria-label="Criar empresa" onSubmit={(evento) => void aoCriar(evento)} className="grid gap-2 rounded-jaa border border-borda p-3 text-sm sm:grid-cols-3">
           <label className="flex flex-col gap-1">
             Nome da empresa
@@ -129,7 +147,7 @@ export function AreaEmpresas({ aoEmpresaCriada }: { aoEmpresaCriada: () => void 
         </form>
       )}
 
-      <ListaEmpresas empresas={empresas} aoAbrir={(empresa) => void abrir(empresa)} />
+      <ListaEmpresas empresas={empresas ?? []} aoAbrir={(empresa) => void abrir(empresa)} />
 
       {aberta && (
         <dl aria-label="Empresa aberta" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-jaa bg-superficie-suave p-3 text-sm">

@@ -1,7 +1,7 @@
 "use client";
 
 import type { IdentidadeOperavel } from "@jaa/contratos";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
 import { Selo } from "@/components/ui/primitivos";
 
@@ -19,7 +19,10 @@ export function SeletorIdentidade({
   erro,
   aoSelecionar,
   compacto = false,
+  rodapeDoMenu,
 }: {
+  // Ação extra no fim do menu (ex.: "Sair da conta" no celular, onde o topo mostra só a identidade).
+  rodapeDoMenu?: ReactNode;
   operaveis: IdentidadeOperavel[];
   ativa: IdentidadeOperavel | null;
   erro: string | null;
@@ -99,11 +102,13 @@ export function SeletorIdentidade({
         >
           <Grupo titulo="Pessoa" itens={pessoais} ativa={ativa} aoSelecionar={aoSelecionar} fechar={() => setAberto(false)} />
           {empresariais.length > 0 && <Grupo titulo="Empresas" itens={empresariais} ativa={ativa} aoSelecionar={aoSelecionar} fechar={() => setAberto(false)} />}
+          {rodapeDoMenu && <div className="flex flex-col border-t border-borda">{rodapeDoMenu}</div>}
         </div>
       )}
 
       {ativa?.tipo === "empresarial" && !compacto && (
-        <p role="note" className="mt-1 px-1 text-[11px] leading-snug text-aviso">
+        // Sem ocupar a tela: o nome da empresa já está no seletor. Continua dito a quem usa leitor de tela.
+        <p role="note" className="sr-only">
           Você responde como {ativa.nomeExibicao}. Suas conversas pessoais não aparecem aqui.
         </p>
       )}

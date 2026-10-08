@@ -88,7 +88,7 @@ export function useGravacaoAudio({ aoErro }: { aoErro: (mensagem: string | null)
     const assinatura = AppState.addEventListener("change", (situacao) => {
       if (situacao === "active") return;
       cancelar();
-      aoErro("A gravação foi cancelada porque você saiu do Jaa.");
+      aoErro("A gravação foi cancelada porque você saiu do Jaaa.");
     });
     return () => assinatura.remove();
   }, [gravando, cancelar, aoErro]);

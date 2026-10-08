@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { expirarPresencasEPublicar } from "../src/features/entregas/lib/publicar-operacao.js";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
-import { saidasEntrega } from "@jaa/banco/schema";
+import { entregadoresEmpresa, saidasEntrega } from "@jaa/banco/schema";
 import {
   EVENTO_SAIDA_ATUALIZADA,
   type Empresa,
@@ -786,6 +787,29 @@ describe("despacho pelo primeiro entregador apto da fila", () => {
       ).json().status,
       "pronto",
     );
+  });
+
+  it("presença VENCIDA não recebe rota: quem parou de confirmar a localização não é 'o primeiro da fila'", async () => {
+    // Carlos ficou gravado "na base" e na fila, mas a última leitura dele tem 10 minutos (app fechado).
+    await ctx.banco
+      .update(entregadoresEmpresa)
+      .set({ disponivel: true, naBase: true, filaEntrouEm: new Date(Date.now() - 3_600_000), ultimaLeituraEm: new Date(Date.now() - 600_000) })
+      .where(eq(entregadoresEmpresa.id, carlos));
+
+    const pendente = (await listarSaidas()).find((saida) => saida.status === "aguardando_entregador");
+    assert.ok(pendente, "há uma saída esperando entregador");
+    assert.deepEqual(await despacharPendentes(despacho(), pizzaria.id), [], "ninguém com presença atual: nada é despachado");
+    const depois = (await listarSaidas()).find((saida) => saida.id === pendente.id);
+    assert.equal(depois?.status, "aguardando_entregador");
+    assert.equal(depois?.entregador, null, "a rota não foi para o entregador fantasma");
+
+    // A passada periódica grava a correção: fora da fila, sem tocar no vínculo nem na disponibilidade.
+    assert.equal(await expirarPresencasEPublicar(despacho()), 1);
+    const [linha] = await ctx.banco
+      .select({ naBase: entregadoresEmpresa.naBase, fila: entregadoresEmpresa.filaEntrouEm, status: entregadoresEmpresa.status, disponivel: entregadoresEmpresa.disponivel })
+      .from(entregadoresEmpresa)
+      .where(eq(entregadoresEmpresa.id, carlos));
+    assert.deepEqual(linha, { naBase: false, fila: null, status: "ativo", disponivel: true });
   });
 
   it("entregador entra na fila e a saída pendente é despachada automaticamente", async () => {

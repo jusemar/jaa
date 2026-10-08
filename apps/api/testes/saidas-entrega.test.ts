@@ -184,7 +184,8 @@ describe("montar a saída", () => {
     assert.equal(resposta.statusCode, 201, resposta.body);
     const saida: SaidaEntrega = resposta.json();
 
-    assert.equal(saida.status, "preparada");
+    // Liberação automática da empresa (padrão ligado): a saída manual já nasce liberada para retirada.
+    assert.equal(saida.status, "liberada_retirada");
     assert.equal(saida.entregador?.nomeExibicao, "Paulo Entregador");
     assert.equal(saida.paradas.length, 3);
     // Sequência sugerida: posições 1..n, cada pedido uma vez.
@@ -407,6 +408,10 @@ describe("montar a saída", () => {
 
 describe("iniciar a saída", () => {
   it("leva os pedidos para 'saiu para entrega' pela máquina de estados, com histórico", async () => {
+    // Com a liberação automática DESLIGADA a saída manual nasce "preparada" e espera o gestor liberar.
+    const configurar = (liberacaoAutomatica: boolean) =>
+      ctx.api(A, "POST", `/empresas/${pizzaria.id}/despacho`, { maxPedidosPorSaida: 5, tempoFormacaoMinutos: 15, combinarZonas: false, liberacaoAutomatica });
+    assert.equal((await configurar(false)).statusCode, 200);
     const pedidos = [await pedidoPronto(B1), await pedidoPronto(B2)];
     const saida: SaidaEntrega = (
       await criarSaida(A, pizzaria, {
@@ -425,8 +430,11 @@ describe("iniciar a saída", () => {
       409,
       "o entregador não sai antes da liberação",
     );
+    assert.equal(saida.status, "preparada");
     const liberada = await liberarSaida(saida.id);
     assert.equal(liberada.statusCode, 200, liberada.body);
+    // Volta ao padrão da empresa para os demais testes.
+    assert.equal((await configurar(true)).statusCode, 200);
     assert.equal((liberada.json() as SaidaEntrega).status, "liberada_retirada");
     assert.ok((liberada.json() as SaidaEntrega).liberadaEm);
     const iniciada = await ctx.api(
@@ -471,7 +479,7 @@ describe("iniciar a saída", () => {
         pedidoIds: pedidos.map((pedido) => pedido.id),
       })
     ).json();
-    assert.equal(saida.status, "preparada");
+    assert.equal(saida.status, "liberada_retirada");
 
     // Outra pessoa (mesmo sendo entregador da empresa) não enxerga a saída de Paulo: 404, sem revelar nada.
     assert.equal(

@@ -116,6 +116,17 @@ export const eventoPedidoStatusAtualizadoSchema = z.object({
 export type EventoPedidoStatusAtualizado = z.infer<typeof eventoPedidoStatusAtualizadoSchema>;
 
 /**
+ * PEDIDO NOVO para a EMPRESA, emitido após o commit só para a identidade empresarial que o recebeu.
+ * Pedido não é conversa: do lado da empresa ele não vira mensagem, não entra em Conversas e não conta
+ * como não lida — existe na área de Pedidos. O evento só avisa; lista e contador são relidos da API.
+ */
+export const EVENTO_PEDIDO_NOVO = "pedido:novo";
+
+export const eventoPedidoNovoSchema = z.object({ pedidoId: z.uuid() });
+
+export type EventoPedidoNovo = z.infer<typeof eventoPedidoNovoSchema>;
+
+/**
  * A lista de entregas de UM entregador mudou (atribuição, reatribuição, mudança de status, cancelamento
  * ou perda do vínculo), emitido após o commit só para as conexões daquele entregador — nunca broadcast.
  * `entrega` presente = passou a valer (criar/atualizar na lista); ausente = saiu da lista dele (foi
@@ -260,6 +271,7 @@ export interface EventosRealtimeServidorParaCliente {
   [EVENTO_MENSAGENS_ENTREGUES]: (evento: EventoMensagensEntregues) => void;
   [EVENTO_MENSAGENS_LIDAS]: (evento: EventoMensagensLidas) => void;
   [EVENTO_PEDIDO_STATUS_ATUALIZADO]: (evento: EventoPedidoStatusAtualizado) => void;
+  [EVENTO_PEDIDO_NOVO]: (evento: EventoPedidoNovo) => void;
   [EVENTO_ENTREGA_ATUALIZADA]: (evento: EventoEntregaAtualizada) => void;
   [EVENTO_ENTREGADOR_DISPONIBILIDADE]: (evento: EventoEntregadorDisponibilidade) => void;
   [EVENTO_SAIDA_ATUALIZADA]: (evento: EventoSaidaAtualizada) => void;

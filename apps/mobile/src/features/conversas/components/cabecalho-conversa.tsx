@@ -31,7 +31,7 @@ export function CabecalhoConversa({
   aoVoltar: () => void;
 }) {
   const { top } = useSafeAreaInsets();
-  const descricaoPresenca = presenca === "online" ? "Disponível agora" : presenca === "offline" ? "Sem conexão agora" : null;
+  const descricaoPresenca = presenca === "online" ? "Disponível agora" : presenca === "offline" ? "Off-line agora" : null;
   const emDestaque = digitando || presenca === "online";
 
   return (
@@ -58,7 +58,7 @@ export function CabecalhoConversa({
           <View accessibilityLiveRegion="polite" style={estilos.atividade}>
             {emDestaque && <View style={estilos.ponto} />}
             <Texto variante="pequeno" cor={emDestaque ? "marca" : "conteudoSuave"} numberOfLines={1}>
-              {digitando ? "digitando…" : descricaoPresenca ? (presenca === "online" ? "online agora" : "sem conexão") : `@${outraIdentidade.nomeUsuario}`}
+              {digitando ? "digitando…" : descricaoPresenca ? (presenca === "online" ? "online agora" : "Off-line") : `@${outraIdentidade.nomeUsuario}`}
             </Texto>
           </View>
         </View>

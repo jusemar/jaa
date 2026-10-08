@@ -100,6 +100,8 @@ export const atributosServico = pgTable(
     slug: text().notNull(),
     nome: text().notNull(),
     tipoSelecao: tipoSelecaoAtributo().notNull().default("multipla"),
+    // Sem ao menos uma opção deste atributo a atividade não é salva no perfil (ex.: Veículo do Entregador).
+    obrigatorio: boolean().notNull().default(false),
     ativo: boolean().notNull().default(true),
     ordem: integer().notNull().default(0),
     ...datas,

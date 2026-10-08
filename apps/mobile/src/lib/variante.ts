@@ -12,8 +12,8 @@ export const VARIANTES = ["development", "production"] as const;
 export type Variante = (typeof VARIANTES)[number];
 
 export const IDENTIDADE_DA_VARIANTE = {
-  development: { nome: "Jaa Dev", pacote: "com.jaa.app.dev", scheme: "jaa-dev", canal: "development" },
-  production: { nome: "Jaa", pacote: "com.jaa.app", scheme: "jaa", canal: "production" },
+  development: { nome: "Jaaa Dev", pacote: "com.jaa.app.dev", scheme: "jaa-dev", canal: "development" },
+  production: { nome: "Jaaa", pacote: "com.jaa.app", scheme: "jaa", canal: "production" },
 } as const satisfies Record<Variante, { nome: string; pacote: string; scheme: string; canal: Variante }>;
 
 function ehVariante(valor: unknown): valor is Variante {

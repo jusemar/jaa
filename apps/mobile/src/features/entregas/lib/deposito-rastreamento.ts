@@ -1,4 +1,7 @@
 import type { EnviarPosicaoEntrada } from "@jaa/contratos";
+import * as SecureStore from "expo-secure-store";
+
+const CHAVE_SAIDA = "jaa.rastreamento.saida";
 
 /**
  * Estado LOCAL do rastreamento, pequeno de propósito:
@@ -34,11 +37,16 @@ export async function gravarFilaLocal(novo: EstadoFilaLocal): Promise<void> {
 }
 
 export async function lerSaidaRastreada(): Promise<string | null> {
+  // O sistema pode encerrar o processo e acordar só a tarefa de localização: a memória volta vazia,
+  // então a saída rastreada também fica no armazenamento seguro do aparelho (só o id, nenhuma posição).
+  if (saidaRastreada === null) saidaRastreada = await SecureStore.getItemAsync(CHAVE_SAIDA).catch(() => null);
   return saidaRastreada;
 }
 
 export async function gravarSaidaRastreada(saidaId: string | null): Promise<void> {
   saidaRastreada = saidaId;
+  if (saidaId === null) await SecureStore.deleteItemAsync(CHAVE_SAIDA).catch(() => undefined);
+  else await SecureStore.setItemAsync(CHAVE_SAIDA, saidaId).catch(() => undefined);
   // Trocou (ou encerrou) a operação: a fila da anterior não vale mais nada.
   if (saidaId === null) estado = { pendentes: [], ultimaEnviada: null };
 }

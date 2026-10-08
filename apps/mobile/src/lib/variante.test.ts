@@ -8,14 +8,14 @@ describe("variante do app", () => {
     assert.deepEqual([...VARIANTES], ["development", "production"]);
   });
 
-  it("development: Jaa Dev, pacote e scheme próprios", () => {
+  it("development: Jaaa Dev, pacote e scheme próprios", () => {
     assert.equal(lerVariante("development"), "development");
-    assert.deepEqual(IDENTIDADE_DA_VARIANTE.development, { nome: "Jaa Dev", pacote: "com.jaa.app.dev", scheme: "jaa-dev", canal: "development" });
+    assert.deepEqual(IDENTIDADE_DA_VARIANTE.development, { nome: "Jaaa Dev", pacote: "com.jaa.app.dev", scheme: "jaa-dev", canal: "development" });
   });
 
-  it("production: Jaa, pacote e scheme definitivos", () => {
+  it("production: Jaaa, pacote e scheme definitivos", () => {
     assert.equal(lerVariante("production"), "production");
-    assert.deepEqual(IDENTIDADE_DA_VARIANTE.production, { nome: "Jaa", pacote: "com.jaa.app", scheme: "jaa", canal: "production" });
+    assert.deepEqual(IDENTIDADE_DA_VARIANTE.production, { nome: "Jaaa", pacote: "com.jaa.app", scheme: "jaa", canal: "production" });
   });
 
   it("sem APP_VARIANT é development — produção nunca é o padrão", () => {

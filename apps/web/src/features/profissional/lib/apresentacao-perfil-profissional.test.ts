@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import type { AreaAtuacaoDoDono, AtividadeDoPerfil, CatalogoServicos } from "@jaa/contratos";
 import {
   ETAPAS,
   alternarOpcao,
+  atributosSemEscolha,
   estadoEtapa,
   etapaInicial,
   etapaVizinha,
@@ -31,7 +33,7 @@ const catalogo: CatalogoServicos = {
     {
       ...item(1, "Categoria"),
       servicos: [
-        { ...item(11, "Entregador"), categoriaId: id(1), especialidades: [], atributos: [{ ...item(21, "Veiculo"), tipoSelecao: "multipla", opcoes: [item(31, "Moto"), item(32, "Carro")] }] },
+        { ...item(11, "Entregador"), categoriaId: id(1), especialidades: [], atributos: [{ ...item(21, "Veiculo"), tipoSelecao: "multipla", obrigatorio: true, opcoes: [item(31, "Moto"), item(32, "Carro")] }] },
         { ...item(12, "Mototaxi"), categoriaId: id(1), especialidades: [], atributos: [] },
         { ...item(13, "Cabeleireiro"), categoriaId: id(1), especialidades: [item(41, "Corte")], atributos: [] },
         { ...item(14, "Quarta"), categoriaId: id(1), especialidades: [], atributos: [] },
@@ -69,6 +71,32 @@ describe("atividades", () => {
     assert.deepEqual(alternarOpcao(["moto", "carro"], "moto", multiplo), ["carro"]);
     const unico = { tipoSelecao: "unica" as const, opcoes: [{ id: "p" }, { id: "g" }] };
     assert.deepEqual(alternarOpcao(["p", "outra"], "g", unico), ["outra", "g"]);
+  });
+});
+
+describe("item obrigatório da atividade (veículo do Entregador)", () => {
+  const [entregador, mototaxi] = catalogo.categorias[0]!.servicos;
+
+  it("sem nenhuma opção marcada, falta o item; com uma, não falta", () => {
+    assert.deepEqual(atributosSemEscolha(entregador, []).map((atributo) => atributo.nome), ["Veiculo"]);
+    assert.deepEqual(atributosSemEscolha(entregador, [id(31)]), []);
+    assert.deepEqual(atributosSemEscolha(entregador, [id(31), id(32)]), []);
+  });
+
+  it("opção de outro item não conta; atividade sem item obrigatório e catálogo ausente não bloqueiam", () => {
+    assert.equal(atributosSemEscolha(entregador, [id(99)]).length, 1);
+    assert.deepEqual(atributosSemEscolha(mototaxi, []), []);
+    assert.deepEqual(atributosSemEscolha(undefined, []), []);
+    const opcional = { ...entregador!, atributos: entregador!.atributos.map((atributo) => ({ ...atributo, obrigatorio: false })) };
+    assert.deepEqual(atributosSemEscolha(opcional, []), []);
+  });
+
+  it("na tela: escolhe antes de adicionar, Salvar bloqueado sem o item e aviso no perfil antigo", () => {
+    const tela = readFileSync(new URL("../components/secao-atividades.tsx", import.meta.url), "utf8");
+    assert.ok(tela.includes("adicionarAtividade(servico.id, opcaoIds)"));
+    assert.ok(tela.includes("data-escolha-obrigatoria"));
+    assert.ok(tela.includes("disabled={pendente !== null || faltando.length > 0}"));
+    assert.ok(tela.includes("Falta escolher: {atributo.nome}"));
   });
 });
 

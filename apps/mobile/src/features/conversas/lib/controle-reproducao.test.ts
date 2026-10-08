@@ -61,7 +61,7 @@ describe("fim normal da faixa", () => {
     reprodutor.play();
     reprodutor.playing = false; // chegou ao fim
     await reprodutor.seekTo(0);
-    assert.equal(reprodutor.playing, true, "é isto que o Jaa NÃO pode fazer");
+    assert.equal(reprodutor.playing, true, "é isto que o Jaaa NÃO pode fazer");
   });
 
   it("a correção: pausa ANTES de voltar ao início; fica parado e não chama play", async () => {

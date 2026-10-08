@@ -96,7 +96,7 @@ describe("perfil de outra identidade", () => {
   it("abre numa FOLHA adaptativa desenhada no <body> — não num modal central preso à coluna da conversa", () => {
     const perfil = fonte("../../perfil/components/perfil-da-identidade.tsx");
     assert.ok(perfil.includes("<Folha") && !perfil.includes("place-items-center"));
-    assert.ok(perfil.includes("<LinkDoJaa"), "o Link do Jaa da identidade faz parte do perfil");
+    assert.ok(perfil.includes("<LinkDoJaa"), "o Link do Jaaa da identidade faz parte do perfil");
     const folha = fonte("../../../components/ui/folha.tsx");
     assert.ok(folha.includes("createPortal(") && folha.includes("document.body"));
     // Celular/tablet: sobe de baixo, largura toda, altura limitada com rolagem interna.
@@ -106,7 +106,7 @@ describe("perfil de outra identidade", () => {
     assert.ok(folha.includes("safe-area-inset-bottom") && folha.includes('"Escape"'));
   });
 
-  it("o Link do Jaa é um link de verdade e tem Copiar", () => {
+  it("o Link do Jaaa é um link de verdade e tem Copiar", () => {
     const link = fonte("./link-do-jaa.tsx");
     assert.ok(link.includes("<a") && link.includes("href={link}") && link.includes("Copiar link") && link.includes("navigator.clipboard.writeText(link)"));
     assert.ok(link.includes("break-all"), "endereço longo quebra dentro da coluna");

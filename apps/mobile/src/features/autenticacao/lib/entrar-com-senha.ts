@@ -26,7 +26,7 @@ export function montarEntradaComSenha(identificador: string, senha: string): Mon
 export function mensagemFalhaEntrar(erro: unknown): string {
   const dados = typeof erro === "object" && erro !== null ? (erro as Record<string, unknown>) : {};
   const status = typeof dados.status === "number" ? dados.status : 0;
-  if (status === 0) return "Sem conexão com o Jaa.";
+  if (status === 0) return "Sem conexão com o Jaaa.";
   if (status === 429) return "Muitas tentativas. Aguarde um pouco e tente de novo.";
   if (typeof dados.mensagem === "string" && dados.mensagem.length > 0) return dados.mensagem;
   if (status === 401) return "Celular/@usuario ou senha incorretos.";

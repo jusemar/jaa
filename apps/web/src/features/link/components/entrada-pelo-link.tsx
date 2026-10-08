@@ -57,16 +57,16 @@ export function EntradaPeloLink({ nomeUsuario }: { nomeUsuario: string }) {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-fundo px-4 py-10">
-      <section aria-label="Link do Jaa" className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
-        <h1 className="text-3xl font-bold text-marca">Jaa</h1>
+      <section aria-label="Link do Jaaa" className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
+        <h1 className="text-3xl font-bold text-marca">Jaaa</h1>
         {estado.fase === "carregando" && <Carregando />}
         {estado.fase === "inexistente" && (
           <>
             <p data-link-inexistente className="text-sm text-conteudo-suave">
-              Não encontramos <span className="font-bold text-conteudo">@{nomeUsuario}</span> no Jaa. Confira o endereço com quem enviou o link.
+              Não encontramos <span className="font-bold text-conteudo">@{nomeUsuario}</span> no Jaaa. Confira o endereço com quem enviou o link.
             </p>
             <Link href="/" className="text-sm font-medium text-marca underline">
-              Ir para o Jaa
+              Ir para o Jaaa
             </Link>
           </>
         )}

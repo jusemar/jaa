@@ -18,7 +18,9 @@ import {
   buscarOperacional,
   confirmarPontoBase,
   listarFila,
+  listarPresencasVencidas,
   listarOperacionaisDaEmpresa,
+  MOTIVO_PRESENCA_VENCIDA,
   listarOperacionaisDaPessoa,
   salvarBase,
   sincronizarFila,
@@ -211,3 +213,22 @@ export async function reavaliarFila(banco: Banco, entregadorId: string, motivo: 
   const registro = await buscarOperacional(banco, entregadorId);
   return registro ? { registro, mudou: mudanca !== "sem-mudanca" } : null;
 }
+
+/**
+ * EXPIRAÇÃO DA PRESENÇA. As leituras já ignoram presença vencida (a fila exibida nunca tem "fantasma");
+ * esta passada GRAVA a correção — tira da fila, registra o motivo no histórico — e devolve quem mudou,
+ * para os eventos em tempo real. Vínculo e disponibilidade declarada não são tocados: a pessoa só
+ * deixou de estar CONFIRMADA na base, e volta à fila (no fim) quando o aparelho confirmar de novo.
+ */
+export async function expirarPresencasVencidas(banco: Banco): Promise<EntregadorOperacionalRegistro[]> {
+  const expirados: EntregadorOperacionalRegistro[] = [];
+  for (const entregadorId of await listarPresencasVencidas(banco)) {
+    await sincronizarFila(banco, entregadorId, MOTIVO_PRESENCA_VENCIDA);
+    const registro = await buscarOperacional(banco, entregadorId);
+    if (registro) expirados.push(registro);
+  }
+  return expirados;
+}
+
+/** Quem está na fila de uma empresa agora (para avisar cada um da própria posição quando ela anda). */
+export const listarFilaDaEmpresa = (banco: Banco, empresaId: string) => listarFila(banco, empresaId);

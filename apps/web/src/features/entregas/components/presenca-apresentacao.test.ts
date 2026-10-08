@@ -87,12 +87,31 @@ describe("quadro da fila (visão da empresa)", () => {
     const conteudo = texto(html);
     assert.ok(conteudo.includes("Na base — fila"));
     assert.ok(conteudo.includes("Fora da base"));
-    assert.ok(conteudo.includes("Indisponíveis"));
+    assert.ok(!conteudo.includes("Indisponíveis"));
+    assert.ok(conteudo.includes("Com rota") && conteudo.includes("Ninguém com rota agora."));
     assert.ok(conteudo.includes("1. Entregador 1"));
     assert.ok(conteudo.includes("2. Entregador 2"));
     assert.ok(conteudo.includes("Disponível na base"));
     assert.ok(conteudo.includes("Disponível fora da base"));
     assert.ok(conteudo.includes("Não aceitando entregas"));
+  });
+
+  it("quem está com rota (reservada ou na rua) NÃO aparece como indisponível", () => {
+    // O servidor põe no mesmo grupo quem não está na fila nem fora da base: o entregador com rota
+    // atribuída continua "disponível na base", só saiu da fila. A tela separa as duas situações.
+    const html = render({
+      ...painelCompleto,
+      indisponiveis: [
+        ...painelCompleto.indisponiveis,
+        operacional(5, { estado: "disponivel_na_base", posicaoFila: null, filaEntrouEm: null }),
+        operacional(6, { estado: "em_entrega", posicaoFila: null, filaEntrouEm: null }),
+      ],
+    });
+    const comRota = html.slice(html.indexOf('aria-label="Com rota"'), html.indexOf("Não aceitando entregas"));
+    assert.ok(texto(comRota).includes("Entregador 5") && texto(comRota).includes("Rota atribuída") && texto(comRota).includes("Entregador 6") && texto(comRota).includes("Em entrega"));
+    assert.ok(!texto(comRota).includes("Entregador 4"));
+    const naoAceitando = html.slice(html.indexOf('aria-label="Não aceitando entregas"'));
+    assert.ok(texto(naoAceitando).includes("Entregador 4") && !texto(naoAceitando).includes("Entregador 5"));
   });
 
   it("a ordem é do servidor: nada de arrastar, mover ou confirmar chegada", () => {

@@ -57,7 +57,7 @@ export function TelaContatos({ aoAbrirConversa }: { aoAbrirConversa: (nomeUsuari
         setAtualizando(true);
         void recarregar().finally(() => setAtualizando(false));
       }}>
-      <Secao titulo="Pesquisar no Jaa" descricao="Procure pelo nome ou @usuario. Seus contatos aparecem primeiro.">
+      <Secao titulo="Pesquisar no Jaaa" descricao="Procure pelo nome ou @usuario. Seus contatos aparecem primeiro.">
         <PesquisaJaa aoAbrirConversa={aoAbrirConversa} aoSalvarContato={() => void recarregar()} />
       </Secao>
 

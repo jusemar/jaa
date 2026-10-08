@@ -175,7 +175,7 @@ describe("transferência manual a partir da formação automática", () => {
     assert.equal(anterior.paradas[0]?.motivoEncerramento, "Atribuído manualmente a outro entregador", "histórico preservado com motivo");
     const nova = await saidaDoPedido(pedido.id);
     assert.ok(nova && nova.id !== formacao!.id);
-    assert.equal(nova.status, "preparada");
+    assert.equal(nova.status, "liberada_retirada", "a saída manual nova segue a liberação automática da empresa");
     assert.equal(nova.automatica, false);
     assert.equal(nova.entregador?.nomeUsuario, `${PREFIXO}_c`);
     const { saidaId, entregadorId } = await invariantes(pedido.id);

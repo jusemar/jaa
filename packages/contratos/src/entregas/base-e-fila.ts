@@ -110,6 +110,17 @@ export function baseTemPontoConfirmado(
 export const LEITURA_VALIDADE_MAXIMA_MS = 2 * 60 * 1000;
 export const PRECISAO_MAXIMA_ACEITA_METROS = 200;
 
+/*
+ * VALIDADE DA PRESENÇA. "Na base" só vale enquanto o aparelho continua confirmando: sem leitura aceita
+ * há mais do que isto, o servidor NÃO sabe onde a pessoa está — e "não sei" nunca é "na base". Ela sai
+ * da fila (o vínculo e a disponibilidade declarada não mudam) e volta ao confirmar presença de novo.
+ *
+ * 3 minutos: os aplicativos enviam uma leitura a cada 30 s com a tela aberta; uma aba do navegador em
+ * segundo plano cai para cerca de uma por minuto. A janela é a validade de uma leitura (2 min) mais
+ * uma leitura atrasada de folga — tolera rede ruim e GPS demorado sem manter ninguém "fantasma".
+ */
+export const PRESENCA_VALIDADE_MAXIMA_MS = 3 * 60 * 1000;
+
 export const enviarLocalizacaoEntradaSchema = z.object({
   latitude: latitudeSchema,
   longitude: longitudeSchema,

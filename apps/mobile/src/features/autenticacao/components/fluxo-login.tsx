@@ -4,18 +4,19 @@ import { Botao } from "@/components/ui/botao";
 import { CampoTexto } from "@/components/ui/campo-texto";
 import { Aviso } from "@/components/ui/superficies";
 import { Texto } from "@/components/ui/texto";
-import { Espaco } from "@/constants/theme";
+import { Cores, Espaco } from "@/constants/theme";
 import { URL_API } from "@/lib/configuracao";
 import { clienteAutenticacao, entrarComSenha } from "../lib/cliente-autenticacao";
 import { concluirCadastro, type ContaMobile } from "../lib/api-conta";
 
 type Etapa = "senha" | "telefone" | "codigo" | "cadastro";
 
-const TITULOS: Record<Etapa, string> = {
-  senha: "Entrar",
-  telefone: "Entrar com código",
-  codigo: "Código de verificação",
-  cadastro: "Complete seu cadastro",
+// Título e frase de apoio de cada etapa: dizem onde a pessoa está e o que fazer, em uma linha cada.
+const TEXTOS: Record<Etapa, { titulo: string; apoio: string }> = {
+  senha: { titulo: "Entrar", apoio: "Use seu @usuario ou celular e a sua senha." },
+  telefone: { titulo: "Entrar com código", apoio: "Serve para criar sua conta ou entrar sem senha." },
+  codigo: { titulo: "Código de verificação", apoio: "Digite o código de 6 dígitos que enviamos." },
+  cadastro: { titulo: "Complete seu cadastro", apoio: "Falta pouco: diga como você aparece no Jaaa." },
 };
 
 /**
@@ -105,41 +106,55 @@ export function FluxoLogin({ aoEntrar, etapaInicial = "senha" }: { aoEntrar: (co
     setEtapa(proxima);
   }
 
+  const textos = TEXTOS[etapa];
+
   return (
     <View style={estilos.container}>
-      <Texto variante="subtitulo" accessibilityRole="header">
-        {TITULOS[etapa]}
-      </Texto>
+      <View style={estilos.cabecalho}>
+        <Texto variante="titulo" accessibilityRole="header">
+          {textos.titulo}
+        </Texto>
+        <Texto cor="conteudoSuave">{etapa === "codigo" ? `Código enviado para ${telefone}.` : textos.apoio}</Texto>
+      </View>
 
       {etapa === "senha" && (
         <>
-          <CampoTexto
-            rotulo="Usuário"
-            value={identificador}
-            onChangeText={setIdentificador}
-            placeholder="@usuario ou celular"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="username"
-            returnKeyType="next"
-          />
-          <CampoTexto
-            rotulo="Senha"
-            value={senha}
-            onChangeText={setSenha}
-            placeholder="Sua senha"
-            secureTextEntry={!mostrarSenha}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="current-password"
-            returnKeyType="go"
-            onSubmitEditing={() => {
-              if (!ocupado && identificador.trim() !== "" && senha !== "") entrar();
-            }}
-          />
-          <Botao aparencia="discreto" rotulo={mostrarSenha ? "Ocultar senha" : "Mostrar senha"} onPress={() => setMostrarSenha((atual) => !atual)} />
+          <View style={estilos.campos}>
+            <CampoTexto
+              rotulo="Usuário"
+              value={identificador}
+              onChangeText={setIdentificador}
+              placeholder="@usuario ou celular"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="username"
+              returnKeyType="next"
+            />
+            <CampoTexto
+              rotulo="Senha"
+              value={senha}
+              onChangeText={setSenha}
+              placeholder="Sua senha"
+              secureTextEntry={!mostrarSenha}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="current-password"
+              returnKeyType="go"
+              onSubmitEditing={() => {
+                if (!ocupado && identificador.trim() !== "" && senha !== "") entrar();
+              }}
+              // O olho dentro do campo: aberto = tocar mostra; fechado = a senha está à vista, tocar oculta.
+              acao={{ icone: mostrarSenha ? "olhoFechado" : "olho", rotulo: mostrarSenha ? "Ocultar senha" : "Mostrar senha", ativa: mostrarSenha, aoTocar: () => setMostrarSenha((atual) => !atual) }}
+            />
+          </View>
+          {erro && <Aviso tom="erro">{erro}</Aviso>}
           <Botao rotulo="Entrar" larguraTotal carregando={ocupado} disabled={identificador.trim() === "" || senha === ""} onPress={entrar} />
-          <Botao aparencia="secundario" larguraTotal rotulo="Entrar com celular (código por SMS)" disabled={ocupado} onPress={() => trocarModo("telefone")} />
+          <Divisor />
+          <Botao aparencia="secundario" larguraTotal rotulo="Entrar com código por SMS" disabled={ocupado} onPress={() => trocarModo("telefone")} />
+          <View style={estilos.rodape}>
+            <Texto cor="conteudoSuave">Novo no Jaaa?</Texto>
+            <Botao aparencia="discreto" compacto rotulo="Criar conta com o celular" accessibilityHint="Abre a entrada por código, que também cria a conta" disabled={ocupado} onPress={() => trocarModo("telefone")} />
+          </View>
         </>
       )}
 
@@ -154,42 +169,44 @@ export function FluxoLogin({ aoEntrar, etapaInicial = "senha" }: { aoEntrar: (co
             autoComplete="tel"
             dica="Enviamos um código para confirmar que o número é seu."
           />
+          {erro && <Aviso tom="erro">{erro}</Aviso>}
           <Botao rotulo="Continuar" larguraTotal carregando={ocupado} disabled={telefone.trim().length < 10} onPress={pedirCodigo} />
+          <Divisor />
           <Botao aparencia="secundario" larguraTotal rotulo="Entrar com usuário e senha" disabled={ocupado} onPress={() => trocarModo("senha")} />
         </>
       )}
 
       {etapa === "codigo" && (
         <>
-          <Texto variante="pequeno" cor="conteudoSuave">
-            Código enviado para {telefone}
-          </Texto>
           <CampoTexto rotulo="Código" value={codigo} onChangeText={setCodigo} placeholder="000000" keyboardType="number-pad" autoComplete="sms-otp" />
+          {erro && <Aviso tom="erro">{erro}</Aviso>}
           <Botao rotulo="Verificar" larguraTotal carregando={ocupado} disabled={codigo.trim().length < 6} onPress={verificar} />
-          <Botao aparencia="discreto" rotulo="Trocar número" disabled={ocupado} onPress={() => setEtapa("telefone")} />
+          <Botao aparencia="discreto" centralizado rotulo="Trocar número" disabled={ocupado} onPress={() => setEtapa("telefone")} />
         </>
       )}
 
       {etapa === "cadastro" && (
         <>
-          <CampoTexto rotulo="Seu nome" value={nome} onChangeText={setNome} placeholder="Como as pessoas veem você" />
-          <CampoTexto
-            rotulo="Nome de usuário"
-            value={usuario}
-            onChangeText={setUsuario}
-            placeholder="@usuario"
-            autoCapitalize="none"
-            autoCorrect={false}
-            dica="É assim que as pessoas encontram você no Jaa."
-          />
+          <View style={estilos.campos}>
+            <CampoTexto rotulo="Seu nome" value={nome} onChangeText={setNome} placeholder="Como as pessoas veem você" />
+            <CampoTexto
+              rotulo="Nome de usuário"
+              value={usuario}
+              onChangeText={setUsuario}
+              placeholder="@usuario"
+              autoCapitalize="none"
+              autoCorrect={false}
+              dica="É assim que as pessoas encontram você no Jaaa."
+            />
+          </View>
+          {erro && <Aviso tom="erro">{erro}</Aviso>}
           <Botao rotulo="Concluir cadastro" larguraTotal carregando={ocupado} disabled={nome.trim() === "" || usuario.trim() === ""} onPress={criarIdentidade} />
         </>
       )}
 
-      {erro && <Aviso tom="erro">{erro}</Aviso>}
       {/* Apoio de desenvolvimento: para qual servidor o app está falando. */}
       {__DEV__ && (
-        <Texto variante="pequeno" cor="conteudoSuave">
+        <Texto variante="mini" cor="conteudoSuave" style={estilos.servidor}>
           Servidor: {URL_API}
         </Texto>
       )}
@@ -197,4 +214,25 @@ export function FluxoLogin({ aoEntrar, etapaInicial = "senha" }: { aoEntrar: (co
   );
 }
 
-const estilos = StyleSheet.create({ container: { gap: Espaco.tres } });
+/** "ou" entre a ação principal e a alternativa: separa sem criar outra caixa. */
+function Divisor() {
+  return (
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={estilos.divisor}>
+      <View style={estilos.linha} />
+      <Texto variante="pequeno" cor="conteudoSuave">
+        ou
+      </Texto>
+      <View style={estilos.linha} />
+    </View>
+  );
+}
+
+const estilos = StyleSheet.create({
+  container: { gap: Espaco.quatro },
+  cabecalho: { gap: Espaco.um },
+  campos: { gap: Espaco.tres },
+  divisor: { alignItems: "center", flexDirection: "row", gap: Espaco.tres },
+  linha: { backgroundColor: Cores.borda, flex: 1, height: StyleSheet.hairlineWidth },
+  rodape: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: Espaco.um, justifyContent: "center" },
+  servidor: { textAlign: "center" },
+});

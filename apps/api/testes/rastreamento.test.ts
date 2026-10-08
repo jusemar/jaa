@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
-import { posicoesSaida } from "@jaa/banco/schema";
+import { posicoesSaida, saidasEntrega } from "@jaa/banco/schema";
 import {
   EVENTO_PEDIDO_ACOMPANHAMENTO,
   EVENTO_POSICAO_ENTREGADOR,
@@ -270,6 +270,55 @@ describe("quem vê a posição", () => {
     assert.equal(doSegundo.posicaoEntregador, null, "ainda não é a vez dele: não vê o entregador");
     assert.equal(doSegundo.fila.entregasAntes, 1, "ele continua vendo só quantas entregas há antes");
     assert.equal(eventosDoSegundo.length, 0, "e não recebe evento de posição nenhum");
+
+    /*
+     * TRECHO DA ROTA: com percurso real na saída, o cliente DA VEZ recebe só o pedaço entre o
+     * entregador e o destino dele (com distância e previsão). O traçado até a outra entrega — e o
+     * endereço dela — nunca chega a ele; quem ainda não é a vez não recebe rota nenhuma.
+     */
+    const destinoDe = (pedidoId: string) => {
+      const parada = saida.paradas.find((item) => item.pedidoId === pedidoId);
+      assert.ok(parada);
+      return { latitude: parada.destino.latitude, longitude: parada.destino.longitude };
+    };
+    const partida = { latitude: destinoDe(primeiro.pedido.id).latitude - 0.004, longitude: destinoDe(primeiro.pedido.id).longitude };
+    const meio = { latitude: destinoDe(primeiro.pedido.id).latitude - 0.002, longitude: destinoDe(primeiro.pedido.id).longitude };
+    await ctx.banco
+      .update(saidasEntrega)
+      .set({
+        rotaEstado: "percurso_real",
+        rotaProvedor: "mapbox",
+        rotaGeometria: [partida, meio, destinoDe(primeiro.pedido.id), destinoDe(segundo.pedido.id)],
+        rotaDistanciaMetros: 6000,
+        rotaDuracaoSegundos: 900,
+        rotaCalculadaEm: new Date(),
+        rotaVersaoSequencia: saida.versaoSequencia,
+      })
+      .where(eq(saidasEntrega.id, saida.id));
+    const eventosDoPrimeiro = coletar<EventoPedidoAcompanhamento>(await ctx.conectar(primeiro.cliente), EVENTO_PEDIDO_ACOMPANHAMENTO);
+    assert.equal((await enviarPosicao(P, saida.id, { ...partida, capturadaEm: new Date(Date.now() + 1000).toISOString() })).statusCode, 200);
+
+    const comRota: AcompanhamentoPedido = (await ctx.api(primeiro.cliente, "GET", `/pedidos/${primeiro.pedido.id}/acompanhamento`)).json();
+    assert.ok(comRota.rota, "o cliente da vez recebe o trecho real");
+    assert.deepEqual(Object.keys(comRota.rota).sort(), ["distanciaMetros", "duracaoSegundos", "geometria"]);
+    assert.ok(comRota.rota.distanciaMetros > 300 && comRota.rota.distanciaMetros < 600, `~445 m até ele, veio ${comRota.rota.distanciaMetros}`);
+    assert.ok(comRota.rota.duracaoSegundos > 0 && comRota.rota.duracaoSegundos < 900, "previsão = parte da duração do percurso");
+    const fim = comRota.rota.geometria.at(-1);
+    assert.deepEqual(fim, destinoDe(primeiro.pedido.id), "o trecho termina no destino DELE");
+    const doOutroCliente = destinoDe(segundo.pedido.id);
+    assert.equal(
+      comRota.rota.geometria.some((ponto) => Math.abs(ponto.latitude - doOutroCliente.latitude) < 0.0005 && Math.abs(ponto.longitude - doOutroCliente.longitude) < 0.0005),
+      false,
+      "nenhum ponto do endereço da outra entrega",
+    );
+    // Em tempo real, pelo evento de sempre (a cada posição), sem F5.
+    await aguardarAte(() => eventosDoPrimeiro.some((evento) => evento.acompanhamento.rota !== null));
+    const aindaNaFila: AcompanhamentoPedido = (await ctx.api(segundo.cliente, "GET", `/pedidos/${segundo.pedido.id}/acompanhamento`)).json();
+    assert.equal(aindaNaFila.rota, null, "fora da vez dele: nem rota, nem previsão");
+    assert.equal(aindaNaFila.posicaoEntregador, null);
+    // Rota envelhecida (ordem mudou) ou sem percurso real: nada de linha nem número inventado.
+    await ctx.banco.update(saidasEntrega).set({ rotaVersaoSequencia: saida.versaoSequencia + 1 }).where(eq(saidasEntrega.id, saida.id));
+    assert.equal(((await ctx.api(primeiro.cliente, "GET", `/pedidos/${primeiro.pedido.id}/acompanhamento`)).json() as AcompanhamentoPedido).rota, null);
 
     // Nenhum cliente alcança a saída, as paradas ou a posição bruta.
     assert.equal((await ctx.api(segundo.cliente, "GET", `/entregas/saidas/${saida.id}/posicao`)).statusCode, 404);

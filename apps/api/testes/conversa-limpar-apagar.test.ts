@@ -103,6 +103,58 @@ describe("apagar conversa", () => {
     assert.equal(reaberta.ultimaMensagem, null);
   });
 
+  it("apagar afeta SÓ aquela conversa daquela identidade: outras conversas, o contato e o outro lado ficam intactos", async () => {
+    const conversaAC = await ctx.abrirConversa(A, `${PREFIXO}_c`);
+    await enviar(C, conversaAC, "oi, aqui é o Caio");
+    await enviar(B, conversaAB, "mensagem antiga");
+    assert.equal((await ctx.api(A, "POST", "/contatos", { identidadeId: B.identidadeId, apelido: "Beto entregas" })).statusCode, 201);
+    const contatosDeA = async () =>
+      ((await ctx.api(A, "GET", "/contatos")).json() as { contatos: Array<{ identidade: { identidadeId: string }; apelido: string | null }> }).contatos.filter((contato) => contato.identidade.identidadeId === B.identidadeId);
+
+    assert.equal((await ctx.api(A, "POST", `/conversas/${conversaAB}/apagar`)).statusCode, 204);
+
+    // Para A: a conversa com B some e o histórico antigo não aparece mais…
+    assert.equal(await itemDaLista(A, conversaAB), undefined);
+    assert.deepEqual(await historico(A, conversaAB), []);
+    // …a conversa com C continua lá, inteira…
+    assert.equal((await itemDaLista(A, conversaAC))?.ultimaMensagem?.conteudo, "oi, aqui é o Caio");
+    assert.deepEqual(await historico(A, conversaAC), ["oi, aqui é o Caio"]);
+    // …e B continua nos CONTATOS de A, com o apelido (apagar conversa não é excluir contato).
+    assert.deepEqual((await contatosDeA()).map((contato) => contato.apelido), ["Beto entregas"]);
+    // Para B: nada foi destruído.
+    assert.ok(await itemDaLista(B, conversaAB));
+    assert.ok((await historico(B, conversaAB)).includes("mensagem antiga"));
+    // Repetir é inofensivo (idempotente).
+    assert.equal((await ctx.api(A, "POST", `/conversas/${conversaAB}/apagar`)).statusCode, 204);
+    assert.equal((await contatosDeA()).length, 1);
+  });
+
+  it("multi-identidade: apagar como EMPRESA não apaga a conversa PESSOAL da mesma conta (e vice-versa)", async () => {
+    const loja: Empresa = (await ctx.api(D, "POST", "/empresas", { nome: "Loja MI", nomeUsuario: `${PREFIXO}_loja`, slug: `${PREFIXO}-loja` })).json();
+    const comoLoja = como(D, loja.identidadeId);
+    // B conversa com a LOJA e, separadamente, com a pessoa D.
+    const conversaComLoja = await ctx.abrirConversa(B, `${PREFIXO}_loja`);
+    const conversaComD = await ctx.abrirConversa(B, `${PREFIXO}_d`);
+    await enviar(B, conversaComLoja, "oi loja");
+    await enviar(B, conversaComD, "oi dona");
+
+    // A pessoa D não apaga a conversa da empresa (não participa dela como pessoa).
+    assert.equal((await ctx.api(D, "POST", `/conversas/${conversaComLoja}/apagar`)).statusCode, 404);
+    // Apagando COMO a empresa: some só da empresa.
+    assert.equal((await ctx.api(comoLoja, "POST", `/conversas/${conversaComLoja}/apagar`)).statusCode, 204);
+    assert.equal(await itemDaLista(comoLoja, conversaComLoja), undefined);
+    assert.ok(await itemDaLista(D, conversaComD), "a conversa pessoal da mesma conta continua");
+    assert.deepEqual(await historico(D, conversaComD), ["oi dona"]);
+    assert.ok(await itemDaLista(B, conversaComLoja), "o cliente não perde a conversa com a loja");
+
+    // E o contrário: apagando como PESSOA, a empresa não é afetada.
+    await enviar(B, conversaComLoja, "voltei, loja");
+    assert.equal((await ctx.api(D, "POST", `/conversas/${conversaComD}/apagar`)).statusCode, 204);
+    assert.equal(await itemDaLista(D, conversaComD), undefined);
+    assert.equal((await itemDaLista(comoLoja, conversaComLoja))?.ultimaMensagem?.conteudo, "voltei, loja");
+    assert.deepEqual(await historico(comoLoja, conversaComLoja), ["voltei, loja"]);
+  });
+
   it("limpar/apagar não mexem em pedido nem são confundidos entre pessoa e empresa", async () => {
     const pizzaria: Empresa = (await ctx.api(D, "POST", "/empresas", { nome: "Pizzaria LAP", nomeUsuario: `${PREFIXO}_pizza`, slug: `${PREFIXO}-pizza` })).json();
     const pizza: Produto = (await ctx.api(D, "POST", `/empresas/${pizzaria.id}/produtos`, { nome: "Pizza", precoCentavos: 3000 })).json();
@@ -119,10 +171,14 @@ describe("apagar conversa", () => {
     assert.equal(criado.statusCode, 201, criado.body);
     const pedido: Pedido = criado.json();
 
-    // O cliente apaga a conversa: o pedido continua existindo e a EMPRESA ainda vê o card.
+    // Uma mensagem REAL do cliente: é ela (não o pedido) que faz a conversa existir para a empresa.
+    const empresa = como(D, pizzaria.identidadeId);
+    assert.equal(await itemDaLista(empresa, conversaBP), undefined, "só o pedido não cria conversa para a empresa");
+    assert.equal((await ctx.api(B, "POST", `/conversas/${conversaBP}/mensagens`, { idCliente: randomUUID(), conteudo: "Oi, fiz um pedido" })).statusCode, 201);
+
+    // O cliente apaga a conversa: o pedido continua existindo e, para a EMPRESA, nada mudou.
     assert.equal((await ctx.api(B, "POST", `/conversas/${conversaBP}/apagar`)).statusCode, 204);
     assert.equal((await ctx.api(B, "GET", `/pedidos/${pedido.id}`)).statusCode, 200);
-    const empresa = como(D, pizzaria.identidadeId);
     assert.ok((await itemDaLista(empresa, conversaBP))?.ultimaMensagem, "para a empresa nada mudou");
     const avancou = await ctx.api(D, "POST", `/empresas/${pizzaria.id}/pedidos/${pedido.id}/avancar`, { statusAtual: "recebido" });
     assert.equal(avancou.statusCode, 200, avancou.body);

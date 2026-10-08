@@ -1,0 +1,54 @@
+{
+  "name": "landpage2",
+  "description": "Versão aprovada antes do destaque comercial sem mensalidade.",
+  "files": [
+    {
+      "path": "apps/web/src/features/landing/README.md",
+      "sha256": "0ee1787c02bbbef2fda093a7893c3caf6b7f4a3e995fd3953cad6cbe57581a7a"
+    },
+    {
+      "path": "apps/web/src/features/landing/landing.css",
+      "sha256": "7fb0aaad7550ef3060123706714dcb0fe25788abd70b1a38ba5ba33284749417"
+    },
+    {
+      "path": "apps/web/src/features/landing/components/demonstracoes.tsx",
+      "sha256": "3a25ed80412735574d48ec9ee755c108429612fffc5e9436a022502d2e5c6479"
+    },
+    {
+      "path": "apps/web/src/features/landing/components/entrada-conta.tsx",
+      "sha256": "30469f4ab2226d48b4379ccadd45ff7b889fa5c4d1cedba17beb40d5be76c525"
+    },
+    {
+      "path": "apps/web/src/features/landing/components/movimento-landing.tsx",
+      "sha256": "06667ca03863594509a10a5831abb446ad15f6e9fe96147438469633e2206f88"
+    },
+    {
+      "path": "apps/web/src/features/landing/components/entrada-publica.tsx",
+      "sha256": "cd4aaf16a488769385831ae0eab70a28b9b08d19e06e34e1cea55b0594c8b7da"
+    },
+    {
+      "path": "apps/web/src/features/landing/components/use-narrativa.ts",
+      "sha256": "c98da924bc6f87cb61332e2d54d901d91ec25b86ac749d5d492a734f724b6546"
+    },
+    {
+      "path": "apps/web/src/features/landing/components/landing-page.tsx",
+      "sha256": "24efebbaaad7870936b8c1e44d438e7bb88d5f6965d1811923fe54d48e309a20"
+    },
+    {
+      "path": "apps/web/public/landing/jaaa-simbolo.webp",
+      "sha256": "8c17dc2415aabe391d1d1c7b990af08e924d5c21925d1eb92d9acaaad9d2650b"
+    },
+    {
+      "path": "apps/web/src/app/page.tsx",
+      "sha256": "fa86ea49352f00f99aeec5e600ade59752e33dea1c72bc5a963a6c52fcb2224c"
+    },
+    {
+      "path": "apps/web/src/app/entrar/page.tsx",
+      "sha256": "0b7811e17011eadedd3e8f65c99910303c97e1204149b3379dfb9077d1df992c"
+    },
+    {
+      "path": "apps/web/src/app/cadastro/page.tsx",
+      "sha256": "665176630c47bdb6220743228b792463ff8ad028beed7a55e2ee47cb47c8acc8"
+    }
+  ]
+}

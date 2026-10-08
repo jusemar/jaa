@@ -125,3 +125,75 @@ describe("som da próxima entrega", () => {
     assert.equal(notas.length, 6);
   });
 });
+
+describe("som de novo pedido (empresa)", () => {
+  const parametro = () => ({ setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} });
+  function contexto() {
+    const notas: number[] = [];
+    const ctx = {
+      state: "running",
+      currentTime: 0,
+      destination: {} as AudioNode,
+      resume: async () => {},
+      createOscillator: () => ({ type: "sine", frequency: parametro(), connect: () => {}, start: () => notas.push(1), stop: () => {} }) as unknown as OscillatorNode,
+      createGain: () => ({ gain: parametro(), connect: () => {} }) as unknown as GainNode,
+    };
+    return { ctx: ctx as ContextoAudioMinimo, notas };
+  }
+
+  it("é um som PRÓPRIO, diferente do de mensagem e do de entrega próxima", async () => {
+    const { PADRAO_SOM_ENTREGA_PROXIMA, PADRAO_SOM_MENSAGEM, PADRAO_SOM_NOVO_PEDIDO } = await import("./som-mensagem.ts");
+    const frequencias = (padrao: { notas: ReadonlyArray<{ frequencia: number }> }) => padrao.notas.map((nota) => nota.frequencia).join(",");
+    assert.notEqual(frequencias(PADRAO_SOM_NOVO_PEDIDO), frequencias(PADRAO_SOM_MENSAGEM));
+    assert.notEqual(frequencias(PADRAO_SOM_NOVO_PEDIDO), frequencias(PADRAO_SOM_ENTREGA_PROXIMA));
+    assert.ok(PADRAO_SOM_NOVO_PEDIDO.volume > PADRAO_SOM_MENSAGEM.volume);
+  });
+
+  it("um pedido, UM som: reentrega do mesmo pedido (reconexão, evento repetido) não toca de novo", async () => {
+    const { PADRAO_SOM_NOVO_PEDIDO, criarTocadorSom } = await import("./som-mensagem.ts");
+    const { ctx, notas } = contexto();
+    const pedido = criarTocadorSom(() => ctx, PADRAO_SOM_NOVO_PEDIDO);
+    pedido.habilitar();
+    assert.equal(pedido.tocar("pedido-1"), true);
+    assert.equal(pedido.tocar("pedido-1"), false);
+    assert.equal(notas.length, PADRAO_SOM_NOVO_PEDIDO.notas.length);
+    assert.equal(pedido.tocar("pedido-2"), true);
+    assert.equal(notas.length, PADRAO_SOM_NOVO_PEDIDO.notas.length * 2);
+  });
+
+  it("o gatilho é `pedido:novo` — pedido não é mensagem para a empresa", async () => {
+    const { readFileSync } = await import("node:fs");
+    const hook = readFileSync(new URL("../hooks/use-avisos-mensagens.ts", import.meta.url), "utf8");
+    assert.ok(hook.includes("socket.on(EVENTO_PEDIDO_NOVO, aoChegarPedido)"));
+    assert.equal(hook.includes("EVENTO_MENSAGEM_NOVA"), false);
+  });
+});
+
+describe("indicador de Pedidos (empresa)", () => {
+  it("pedido aguardando marca o item PEDIDOS — nunca o de Conversas", async () => {
+    const { AREAS_EMPRESARIAIS } = await import("@/components/navegacao/areas.ts");
+    const html = renderToStaticMarkup(createElement(NavegacaoApp, { areas: AREAS_EMPRESARIAIS, areaAtiva: "conversas", aoAbrir: () => {}, pedidosAguardando: 2 }));
+    assert.ok(/data-area="pedidos"[^>]*aria-label="Pedidos, 2 pedidos aguardando"/.test(html));
+    assert.ok(html.includes('data-pedidos-aguardando="2"'));
+    assert.equal(html.includes("data-nao-lidas-area"), false, "Conversas não ganha indicador por causa de pedido");
+    const sem = renderToStaticMarkup(createElement(NavegacaoApp, { areas: AREAS_EMPRESARIAIS, areaAtiva: "conversas", aoAbrir: () => {} }));
+    assert.equal(sem.includes("data-pedidos-aguardando"), false);
+  });
+});
+
+describe("aviso flutuante 'Sua entrega é a próxima' (Web)", () => {
+  it("tem fundo SÓLIDO do tema (o tipo sem classe ficava transparente) e é disparado uma vez por aviso", async () => {
+    const { readFileSync } = await import("node:fs");
+    const avisos = readFileSync(new URL("../../../components/ui/avisos.tsx", import.meta.url), "utf8");
+    const classe = /default: "([^"]+)"/.exec(avisos)?.[1] ?? "";
+    assert.ok(classe.includes("bg-marca-suave") && classe.includes("text-marca-suave-conteudo"), classe);
+    assert.equal(/bg-[a-z-]+\/\d+|opacity-|backdrop-/.test(classe), false, "nada translúcido");
+    // Um contêiner de avisos no app e um único disparo, protegido pelo id do aviso.
+    const hook = readFileSync(new URL("../hooks/use-avisos-mensagens.ts", import.meta.url), "utf8");
+    assert.equal((hook.match(/avisarEmDestaque\(/g) ?? []).length, 1);
+    assert.ok(hook.includes("!obterTocadorEntrega().tocar(aviso.data.avisoId)"));
+    const app = readFileSync(new URL("../../../components/navegacao/app-jaa.tsx", import.meta.url), "utf8");
+    assert.equal((app.match(/<AvisosDeAcao \/>/g) ?? []).length, 1);
+  });
+});
+

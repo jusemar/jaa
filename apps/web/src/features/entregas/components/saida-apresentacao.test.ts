@@ -123,7 +123,7 @@ describe("sequência da saída", () => {
     );
     assert.equal((html.match(/data-proxima-parada/g) ?? []).length, 1);
     // Nada de prometer rota/tempo sem motor de roteamento.
-    assert.ok(conteudo.includes("Sequência sugerida pelo Jaa"));
+    assert.ok(conteudo.includes("Sequência sugerida pelo Jaaa"));
     for (const proibido of [
       "melhor rota",
       "rota mais rápida",

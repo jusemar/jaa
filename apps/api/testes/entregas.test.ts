@@ -264,6 +264,33 @@ describe("atribuição", () => {
 });
 
 describe("reatribuição e revogação", () => {
+  it("atribuição MANUAL de pedido pronto cria a ROTA dele, já liberada: o entregador pode sair ou recusar, como no despacho automático", async () => {
+    const pedido = await pedidoPronto();
+    assert.equal((await atribuir(A, pizzaria, pedido.id, { entregadorId: paulo })).statusCode, 200);
+
+    const saidas = ((await ctx.api(P, "GET", "/entregas/saidas")).json() as { saidas: Array<{ id: string; status: string; paradas: Array<{ pedidoId: string }> }> }).saidas;
+    const rota = saidas.find((saida) => saida.paradas.some((parada) => parada.pedidoId === pedido.id));
+    assert.ok(rota, "o pedido chega ao entregador dentro de uma rota, não solto");
+    assert.equal(rota.status, "liberada_retirada", "é este estado que mostra 'Sair para entrega' e 'Recusar rota' no app");
+    assert.equal(rota.paradas.length, 1);
+
+    // As MESMAS ações do fluxo automático funcionam: sair para entrega…
+    const iniciada = await ctx.api(P, "POST", `/entregas/saidas/${rota.id}/iniciar`);
+    assert.equal(iniciada.statusCode, 200, iniciada.body);
+    const atual = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${pedido.id}`)).json() as { status: string };
+    assert.equal(atual.status, "saiu_para_entrega");
+    // …e concluir a entrega, que encerra a rota.
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${rota.id}/paradas/${pedido.id}/concluir`)).statusCode, 200);
+
+    // …ou recusar: a rota volta para a fila e deixa de ser dele.
+    const outro = await pedidoPronto();
+    assert.equal((await atribuir(A, pizzaria, outro.id, { entregadorId: paulo })).statusCode, 200);
+    const segunda = ((await ctx.api(P, "GET", "/entregas/saidas")).json() as { saidas: Array<{ id: string; paradas: Array<{ pedidoId: string }> }> }).saidas.find((saida) => saida.paradas.some((parada) => parada.pedidoId === outro.id));
+    assert.ok(segunda);
+    assert.equal((await ctx.api(P, "POST", `/entregas/saidas/${segunda.id}/recusar`)).statusCode, 200);
+    assert.equal((await ctx.api(P, "GET", `/entregas/${outro.id}`)).statusCode, 404);
+  });
+
   it("trocar de entregador move o acesso e preserva o histórico", async () => {
     const pedido = await pedidoPronto();
     assert.equal((await atribuir(A, pizzaria, pedido.id, { entregadorId: paulo })).statusCode, 200);

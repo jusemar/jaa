@@ -7,6 +7,7 @@ import {
   saidasEntrega,
 } from "@jaa/banco/schema";
 import {
+  PRESENCA_VALIDADE_MAXIMA_MS,
   participaDaFila,
   type StatusEntregador,
   type Uf,
@@ -80,6 +81,14 @@ export async function confirmarPontoBase(
   return base ?? null;
 }
 
+/*
+ * PRESENÇA ATUAL. `na_base` é o que a última leitura concluiu; ele só VALE enquanto houver leitura
+ * recente (`PRESENCA_VALIDADE_MAXIMA_MS`, relógio do banco). É a ÚNICA definição de "está na base
+ * agora" — usada em toda leitura (painel, situação, fila), na transação que mexe na fila e na escolha
+ * do despacho. Sem ela, quem fechou o app dentro da base ficava "na base" (e na fila) para sempre.
+ */
+export const presencaAtual = sql<boolean>`(${entregadoresEmpresa.ultimaLeituraEm} is not null and ${entregadoresEmpresa.ultimaLeituraEm} >= now() - ${sql.raw(`interval '${Math.round(PRESENCA_VALIDADE_MAXIMA_MS / 1000)} seconds'`)})`;
+
 export interface EntregadorOperacionalRegistro {
   id: string;
   empresaId: string;
@@ -105,15 +114,16 @@ const colunasOperacionais = {
   usuarioId: entregadoresEmpresa.usuarioId,
   status: entregadoresEmpresa.status,
   disponivel: entregadoresEmpresa.disponivel,
-  naBase: entregadoresEmpresa.naBase,
+  // Estado EFETIVO: presença sem leitura recente não conta (nem a fila nem a contagem da histerese).
+  naBase: sql<boolean>`(${entregadoresEmpresa.naBase} and ${presencaAtual})`,
   aptoParaSaida: entregadoresEmpresa.aptoParaSaida,
   emEntrega: sql<boolean>`exists (
     select 1 from ${saidasEntrega}
     where ${saidasEntrega.entregadorId} = ${entregadoresEmpresa.id}
       and ${saidasEntrega.status} = 'em_andamento'
   )`,
-  filaEntrouEm: entregadoresEmpresa.filaEntrouEm,
-  leiturasConsecutivas: entregadoresEmpresa.leiturasConsecutivas,
+  filaEntrouEm: sql<Date | null>`case when ${presencaAtual} then ${entregadoresEmpresa.filaEntrouEm} end`.mapWith(entregadoresEmpresa.filaEntrouEm),
+  leiturasConsecutivas: sql<number>`case when ${presencaAtual} then ${entregadoresEmpresa.leiturasConsecutivas} else 0 end`.mapWith(Number),
   pessoa: {
     identidadeId: identidades.id,
     tipo: identidades.tipo,
@@ -180,6 +190,7 @@ export function listarFila(
       and(
         eq(entregadoresEmpresa.empresaId, empresaId),
         isNotNull(entregadoresEmpresa.filaEntrouEm),
+        presencaAtual,
       ),
     )
     .orderBy(
@@ -216,7 +227,8 @@ export async function aplicarMudancaOperacional(
       .select({
         status: entregadoresEmpresa.status,
         disponivel: entregadoresEmpresa.disponivel,
-        naBase: entregadoresEmpresa.naBase,
+        naBaseGravado: entregadoresEmpresa.naBase,
+        presencaAtual,
         aptoParaSaida: entregadoresEmpresa.aptoParaSaida,
         filaEntrouEm: entregadoresEmpresa.filaEntrouEm,
       })
@@ -226,10 +238,16 @@ export async function aplicarMudancaOperacional(
       .limit(1);
     if (!atual) return "sem-mudanca";
 
+    /*
+     * Sem leitura nova nesta mudança, vale a presença ATUAL: `na_base` gravado sem leitura recente é
+     * presença vencida — ninguém entra nem continua na fila por um estado antigo, e o campo é corrigido
+     * aqui mesmo (junto com a fila, como o banco exige).
+     */
+    const presencaVencida = mudanca.naBase === undefined && atual.naBaseGravado && !atual.presencaAtual;
     const depois = {
       status: mudanca.status ?? atual.status,
       disponivel: mudanca.disponivel ?? atual.disponivel,
-      naBase: mudanca.naBase ?? atual.naBase,
+      naBase: mudanca.naBase ?? (atual.naBaseGravado && atual.presencaAtual),
       aptoParaSaida: mudanca.aptoParaSaida ?? atual.aptoParaSaida,
     };
 
@@ -274,6 +292,8 @@ export async function aplicarMudancaOperacional(
               ? { presencaAtualizadaEm: new Date() }
               : {}),
           }),
+      // Presença vencida: deixa de estar "na base" SEM fingir que houve leitura (o horário dela não muda).
+      ...(presencaVencida ? { naBase: false, leiturasConsecutivas: 0, presencaAtualizadaEm: new Date() } : {}),
       // `now()` do banco: a ordem da fila é do servidor, nunca do relógio de quem chegou.
       ...(entrando ? { filaEntrouEm: sql`now()` } : {}),
       ...(saindo ? { filaEntrouEm: null } : {}),
@@ -311,6 +331,20 @@ export function sincronizarFila(
   motivoSaida: string,
 ): Promise<"entrou" | "saiu" | "sem-mudanca"> {
   return aplicarMudancaOperacional(banco, entregadorId, {}, motivoSaida);
+}
+
+export const MOTIVO_PRESENCA_VENCIDA = "Presença sem confirmação recente";
+
+/**
+ * Vínculos cujo `na_base` venceu (sem leitura recente): candidatos à correção periódica. Quem está
+ * com rota também entra — "não sei onde está" vale para todos; a rota dele não é tocada.
+ */
+export async function listarPresencasVencidas(banco: Banco): Promise<string[]> {
+  const linhas = await banco
+    .select({ id: entregadoresEmpresa.id })
+    .from(entregadoresEmpresa)
+    .where(and(eq(entregadoresEmpresa.naBase, true), sql`not ${presencaAtual}`));
+  return linhas.map((linha) => linha.id);
 }
 
 export type { Uf };

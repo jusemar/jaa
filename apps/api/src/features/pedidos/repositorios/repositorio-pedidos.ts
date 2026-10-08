@@ -342,6 +342,17 @@ export async function listarPedidosDaEmpresa(
     .limit(opcoes.limite);
 }
 
+/** Quantos pedidos a empresa tem nesse filtro, ao todo (independente da página pedida). */
+export async function contarPedidosDaEmpresa(banco: Banco, empresaId: string, status: readonly StatusPedido[] = []): Promise<number> {
+  const filtros = [eq(pedidos.empresaId, empresaId)];
+  if (status.length > 0) filtros.push(inArray(pedidos.status, [...status]));
+  const [linha] = await banco
+    .select({ total: sql<number>`count(*)::int` })
+    .from(pedidos)
+    .where(and(...filtros));
+  return linha?.total ?? 0;
+}
+
 export type ResultadoAlteracaoStatus = { tipo: "alterado"; pedido: PedidoRegistro } | { tipo: "status-mudou"; statusAtual: StatusPedido | null };
 
 /**
@@ -378,11 +389,6 @@ export async function alterarStatusPedido(
 
     return { tipo: "alterado", pedido: atualizado };
   });
-}
-
-export async function contarPedidosDaEmpresa(banco: Banco, empresaId: string): Promise<number> {
-  const [linha] = await banco.select({ total: count() }).from(pedidos).where(eq(pedidos.empresaId, empresaId));
-  return linha?.total ?? 0;
 }
 
 export type { StatusPedido };

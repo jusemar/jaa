@@ -49,11 +49,11 @@ describe("links nas mensagens", () => {
 
 describe("destino do link", () => {
   const SITE = "https://jaa.com.br";
-  it("Link do Jaa deste site abre a conversa aqui mesmo", () => {
+  it("Link do Jaaa deste site abre a conversa aqui mesmo", () => {
     assert.deepEqual(destinoDoLink("https://jaa.com.br/@Pizzaria_Oasis", SITE), { tipo: "conversa", nomeUsuario: "pizzaria_oasis" });
   });
 
-  it("outro endereço deste site é interno; outro site é externo — inclusive imitando o Jaa", () => {
+  it("outro endereço deste site é interno; outro site é externo — inclusive imitando o Jaaa", () => {
     assert.deepEqual(destinoDoLink("https://jaa.com.br/#perfil", SITE), { tipo: "interno" });
     assert.deepEqual(destinoDoLink("https://jaa.com.br/@a/b", SITE), { tipo: "interno" });
     for (const url of ["https://jaa.com.br.malicioso.example/@pizza", "https://malicioso.example/@pizza", "http://jaa.com.br/@pizza", "https://jaa.com.br@malicioso.example/@pizza"]) {

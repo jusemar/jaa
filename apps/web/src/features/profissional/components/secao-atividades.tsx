@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { IconeCheck, IconeMais } from "@/components/ui/icones";
 import { Botao, Cartao, EstadoVazio, Interruptor, Secao, Selo } from "@/components/ui/primitivos";
 import { adicionarAtividade, removerAtividade, salvarEscolhasAtividade, salvarPermiteAgendamento } from "../lib/api-perfil-profissional";
-import { alternarId, alternarOpcao, atividadesParaAdicionar, resumoEscolhas, resumoHorarios, servicosDoCatalogo } from "../lib/apresentacao-perfil-profissional";
+import { alternarId, alternarOpcao, atividadesParaAdicionar, atributosSemEscolha, resumoEscolhas, resumoHorarios, servicosDoCatalogo } from "../lib/apresentacao-perfil-profissional";
 import { EditorHorarios } from "./editor-horarios";
 import type { PropsEtapa } from "./tipos";
 
@@ -31,9 +31,17 @@ export function SecaoAtividades({
 
   useEffect(() => aoMudarPendencias(edicaoPendente), [edicaoPendente, aoMudarPendencias]);
 
-  async function adicionar(servico: ServicoCatalogo) {
-    const atualizado = await aplicar(adicionarAtividade(servico.id), { sucesso: `${servico.nome} adicionado`, chave: `adicionar-${servico.id}` });
+  // Atividade com item obrigatório (ex.: Veículo do Entregador): escolhe-se ANTES de adicionar.
+  const [preparando, setPreparando] = useState<{ servico: ServicoCatalogo; opcoes: string[] } | null>(null);
+
+  async function adicionar(servico: ServicoCatalogo, opcaoIds: string[] = []) {
+    if (atributosSemEscolha(servico, opcaoIds).length > 0) {
+      setPreparando({ servico, opcoes: opcaoIds });
+      return;
+    }
+    const atualizado = await aplicar(adicionarAtividade(servico.id, opcaoIds), { sucesso: `${servico.nome} adicionado`, chave: `adicionar-${servico.id}` });
     if (!atualizado) return;
+    setPreparando(null);
     setEscolhendo(false);
     setEditandoId(atualizado.atividades.find((atividade) => atividade.atividadeId === servico.id)?.id ?? null);
   }
@@ -53,7 +61,46 @@ export function SecaoAtividades({
         )
       }
     >
-      {escolhendo && (
+      {escolhendo && preparando && (
+        <div data-escolha-obrigatoria className="flex flex-col gap-3 rounded-jaa-compacto border border-borda bg-superficie-suave p-3">
+          <p className="text-sm font-bold text-conteudo">{preparando.servico.nome}</p>
+          {preparando.servico.atributos
+            .filter((atributo) => atributo.obrigatorio)
+            .map((atributo) => (
+              <fieldset key={atributo.id} className="flex flex-col gap-2">
+                <legend className="mb-1 text-sm text-conteudo">
+                  {atributo.nome} <span className="text-conteudo-suave">— escolha pelo menos uma opção</span>
+                </legend>
+                <div role={atributo.tipoSelecao === "unica" ? "radiogroup" : "group"} aria-label={atributo.nome} className="flex flex-wrap gap-2">
+                  {atributo.opcoes.map((opcao) => (
+                    <Escolha
+                      key={opcao.id}
+                      papel={atributo.tipoSelecao === "unica" ? "radio" : "checkbox"}
+                      marcada={preparando.opcoes.includes(opcao.id)}
+                      rotulo={opcao.nome}
+                      aoAlternar={() => setPreparando({ servico: preparando.servico, opcoes: alternarOpcao(preparando.opcoes, opcao.id, atributo) })}
+                    />
+                  ))}
+                </div>
+              </fieldset>
+            ))}
+          <div className="flex flex-wrap gap-2">
+            <Botao
+              carregando={pendente === `adicionar-${preparando.servico.id}`}
+              textoCarregando="Adicionando…"
+              disabled={pendente !== null || atributosSemEscolha(preparando.servico, preparando.opcoes).length > 0}
+              onClick={() => void adicionar(preparando.servico, preparando.opcoes)}
+            >
+              Adicionar {preparando.servico.nome}
+            </Botao>
+            <Botao aparencia="discreto" disabled={pendente !== null} onClick={() => setPreparando(null)}>
+              Voltar
+            </Botao>
+          </div>
+        </div>
+      )}
+
+      {escolhendo && !preparando && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-conteudo-suave">Escolha:</span>
           {disponiveis.map((servico) => (
@@ -122,6 +169,8 @@ function CartaoAtividade({
   aoEditar: () => void;
 }) {
   const escolhas = resumoEscolhas(atividade, servico);
+  // Perfil gravado antes de o item ser obrigatório: nada muda sozinho, a tela só avisa o que falta.
+  const faltando = atributosSemEscolha(servico, atividade.opcaoIds);
   const temHorario = atividade.periodos.length > 0;
   return (
     <Cartao className="flex items-start justify-between gap-3 p-4">
@@ -131,6 +180,11 @@ function CartaoAtividade({
           {temHorario ? <IconeCheck className="h-4 w-4 text-marca" aria-label="Configurada" /> : <Selo tom="atencao">Sem horários</Selo>}
         </div>
         {escolhas.length > 0 && <p className="text-sm text-conteudo">{escolhas.join(" · ")}</p>}
+        {faltando.map((atributo) => (
+          <div key={atributo.id} data-falta-escolha={atributo.slug}>
+            <Selo tom="atencao">Falta escolher: {atributo.nome}</Selo>
+          </div>
+        ))}
         <p className="text-sm text-conteudo-suave">{resumoHorarios(atividade.periodos).join(" · ")}</p>
         {atividade.permiteAgendamento && (
           <div>
@@ -191,6 +245,7 @@ function EditorAtividade({
   const [opcoes, setOpcoes] = useState(atividade.opcaoIds);
   const [horariosPendentes, setHorariosPendentes] = useState(false);
   const [confirmandoRemocao, setConfirmandoRemocao] = useState(false);
+  const faltando = atributosSemEscolha(servico, opcoes);
   const temEscolhas = Boolean(servico && (servico.especialidades.length > 0 || servico.atributos.length > 0));
   const escolhasAlteradas = !mesmoConjunto(especialidades, atividade.especialidadeIds) || !mesmoConjunto(opcoes, atividade.opcaoIds);
   const haPendencia = escolhasAlteradas || horariosPendentes;
@@ -241,11 +296,16 @@ function EditorAtividade({
               </div>
             </fieldset>
           ))}
+          {faltando.length > 0 && (
+            <p role="status" data-falta-escolha className="text-sm text-aviso">
+              Escolha pelo menos uma opção em {faltando.map((atributo) => atributo.nome).join(", ")} para salvar. Sem isso você não aparece em buscas por essa opção.
+            </p>
+          )}
           {escolhasAlteradas && (
             <div className="flex flex-wrap gap-2">
               <Botao
                 carregando={pendente === chaveEscolhas}
-                disabled={pendente !== null}
+                disabled={pendente !== null || faltando.length > 0}
                 onClick={() => void aplicar(salvarEscolhasAtividade(atividade.id, { especialidadeIds: especialidades, opcaoIds: opcoes }), { sucesso: "Atividade salva", chave: chaveEscolhas })}
               >
                 Salvar

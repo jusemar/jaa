@@ -48,7 +48,7 @@ describe("rota da saída", () => {
       rota({ estado: "aproximacao_local", motivoFallback: "provedor_indisponivel", provedor: null, geometria: null, distanciaMetros: null, duracaoSegundos: null }),
     );
     assert.equal(fallback.distanciaMetros, null);
-    assert.equal(rotuloRota(fallback, 2), "Sequência sugerida pelo Jaa (sem cálculo de percurso)");
+    assert.equal(rotuloRota(fallback, 2), "Sequência sugerida pelo Jaaa (sem cálculo de percurso)");
   });
 
   it("os rótulos falam em trajeto, nunca em melhor rota ou previsão de entrega", () => {
@@ -59,7 +59,7 @@ describe("rota da saída", () => {
       assert.equal(rotulo.toLowerCase().includes(proibido), false, proibido);
     }
     assert.equal(rotuloRota(rota(), 3), "Sequência alterada: percurso será recalculado");
-    assert.equal(rotuloRota(null, 1), "Sequência sugerida pelo Jaa");
+    assert.equal(rotuloRota(null, 1), "Sequência sugerida pelo Jaaa");
   });
 
   it("formata distância e duração de forma legível", () => {

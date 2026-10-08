@@ -4,10 +4,11 @@ import { QUANTIDADE_MAXIMA_POR_ITEM, type EmpresaPublica, type FuncionamentoPubl
 import { useMemo, useState } from "react";
 import { APARENCIA_INDISPONIVEL, acaoOuExplicacao } from "@/components/ui/acao-indisponivel";
 import { FaixaRolavel } from "@/components/ui/faixa-rolavel";
-import { IconeBusca, IconeCesta, IconeFechar, IconeImagem, IconeLoja, IconeMais, IconeMenos, IconeVoltar } from "@/components/ui/icones";
+import { IconeBusca, IconeCesta, IconeFechar, IconeImagem, IconeLoja, IconeMais, IconeMenos, IconeSeta, IconeVoltar } from "@/components/ui/icones";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { filtrarProdutos, secaoAtiva, type SecaoCardapio } from "../lib/cardapio";
-import { FuncionamentoDaEmpresa } from "./funcionamento-da-empresa";
+import { BotaoIcone } from "@/components/ui/primitivos";
+import { FuncionamentoDaEmpresa, temFuncionamentoVisivel } from "./funcionamento-da-empresa";
 import { MontagemProduto, type BloqueioDePedido } from "./montagem-produto";
 
 /*
@@ -65,68 +66,65 @@ export function Cardapio({
    * barra de categorias não muda de tamanho enquanto se digita.
    */
   const encontrados = useMemo(() => filtrarProdutos(ativa?.produtos ?? [], busca), [ativa, busca]);
+  const temEstado = temFuncionamentoVisivel(funcionamento);
+  const fechar = aoFechar ? (
+    <BotaoIcone aria-label="Fechar cardápio" title="Fechar cardápio" data-fechar-cardapio onClick={aoFechar}>
+      <IconeFechar className="h-4 w-4" />
+    </BotaoIcone>
+  ) : null;
 
   return (
-    <div className="flex flex-col gap-2.5">
-      {/* Cabeçalho do cardápio dentro da conversa: quem é a loja e como sair dela. */}
-      <div className="flex flex-col gap-1 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
-        <div className="flex items-center gap-2">
-          <h3 className="fonte-display flex min-w-0 flex-1 items-center gap-2 text-sm font-bold sm:text-base">
-            <IconeLoja className="h-5 w-5 shrink-0 text-marca" />
-            <span className="truncate">Cardápio de {empresa.nome}</span>
-          </h3>
-          {aoFechar && (
-            <button
-              type="button"
-              onClick={aoFechar}
-              className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-jaa-compacto px-3 text-xs font-medium text-conteudo-suave transition-colors hover:bg-realce hover:text-conteudo"
-            >
-              <IconeFechar className="h-4 w-4" />
-              <span className="hidden sm:inline">Fechar</span>
-            </button>
+    // O nome da empresa não é repetido na tela (está no topo da conversa); fica no nome acessível.
+    <div role="group" aria-label={`Cardápio de ${empresa.nome}`} className="flex flex-col gap-2">
+      {/*
+        BARRA DO CARDÁPIO — um bloco só: aberto/fechado, busca e categorias. Não há mais a faixa
+        "Cardápio de <empresa>": quem abriu o cardápio já sabe disso, e a empresa está no topo da
+        conversa. Fechar continua existindo, como um X discreto no fim da PRIMEIRA linha que houver.
+      */}
+      {(temEstado || !montagem || secoes.length > 1 || fechar) && (
+        <div data-barra-do-cardapio className="flex flex-col gap-1.5 rounded-jaa border border-borda bg-superficie p-1.5 shadow-cartao sm:p-2">
+          {/* Primeira coisa que o cliente lê: dá para pedir agora? Se não, quando? */}
+          {temEstado && <FuncionamentoDaEmpresa funcionamento={funcionamento} depois={fechar} />}
+
+          {/* Busca no desenho da busca de conversas. No montador ela não aparece: não há lista para filtrar. */}
+          {!montagem && (
+            <div className="flex items-center gap-1">
+              <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-jaa-compacto bg-superficie-suave px-3 text-conteudo-suave focus-within:ring-2 focus-within:ring-marca/30 sm:min-h-10">
+                <span className="sr-only">Buscar no cardápio</span>
+                <IconeBusca className="h-4 w-4 shrink-0" />
+                <input
+                  name="buscaCardapio"
+                  type="search"
+                  value={busca}
+                  placeholder="Buscar no cardápio"
+                  autoComplete="off"
+                  onChange={(evento) => setBusca(evento.target.value)}
+                  className="min-w-0 flex-1 bg-transparent text-sm text-conteudo outline-none placeholder:text-conteudo-suave"
+                />
+              </label>
+              {!temEstado && fechar}
+            </div>
           )}
+
+          {/*
+            Categorias só quando a empresa organizou o cardápio em mais de uma seção. NÃO existe
+            "Todos": cada chip troca o conteúdo inteiro abaixo. A faixa rola por dentro (a página não).
+          */}
+          {secoes.length > 1 && (
+            <div className="flex items-center gap-1">
+              <FaixaRolavel role="tablist" aria-label="Categorias do cardápio" className="flex min-w-0 flex-1 gap-1.5 px-0.5 pb-0.5">
+                {secoes.map((secao) => (
+                  <ChipCategoria key={secao.id} ativo={ativa?.id === secao.id} rotulo={secao.nome} aoEscolher={() => aoEscolherSecao(secao.id)} />
+                ))}
+              </FaixaRolavel>
+              {!temEstado && montagem && fechar}
+            </div>
+          )}
+
+          {/* Sem estado, sem busca e sem categorias (montador de uma empresa sem horário): só o fechar. */}
+          {!temEstado && montagem && secoes.length <= 1 && fechar && <div className="flex justify-end">{fechar}</div>}
         </div>
-        {/* Primeira coisa que o cliente lê: dá para pedir agora? Se não, quando? */}
-        {funcionamento && <FuncionamentoDaEmpresa funcionamento={funcionamento} />}
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
-        {/* Busca no mesmo desenho da busca de conversas: campo suave, sem borda, com ícone à esquerda.
-            No montador ela não aparece: ali não há lista de produtos para filtrar. */}
-        {!montagem && (
-        <label className="flex min-h-11 items-center gap-2 rounded-jaa-compacto bg-superficie-suave px-3 text-conteudo-suave focus-within:ring-2 focus-within:ring-marca/30 sm:min-h-10">
-          <span className="sr-only">Buscar no cardápio</span>
-          <IconeBusca className="h-4 w-4 shrink-0" />
-          <input
-            name="buscaCardapio"
-            type="search"
-            value={busca}
-            placeholder="Buscar produto"
-            autoComplete="off"
-            onChange={(evento) => setBusca(evento.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-sm text-conteudo outline-none placeholder:text-conteudo-suave"
-          />
-        </label>
-        )}
-
-        {/*
-          Chips só quando a empresa organizou o cardápio em mais de uma seção. NÃO existe "Todos":
-          o cardápio trabalha por categoria, então cada chip troca o conteúdo inteiro abaixo.
-        */}
-        {secoes.length > 1 && (
-          <FaixaRolavel role="tablist" aria-label="Categorias do cardápio" className="-mx-1 flex gap-2 px-1 pb-1">
-            {secoes.map((secao) => (
-              <ChipCategoria
-                key={secao.id}
-                ativo={ativa?.id === secao.id}
-                rotulo={secao.nome}
-                total={secao.produtos.length}
-                aoEscolher={() => aoEscolherSecao(secao.id)}
-              />
-            ))}
-          </FaixaRolavel>
-        )}
-      </div>
+      )}
 
       {montagem ? (
         /*
@@ -157,8 +155,8 @@ export function Cardapio({
         </div>
       ) : (
         // UMA seção por vez: o que aparece aqui é sempre o conteúdo do chip selecionado.
-        <section aria-label={ativa?.nome ?? "Produtos"} className="flex flex-col gap-2">
-          <ol className="flex flex-col gap-2">
+        <section aria-label={ativa?.nome ?? "Produtos"}>
+          <ol data-produtos-do-cardapio className="flex flex-col divide-y divide-borda overflow-hidden rounded-jaa border border-borda bg-superficie shadow-cartao">
             {encontrados.map((produto) => (
               <CardProduto
                 key={produto.id}
@@ -175,19 +173,19 @@ export function Cardapio({
   );
 }
 
-function ChipCategoria({ ativo, rotulo, total, aoEscolher }: { ativo: boolean; rotulo: string; total: number; aoEscolher: () => void }) {
+function ChipCategoria({ ativo, rotulo, aoEscolher }: { ativo: boolean; rotulo: string; aoEscolher: () => void }) {
   return (
     <button
       type="button"
       role="tab"
       aria-selected={ativo}
       onClick={aoEscolher}
-      className={`flex min-h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors ${
-        ativo ? "bg-marca text-marca-conteudo" : "text-conteudo-suave hover:bg-realce hover:text-conteudo"
+      // Selecionada = cheia na cor da marca; as outras, numa superfície suave que diz "dá para tocar".
+      className={`flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-full px-3.5 text-[13px] font-medium transition-colors sm:min-h-8 sm:text-xs ${
+        ativo ? "bg-marca text-marca-conteudo" : "bg-superficie-suave text-conteudo-suave hover:bg-realce hover:text-conteudo"
       }`}
     >
       {rotulo}
-      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${ativo ? "bg-marca-conteudo/20" : "bg-superficie-suave"}`}>{total}</span>
     </button>
   );
 }
@@ -208,37 +206,40 @@ function CardProduto({
   aoAdicionar?: ((produto: ProdutoPublico) => void) | undefined;
 }) {
   return (
-    <li
-      data-produto-catalogo-id={produto.id}
-      className="flex items-center gap-3 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao transition-colors hover:bg-superficie-suave"
-    >
+    <li data-produto-catalogo-id={produto.id} className="flex items-center gap-2 p-2.5 transition-colors hover:bg-superficie-suave sm:gap-3 sm:p-3">
       {/*
         O botão envolve imagem e texto (em vez de `display:contents`, que tira o botão da árvore de
-        acessibilidade em alguns navegadores): tocar em qualquer parte do card abre o produto.
+        acessibilidade em alguns navegadores): tocar em qualquer parte da linha abre o produto.
+        Ordem de leitura: imagem → nome (até 2 linhas) → descrição (secundária) → preço.
       */}
       <button type="button" onClick={() => aoVer(produto)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <ImagemProduto url={produto.imagemUrl} nome={produto.nome} className="h-14 w-14" />
-        <span className="min-w-0">
-          <span className="block truncate text-xs font-bold sm:text-sm">{produto.nome}</span>
-          {produto.descricao && <span className="mt-0.5 line-clamp-2 block text-[11px] leading-4 text-conteudo-suave">{produto.descricao}</span>}
-          <span className="mt-1 flex flex-wrap items-baseline gap-1.5">
-            <span data-preco className="fonte-display text-sm font-bold text-marca">
+        <ImagemProduto url={produto.imagemUrl} nome={produto.nome} className="h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]" />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span data-nome-do-produto className="line-clamp-2 text-sm font-semibold leading-snug text-conteudo [overflow-wrap:anywhere]">
+            {produto.nome}
+          </span>
+          {produto.descricao && <span className="line-clamp-2 text-xs leading-snug text-conteudo-suave [overflow-wrap:anywhere]">{produto.descricao}</span>}
+          <span className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
+            {produto.personalizavel && <span className="text-[11px] text-conteudo-suave">Monte o seu · a partir de</span>}
+            <span data-preco className="fonte-display text-[15px] font-bold leading-none text-marca">
               {formatarPrecoCentavos(produto.precoCentavos)}
             </span>
-            {produto.personalizavel && <span className="text-[10px] text-conteudo-suave">a partir de · monte do seu jeito</span>}
           </span>
         </span>
       </button>
 
       {aoAdicionar ? (
         produto.personalizavel ? (
+          // Montar abre o produto: mesma coluna compacta do "+", em verde claro (não adiciona direto).
           <button
             type="button"
             data-montar-produto
+            aria-label={`Montar ${produto.nome}`}
+            title="Montar"
             onClick={() => aoVer(produto)}
-            className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-jaa-compacto bg-marca-suave px-3 text-xs font-medium text-marca-suave-conteudo shadow-suave transition-colors hover:bg-marca-suave/80 sm:min-h-9"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-jaa-compacto bg-marca-suave text-marca-suave-conteudo transition-colors hover:bg-marca-suave/80 sm:h-9 sm:w-9"
           >
-            Montar
+            <IconeSeta className="h-4 w-4" />
           </button>
         ) : (
           <button
@@ -274,31 +275,36 @@ export function DetalheProdutoCatalogo({
   aoVoltar: () => void;
   aoAdicionar?: ((produto: ProdutoPublico, quantidade: number, opcaoIds: string[], observacao: string | null) => void) | undefined;
 }) {
+  const voltar = (
+    <BotaoIcone aria-label="Voltar ao cardápio" title="Voltar ao cardápio" data-voltar-ao-cardapio onClick={aoVoltar}>
+      <IconeVoltar className="h-4 w-4" />
+    </BotaoIcone>
+  );
   return (
-    <article aria-label="Detalhe do produto" className="painel-entrando flex flex-col gap-2.5 text-sm">
-      <div className="flex flex-col gap-1 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
-        <button
-          type="button"
-          onClick={aoVoltar}
-          className="flex min-h-9 shrink-0 items-center gap-1.5 self-start rounded-jaa-compacto px-2 text-xs font-medium text-conteudo-suave transition-colors hover:bg-realce hover:text-conteudo"
-        >
-          <IconeVoltar className="h-4 w-4" />
-          Cardápio
-        </button>
-        {funcionamento && <FuncionamentoDaEmpresa funcionamento={funcionamento} />}
+    <article aria-label="Detalhe do produto" className="painel-entrando flex flex-col gap-2 text-sm">
+      {/* Uma linha só: voltar ao cardápio e, ao lado, aberto/fechado (com os horários a um toque). */}
+      <div data-barra-do-cardapio className="rounded-jaa border border-borda bg-superficie p-1.5 shadow-cartao sm:p-2">
+        {temFuncionamentoVisivel(funcionamento) ? (
+          <FuncionamentoDaEmpresa funcionamento={funcionamento} antes={voltar} />
+        ) : (
+          <div className="flex items-center gap-1">
+            {voltar}
+            <span className="text-sm font-medium text-conteudo-suave">Cardápio</span>
+          </div>
+        )}
       </div>
 
+      {/* O produto: imagem, nome, descrição e preço. Nada de "Disponível": indisponível nem chega aqui. */}
       <header className="flex gap-3 rounded-jaa border border-borda bg-superficie p-3 shadow-cartao sm:p-4">
-        <ImagemProduto url={produto.imagemUrl} nome={produto.nome} className="h-20 w-20" />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h4 className="fonte-display text-sm font-bold sm:text-base">{produto.nome}</h4>
-          <p className="text-[11px] text-conteudo-suave">{empresa.nome}</p>
-          {produto.descricao && <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-4 text-conteudo-suave [overflow-wrap:anywhere]">{produto.descricao}</p>}
-          <p data-preco className="fonte-display mt-1 text-base font-bold text-marca">
+        <ImagemProduto url={produto.imagemUrl} nome={produto.nome} className="h-20 w-20 sm:h-24 sm:w-24" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <h4 className="fonte-display text-base font-bold leading-snug [overflow-wrap:anywhere]">
+            {produto.nome}
+            <span className="sr-only">, de {empresa.nome}</span>
+          </h4>
+          {produto.descricao && <p className="whitespace-pre-wrap text-xs leading-relaxed text-conteudo-suave [overflow-wrap:anywhere]">{produto.descricao}</p>}
+          <p data-preco className="fonte-display mt-auto pt-1 text-lg font-bold leading-none text-marca">
             {formatarPrecoCentavos(produto.precoCentavos)}
-          </p>
-          <p data-disponibilidade className="text-[11px] text-marca">
-            Disponível
           </p>
         </div>
       </header>

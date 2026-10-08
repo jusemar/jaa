@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
 import { Icone } from "@/components/ui/icone";
 import { Texto } from "@/components/ui/texto";
 import { Cores, Espaco, Raio } from "@/constants/theme";
-import { CardPedido } from "@/features/pedidos/components/apresentacao-pedido";
+import { PedidoNaConversa } from "@/features/pedidos/components/pedido-na-conversa";
 import { formatarHorarioMensagem } from "../lib/horarios";
 import { rotuloAutorResposta } from "../lib/respostas";
 import { LARGURA_MAXIMA_IMAGEM } from "../lib/imagem-conversa";
@@ -36,8 +36,7 @@ export function BalaoMensagem({
   identidadeAtualId,
   nomeRemetente,
   aoPedirAcoes,
-  aoAbrirPedido,
-  visaoCliente = false,
+  aoConversarCom,
   estadoImagem = { situacao: "carregando" },
   aoAbrirImagem,
   aoFalharImagem,
@@ -59,8 +58,8 @@ export function BalaoMensagem({
   identidadeAtualId: string;
   nomeRemetente: string;
   aoPedirAcoes?: (mensagem: Mensagem) => void;
-  aoAbrirPedido?: (pedidoId: string) => void;
-  visaoCliente?: boolean;
+  // Abre a conversa direta com alguém ligado ao pedido (o entregador).
+  aoConversarCom?: ((nomeUsuario: string) => void) | undefined;
 }) {
   const propria = mensagem.remetenteIdentidadeId === identidadeAtualId;
   const excluida = mensagem.excluidaEm !== null;
@@ -72,6 +71,18 @@ export function BalaoMensagem({
   const ehAudio = mensagem.tipo === "audio" && !excluida;
   const anexoAudio = ehAudio && mensagem.anexo?.tipo === "audio" ? mensagem.anexo : null;
   const { width } = useWindowDimensions();
+
+  /*
+   * PEDIDO não é balão: a mensagem de pedido É o acompanhamento, na largura da conversa. Só quem fez
+   * o pedido a recebe (para a empresa pedido não é mensagem), então esta é sempre a visão do cliente.
+   */
+  if (ehPedido && mensagem.pedido && !excluida) {
+    return (
+      <View style={estilos.pedido}>
+        <PedidoNaConversa resumo={mensagem.pedido} criadoEm={mensagem.criadoEm} aoConversarCom={aoConversarCom} />
+      </View>
+    );
+  }
 
   return (
     <View style={[estilos.linha, propria ? estilos.direita : estilos.esquerda]}>
@@ -98,8 +109,6 @@ export function BalaoMensagem({
           <Texto cor="conteudoSuave" style={estilos.italico}>
             Mensagem excluída
           </Texto>
-        ) : ehPedido && mensagem.pedido ? (
-          <CardPedido pedido={mensagem.pedido} aoAbrir={(pedidoId) => aoAbrirPedido?.(pedidoId)} visaoCliente={visaoCliente} />
         ) : ehAudio ? (
           <PlayerAudio
             estado={anexoAudio ? estadoAudio : { situacao: "indisponivel" }}
@@ -154,6 +163,7 @@ export function BalaoMensagem({
 }
 
 const estilos = StyleSheet.create({
+  pedido: { alignSelf: "stretch" },
   linha: { flexDirection: "row", paddingHorizontal: Espaco.quatro },
   direita: { justifyContent: "flex-end" },
   esquerda: { justifyContent: "flex-start" },

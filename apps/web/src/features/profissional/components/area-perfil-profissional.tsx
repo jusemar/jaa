@@ -103,7 +103,7 @@ export function AreaPerfilProfissional({ aoVoltar }: { aoVoltar: () => void }) {
         {cabecalho}
         {erroAcao && <Aviso tom="erro">{erroAcao}</Aviso>}
         <Cartao className="flex flex-col items-start gap-3 p-6">
-          <p className="fonte-display text-lg font-bold text-conteudo">Ofereça seus serviços pelo Jaa</p>
+          <p className="fonte-display text-lg font-bold text-conteudo">Ofereça seus serviços pelo Jaaa</p>
           <p className="text-sm text-conteudo-suave">Até 3 atividades, com seus horários e onde você atende.</p>
           <Botao carregando={pendente !== null} textoCarregando="Ativando…" onClick={() => void aplicar(ativarPerfilProfissional(), { sucesso: "Perfil criado" })}>
             Ativar perfil

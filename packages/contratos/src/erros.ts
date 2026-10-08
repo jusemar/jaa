@@ -63,6 +63,8 @@ export const codigoErroApiSchema = z.enum([
   "MENSAGEM_DE_OUTRA_IDENTIDADE",
   "MENSAGEM_EXCLUIDA",
   "MENSAGEM_NAO_EDITAVEL",
+  // Cada conta CRIA no máximo uma empresa (participar de outras por vínculo continua livre).
+  "LIMITE_DE_EMPRESAS_ATINGIDO",
   // Motor Profissional.
   "PERFIL_PROFISSIONAL_NAO_ENCONTRADO",
   "PERFIL_PROFISSIONAL_INCOMPLETO",

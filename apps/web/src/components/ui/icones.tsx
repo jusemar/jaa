@@ -97,6 +97,24 @@ export const IconeEntrega = (props: PropsIcone) => (
   </Icone>
 );
 
+// ENTREGADOR (moto): o mesmo papel do ícone "entregador" do app — é quem aparece no mapa do cliente.
+export const IconeMoto = (props: PropsIcone) => (
+  <Icone {...props}>
+    <circle cx="5.5" cy="17" r="3" />
+    <circle cx="18.5" cy="17" r="3" />
+    <path d="M8.5 17h5l2.5-6h-3.5M16 11l2.5 6M13.5 8H16l1 3M5.5 17l3-5h4" />
+  </Icone>
+);
+
+// CLIENTE (destino da entrega): pessoa dentro do marcador de local.
+export const IconeCliente = (props: PropsIcone) => (
+  <Icone {...props}>
+    <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z" />
+    <circle cx="12" cy="8.6" r="1.9" />
+    <path d="M8.9 13.2a3.3 3.3 0 0 1 6.2 0" />
+  </Icone>
+);
+
 export const IconePessoas = (props: PropsIcone) => (
   <Icone {...props}>
     <circle cx="9" cy="8" r="3.5" />
@@ -319,5 +337,21 @@ export const IconeInformacao = (props: PropsIcone) => (
   <Icone {...props}>
     <circle cx="12" cy="12" r="9" />
     <path d="M12 11v5.5M12 7.5h.01" />
+  </Icone>
+);
+
+export const IconeGrade = (props: PropsIcone) => (
+  <Icone {...props}>
+    <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+    <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+    <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+    <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+  </Icone>
+);
+
+export const IconeEtiqueta = (props: PropsIcone) => (
+  <Icone {...props}>
+    <path d="M3.5 12.2V5a1.5 1.5 0 0 1 1.5-1.5h7.2a1.5 1.5 0 0 1 1.06.44l6.8 6.8a1.5 1.5 0 0 1 0 2.12l-7.2 7.2a1.5 1.5 0 0 1-2.12 0l-6.8-6.8a1.5 1.5 0 0 1-.44-1.06Z" />
+    <path d="M8 8h.01" />
   </Icone>
 );

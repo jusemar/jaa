@@ -13,7 +13,7 @@ export type FalhaGravacao = "nao-suportado" | "permissao-negada" | "sem-microfon
 
 export const MENSAGEM_FALHA_GRAVACAO: Record<FalhaGravacao, string> = {
   "nao-suportado": "Este navegador não grava áudio. Use uma versão recente do Chrome, Edge, Firefox ou Safari.",
-  "permissao-negada": "Sem permissão para usar o microfone. Libere o microfone para o Jaa nas permissões do navegador e tente de novo.",
+  "permissao-negada": "Sem permissão para usar o microfone. Libere o microfone para o Jaaa nas permissões do navegador e tente de novo.",
   "sem-microfone": "Nenhum microfone foi encontrado neste aparelho.",
   falha: "Não foi possível iniciar a gravação. Tente de novo.",
 };

@@ -18,7 +18,7 @@ describe("conversa efetivamente visível (Web)", () => {
     assert.equal(conversaVisivelAgora(pagina("visible", false)), null);
   });
 
-  it("sem conversa aberta (outra área do Jaa) nada está à vista", () => {
+  it("sem conversa aberta (outra área do Jaaa) nada está à vista", () => {
     definirConversaAberta(null);
     assert.equal(conversaVisivelAgora(pagina("visible", true)), null);
   });

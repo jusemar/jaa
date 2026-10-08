@@ -94,9 +94,9 @@ export function PesquisaJaa({ aoAbrirConversa, aoSalvarContato }: { aoAbrirConve
         <TextInput
           value={termo}
           onChangeText={setTermo}
-          placeholder="Pesquisar no Jaa"
+          placeholder="Pesquisar no Jaaa"
           placeholderTextColor={Cores.conteudoSuave}
-          accessibilityLabel="Pesquisar no Jaa"
+          accessibilityLabel="Pesquisar no Jaaa"
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
@@ -122,7 +122,7 @@ export function PesquisaJaa({ aoAbrirConversa, aoSalvarContato }: { aoAbrirConve
 
       {resultado && resultado.contatos.length > 0 && <GrupoResultados titulo="Meus contatos" itens={resultado.contatos} aoAbrirConversa={abrir} />}
       {resultado && resultado.externos.length > 0 && (
-        <GrupoResultados titulo="No Jaa" itens={resultado.externos} aoAbrirConversa={abrir} aoSalvar={(item) => void salvar(item)} salvando={salvando} />
+        <GrupoResultados titulo="No Jaaa" itens={resultado.externos} aoAbrirConversa={abrir} aoSalvar={(item) => void salvar(item)} salvando={salvando} />
       )}
 
       {erro && (

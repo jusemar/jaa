@@ -24,7 +24,7 @@ export const OPCOES_ANEXO: readonly { origem: OrigemImagem; rotulo: string; icon
 ];
 
 export const MENSAGEM_PERMISSAO_CAMERA_CONVERSA =
-  "Sem permissão para usar a câmera. Você pode escolher uma foto da galeria ou liberar a câmera para o Jaa nas configurações do aparelho.";
+  "Sem permissão para usar a câmera. Você pode escolher uma foto da galeria ou liberar a câmera para o Jaaa nas configurações do aparelho.";
 
 /** Imagem já preparada (JPEG reduzido) no aparelho, pronta para a prévia e para o envio. */
 export type ImagemPreparada = { uri: string; largura: number; altura: number; tamanhoBytes: number | null };

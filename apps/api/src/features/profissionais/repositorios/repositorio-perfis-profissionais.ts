@@ -157,6 +157,15 @@ export function opcoesDoServico(banco: Executor, servicoId: string, ids: string[
     );
 }
 
+/** Atributos ATIVOS do serviço que exigem ao menos uma opção (com opção ativa para escolher). */
+export function atributosObrigatoriosDoServico(banco: Executor, servicoId: string) {
+  return banco
+    .selectDistinct({ id: atributosServico.id, nome: atributosServico.nome })
+    .from(atributosServico)
+    .innerJoin(opcoesAtributo, and(eq(opcoesAtributo.atributoId, atributosServico.id), eq(opcoesAtributo.ativa, true)))
+    .where(and(eq(atributosServico.servicoId, servicoId), eq(atributosServico.ativo, true), eq(atributosServico.obrigatorio, true)));
+}
+
 export async function inserirServicoDoPerfil(banco: Executor, perfilId: string, servicoId: string): Promise<string> {
   const [linha] = await banco.insert(servicosPerfil).values({ perfilId, servicoId }).returning({ id: servicosPerfil.id });
   if (!linha) throw new Error("Serviço do perfil não criado.");

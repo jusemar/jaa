@@ -20,7 +20,7 @@ import { CENTRO_PADRAO } from "@/features/enderecos/mapa/provedor-mapa";
 import { buscarPerfilProfissional } from "@/features/profissional/lib/api-perfil-profissional";
 import { obterIdentidadeAtuante } from "@/lib/identidade-atuante";
 import { buscarProfissionais, localizarEnderecoDaPesquisa } from "../lib/api-busca-profissionais";
-import { MAXIMO_SELECIONADOS, alternarSelecionado, rotuloHorario, type LocalSalvo } from "../lib/apresentacao-busca";
+import { MAXIMO_SELECIONADOS, alternarSelecionado, alternarTodos, estadoSelecionarTodos, rotuloHorario, type LocalSalvo } from "../lib/apresentacao-busca";
 import { enviarParaSelecionados, type SituacaoEnvio } from "../lib/enviar-para-selecionados";
 import { carregarLocaisDaPesquisa } from "../lib/locais-da-pesquisa";
 import { ConfirmarPontoPesquisa } from "./confirmar-ponto-pesquisa";
@@ -275,6 +275,12 @@ export function BuscaProfissionais({
                   <p className="text-xs text-conteudo-suave">
                     Escolha quem vai receber sua mensagem (até {MAXIMO_SELECIONADOS}).
                   </p>
+                  <SelecionarTodos
+                    exibidos={resultados.map((item) => item.identidadeId)}
+                    selecionados={selecionados}
+                    desabilitado={enviando}
+                    aoAlternar={() => setSelecionados((atuais) => alternarTodos(resultados.map((item) => item.identidadeId), atuais))}
+                  />
                   <ul className="flex flex-col divide-y divide-borda overflow-hidden rounded-jaa-compacto border border-borda">
                     {resultados.map((item) => {
                       const marcado = selecionados.includes(item.identidadeId);
@@ -431,3 +437,36 @@ function EnderecoDaPesquisa({ aoLocalizar, aoCancelar }: { aoLocalizar: (mapa: M
     </form>
   );
 }
+
+/**
+ * "Selecionar todos" da lista exibida. Marcado = tudo o que cabe está selecionado; com só alguns, o
+ * estado é INDETERMINADO (o traço), como nas caixas de seleção de qualquer lista. O teto de
+ * destinatários continua valendo: lista maior que o teto seleciona os primeiros, e o texto diz isso.
+ */
+function SelecionarTodos({ exibidos, selecionados, desabilitado, aoAlternar }: { exibidos: string[]; selecionados: string[]; desabilitado: boolean; aoAlternar: () => void }) {
+  const estado = estadoSelecionarTodos(exibidos, selecionados);
+  const marcados = exibidos.filter((id) => selecionados.includes(id)).length;
+  return (
+    <label data-selecionar-todos={estado} className="flex min-h-11 items-center gap-3 rounded-jaa-compacto bg-superficie-suave px-3 text-sm font-medium text-conteudo">
+      <input
+        type="checkbox"
+        className="h-5 w-5 shrink-0"
+        checked={estado === "todos"}
+        disabled={desabilitado}
+        aria-checked={estado === "alguns" ? "mixed" : estado === "todos"}
+        ref={(caixa) => {
+          if (caixa) caixa.indeterminate = estado === "alguns";
+        }}
+        onChange={aoAlternar}
+      />
+      <span className="min-w-0 flex-1">
+        Selecionar todos
+        {exibidos.length > MAXIMO_SELECIONADOS && <span className="font-normal text-conteudo-suave"> (os {MAXIMO_SELECIONADOS} primeiros)</span>}
+      </span>
+      <span className="shrink-0 text-xs font-normal text-conteudo-suave">
+        {marcados} de {Math.min(exibidos.length, MAXIMO_SELECIONADOS)}
+      </span>
+    </label>
+  );
+}
+

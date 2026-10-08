@@ -31,7 +31,7 @@ export function DiagnosticoContexto() {
     <ScrollView contentContainerStyle={estilos.container}>
       <View style={estilos.aviso}>
         <Texto variante="corpoForte">Diagnóstico do contexto</Texto>
-        <Texto variante="pequeno">Tela temporária de desenvolvimento — não é a interface do Jaa.</Texto>
+        <Texto variante="pequeno">Tela temporária de desenvolvimento — não é a interface do Jaaa.</Texto>
       </View>
 
       <Linha rotulo="Situação" valor={situacao} />

@@ -28,7 +28,7 @@ export function EntradaPerfilProfissional({ aoAbrir }: { aoAbrir: () => void }) 
             <Selo tom={perfil.situacao === "ativo" ? "marca" : perfil.situacao === "incompleto" ? "atencao" : "neutro"}>{ROTULO_SITUACAO[perfil.situacao]}</Selo>
           </div>
         ) : (
-          <span className="text-sm text-conteudo-suave">Ofereça seus serviços pelo Jaa</span>
+          <span className="text-sm text-conteudo-suave">Ofereça seus serviços pelo Jaaa</span>
         )}
         <Botao aparencia={perfil ? "secundario" : "principal"} onClick={aoAbrir}>
           {perfil ? "Abrir" : "Ativar perfil profissional"}

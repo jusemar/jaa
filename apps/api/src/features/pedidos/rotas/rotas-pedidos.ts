@@ -1,3 +1,4 @@
+import type { CanalEventosPedidos } from "../lib/eventos-pedidos.js";
 import type { Banco } from "@jaa/banco";
 import {
   criarPedidoEntradaSchema,
@@ -44,7 +45,10 @@ export function registrarRotasPedidos(
     banco: Banco;
     autenticacao: Autenticacao;
     eventosMensagens: CanalEventosMensagens;
+    eventosPedidos: CanalEventosPedidos;
     eventosEntregas?: CanalEventosEntregas;
+    // URL pública da foto (do armazenamento de arquivos): usada no acompanhamento do cliente.
+    urlPublica?: ((chave: string) => string | null) | undefined;
   },
 ) {
   const preHandler = exigirIdentidadeAtuante(dependencias);
@@ -217,6 +221,7 @@ export function registrarRotasPedidos(
         {
           banco: dependencias.banco,
           eventosEntregas: dependencias.eventosEntregas ?? canalSemOuvintes,
+          urlPublica: dependencias.urlPublica,
         },
         parametros.data.pedidoId,
       );

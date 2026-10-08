@@ -17,7 +17,18 @@ export interface ItemDoMenuMais {
   aoEscolher: () => void;
 }
 
-export function MenuMais({ rotulo, itens, disabled = false }: { rotulo: string; itens: ItemDoMenuMais[]; disabled?: boolean }) {
+export function MenuMais({
+  rotulo,
+  itens,
+  disabled = false,
+  vertical = false,
+}: {
+  rotulo: string;
+  itens: ItemDoMenuMais[];
+  disabled?: boolean;
+  // Três pontos na vertical (⋮): o desenho de "mais ações" em listas de aplicativo.
+  vertical?: boolean;
+}) {
   /*
    * O menu (Radix) só existe no navegador: ele é desenhado num portal e gera identificadores próprios.
    * Na marcação inicial vai só o botão, idêntico — o menu é ligado a ele logo depois de montar.
@@ -37,7 +48,7 @@ export function MenuMais({ rotulo, itens, disabled = false }: { rotulo: string; 
       disabled={disabled}
       className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-lg leading-none text-conteudo-suave hover:bg-realce hover:text-conteudo focus-visible:outline-2 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      ⋯
+      {vertical ? "⋮" : "⋯"}
     </button>
   );
   if (!noNavegador) return gatilho;

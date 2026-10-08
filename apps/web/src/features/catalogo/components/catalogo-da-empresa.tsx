@@ -163,7 +163,20 @@ export function CatalogoDaEmpresa({
      * aparecendo por trás dos cards — é o formato da referência de UI/UX aprovada. Fechar devolve as
      * mensagens; o compositor nunca sai do rodapé.
      */
-    <section aria-label="Cardápio da empresa" className="mx-auto flex w-full max-w-4xl flex-col gap-2.5 px-3 py-3 sm:px-5 sm:py-4">
+    /*
+     * `@container`: o respiro lateral depende da largura da COLUNA do cardápio, não da janela — num
+     * tablet a conversa divide a tela com a lista e a coluna do cardápio tem largura de celular.
+     */
+    <div className="@container">
+    <section
+      aria-label="Cardápio da empresa"
+      /*
+       * Coluna estreita (celular, ou painel estreito): o cardápio usa praticamente a largura toda —
+       * 1 px de folga de cada lado, o bastante para a borda dos blocos não ser cortada, respeitando a
+       * área segura. Coluna larga (a partir de 32rem): volta o respiro e uma largura máxima de leitura.
+       */
+      className="mx-auto flex w-full max-w-3xl flex-col gap-2 py-1.5 pl-[max(1px,env(safe-area-inset-left))] pr-[max(1px,env(safe-area-inset-right))] @lg:py-4 @lg:pl-5 @lg:pr-5"
+    >
       {!catalogo && !erro && (
         <p className="rounded-jaa bg-superficie px-4 py-6 text-center text-sm text-conteudo-suave shadow-cartao">Carregando o cardápio…</p>
       )}
@@ -213,5 +226,6 @@ export function CatalogoDaEmpresa({
         </p>
       )}
     </section>
+    </div>
   );
 }

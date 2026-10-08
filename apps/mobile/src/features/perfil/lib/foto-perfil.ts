@@ -62,7 +62,7 @@ export interface FalhaApi {
  * armazenamento fora do ar); rede e sessão ganham texto próprio, que diz o que fazer.
  */
 export function mensagemDeFalhaFoto(falha: FalhaApi): string {
-  if (falha.status === 0) return "Sem conexão com o Jaa. Sua foto não foi alterada; tente de novo.";
+  if (falha.status === 0) return "Sem conexão com o Jaaa. Sua foto não foi alterada; tente de novo.";
   if (falha.status === 401) return "Sua sessão expirou. Entre de novo para trocar a foto.";
   if (falha.codigo === "ARQUIVO_INVALIDO" || falha.codigo === "LIMITE_DE_ENVIOS_ATINGIDO" || falha.codigo === "ARMAZENAMENTO_INDISPONIVEL") return falha.mensagem;
   return falha.mensagem || "Não foi possível alterar a foto.";
@@ -86,7 +86,7 @@ export interface DependenciasTrocaFoto {
 }
 
 const MENSAGEM_PERMISSAO_CAMERA =
-  "Sem permissão para usar a câmera. Você pode escolher uma foto da galeria ou liberar a câmera para o Jaa nas configurações do aparelho.";
+  "Sem permissão para usar a câmera. Você pode escolher uma foto da galeria ou liberar a câmera para o Jaaa nas configurações do aparelho.";
 
 export async function trocarFotoDoPerfil(origem: OrigemFoto, dependencias: DependenciasTrocaFoto): Promise<ResultadoFoto> {
   const obtida = await dependencias.obter(origem);

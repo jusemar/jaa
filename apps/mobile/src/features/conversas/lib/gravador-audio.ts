@@ -13,8 +13,8 @@ import type { AudioGravado } from "./audio-conversa.ts";
 export type FalhaGravacao = "sem-modulo" | "permissao-negada" | "falha";
 
 export const MENSAGEM_FALHA_GRAVACAO: Record<FalhaGravacao, string> = {
-  "sem-modulo": "Esta versão do app ainda não grava áudio. Atualize o Jaa para usar o microfone.",
-  "permissao-negada": "Sem permissão para usar o microfone. Libere o microfone para o Jaa nas configurações do aparelho.",
+  "sem-modulo": "Esta versão do app ainda não grava áudio. Atualize o Jaaa para usar o microfone.",
+  "permissao-negada": "Sem permissão para usar o microfone. Libere o microfone para o Jaaa nas configurações do aparelho.",
   falha: "Não foi possível iniciar a gravação. Tente de novo.",
 };
 

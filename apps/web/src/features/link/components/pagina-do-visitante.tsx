@@ -28,7 +28,7 @@ export function PaginaDoVisitante({ identidade, entrada, aoPedirEntrada }: { ide
           temCardapio ? "max-w-5xl lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start lg:gap-6" : "max-w-md"
         }`}
       >
-        <p className="text-center text-2xl font-bold text-marca lg:col-span-2">Jaa</p>
+        <p className="text-center text-2xl font-bold text-marca lg:col-span-2">Jaaa</p>
 
         <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-6 lg:col-start-2 lg:row-start-2">
           <Cartao className="flex flex-col gap-3 p-5">

@@ -337,6 +337,13 @@
       "when": 1791226975613,
       "tag": "0047_horario_de_funcionamento_da_empresa",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791490031866,
+      "tag": "0048_atributo_obrigatorio",
+      "breakpoints": true
     }
   ]
 }

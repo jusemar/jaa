@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { caminhoDoLink, linkDoJaa, nomeUsuarioDoSegmento } from "./link-do-jaa.ts";
 
-describe("Link do Jaa", () => {
+describe("Link do Jaaa", () => {
   it("é o @usuario no próprio site, sem id interno", () => {
     assert.equal(caminhoDoLink("pizzaria_oasis"), "/@pizzaria_oasis");
     assert.equal(linkDoJaa("https://jaa.com.br/", "pizzaria_oasis"), "https://jaa.com.br/@pizzaria_oasis");

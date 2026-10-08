@@ -45,7 +45,7 @@ export const tornarPerfilAtivo = () => mutar("/ativar", "POST");
 export const pausarPerfil = () => mutar("/desativar", "POST");
 export const salvarPreferencias = (recebeOportunidadesOutrasRegioes: boolean) => mutar("/preferencias", "PATCH", { recebeOportunidadesOutrasRegioes });
 
-export const adicionarAtividade = (servicoId: string) => mutar("/atividades", "POST", { servicoId });
+export const adicionarAtividade = (servicoId: string, opcaoIds: string[] = []) => mutar("/atividades", "POST", { servicoId, opcaoIds });
 export const salvarEscolhasAtividade = (id: string, escolhas: { especialidadeIds: string[]; opcaoIds: string[] }) => mutar(`/atividades/${id}`, "PATCH", escolhas);
 export const removerAtividade = (id: string) => mutar(`/atividades/${id}`, "DELETE");
 export const salvarHorarios = (id: string, entrada: HorariosAtendimentoEntrada) => mutar(`/atividades/${id}/horarios`, "PUT", entrada);

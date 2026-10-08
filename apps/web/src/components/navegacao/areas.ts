@@ -31,8 +31,8 @@ export interface AreaApp {
 }
 
 export const AREAS_PESSOAIS: AreaApp[] = [
-  { id: "conversas", rotulo: "Conversas", Icone: IconeConversa, descricao: "Suas conversas no Jaa" },
-  { id: "contatos", rotulo: "Contatos", Icone: IconePessoas, descricao: "Sua agenda e a pesquisa no Jaa" },
+  { id: "conversas", rotulo: "Conversas", Icone: IconeConversa, descricao: "Suas conversas no Jaaa" },
+  { id: "contatos", rotulo: "Contatos", Icone: IconePessoas, descricao: "Sua agenda e a pesquisa no Jaaa" },
   { id: "entregas", rotulo: "Entregas", Icone: IconeEntrega, descricao: "Convites e entregas atribuídas a você" },
   { id: "perfil", rotulo: "Perfil", Icone: IconePerfil, descricao: "Seu perfil, status, privacidade e conta" },
 ];

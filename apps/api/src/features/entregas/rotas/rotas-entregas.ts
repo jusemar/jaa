@@ -176,6 +176,8 @@ export function registrarRotasEntregas(
     banco: Banco;
     autenticacao: Autenticacao;
     eventosEntregas: CanalEventosEntregas;
+    // URL pública da foto do entregador no acompanhamento que o cliente recebe a cada posição.
+    urlPublica?: ((chave: string) => string | null) | undefined;
     geocodificador: GeocodificadorEndereco;
     // Motor de rotas: usado só ao planejar a saída e ao recalcular a ordem do entregador.
     motorRotas?: MotorDeRotas | undefined;

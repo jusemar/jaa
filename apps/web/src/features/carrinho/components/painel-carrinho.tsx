@@ -23,6 +23,7 @@ import {
   IconeSacola,
   IconeSeta,
   IconeVoltar,
+  IconeSetaBaixo,
 } from "@/components/ui/icones";
 import {
   formatarPrecoCentavos,
@@ -426,39 +427,28 @@ export function PainelCarrinho({
          * Pagamento ONLINE ainda não existe no Jaa: nada de gateway, cobrança, QR, token ou dado
          * bancário. As opções aparecem só como lembrete visual, desabilitadas, como as mídias do chat.
          */}
-        <fieldset
-          disabled
-          aria-labelledby="pagamento-online-titulo"
-          className={`border-0 p-4 text-conteudo-suave/70 ${aba === "entrega-pagamento" ? "" : "hidden"}`}
-        >
-          {/*
-            Aqui o `fieldset` fica: é ele que DESABILITA os controles de uma vez (`disabled`). Mas o
-            título sai do `<legend>` (que seria desenhado na borda) para um parágrafo rotulador.
-          */}
-          <p id="pagamento-online-titulo" className="text-xs font-medium">
-            Pagamento online — em breve
-          </p>
-          <div className="mt-2 flex flex-col gap-1">
+        {/*
+          ACCORDION, recolhido por padrão: o que ainda não existe não ocupa a tela de quem está
+          pagando. Aberto, mostra as duas formas como indisponíveis ("Em breve"). O `fieldset` continua
+          sendo quem DESABILITA os controles de uma vez.
+        */}
+        <details data-pagamento-online-em-breve className={`group p-4 text-conteudo-suave/70 ${aba === "entrega-pagamento" ? "" : "hidden"}`}>
+          <summary className="flex min-h-9 cursor-pointer select-none list-none items-center justify-between gap-2 rounded-jaa-compacto text-xs font-medium focus-visible:outline-2 [&::-webkit-details-marker]:hidden">
+            <span id="pagamento-online-titulo">Pagamento online — em breve</span>
+            <IconeSetaBaixo className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
+          <fieldset disabled aria-labelledby="pagamento-online-titulo" className="mt-2 flex flex-col gap-1 border-0 p-0">
             {[
               { valor: "pix-online", rotulo: "Pix online" },
               { valor: "cartao-online", rotulo: "Cartão online" },
             ].map((opcao) => (
-              <label
-                key={opcao.valor}
-                className="flex items-center gap-2 text-xs"
-              >
-                <input
-                  type="radio"
-                  name="pagamentoOnline"
-                  value={opcao.valor}
-                  disabled
-                  data-pagamento-online={opcao.valor}
-                />
+              <label key={opcao.valor} className="flex items-center gap-2 text-xs">
+                <input type="radio" name="pagamentoOnline" value={opcao.valor} disabled data-pagamento-online={opcao.valor} />
                 {opcao.rotulo} <span>(Em breve)</span>
               </label>
             ))}
-          </div>
-        </fieldset>
+          </fieldset>
+        </details>
       </div>
 
       {/*

@@ -23,7 +23,7 @@ export async function requisitar<T>(caminho: string, opcoes: RequestInit = {}): 
     const corpo: unknown = await resposta.json().catch(() => null);
     if (!resposta.ok) {
       const erro = corpo as { codigo?: string; mensagem?: string } | null;
-      return { ok: false, status: resposta.status, ...(erro?.codigo ? { codigo: erro.codigo } : {}), mensagem: erro?.mensagem ?? "Não foi possível falar com o Jaa." };
+      return { ok: false, status: resposta.status, ...(erro?.codigo ? { codigo: erro.codigo } : {}), mensagem: erro?.mensagem ?? "Não foi possível falar com o Jaaa." };
     }
     return { ok: true, dados: corpo as T };
   } catch {

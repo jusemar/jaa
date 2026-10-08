@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import type { CategoriaProduto, Produto } from "@jaa/contratos";
 import { createElement } from "react";
@@ -29,50 +30,136 @@ const categorias: CategoriaProduto[] = [
 ];
 
 describe("ListaProdutos", () => {
-  it("mostra nome, preço formatado, disponibilidade, Editar e ação de disponibilidade", () => {
-    const refri: Produto = { ...base, id: "bbbbbbbb-0000-4000-8000-000000000000", nome: "Refrigerante 2L", descricao: null, precoCentavos: 1200, disponibilidade: "indisponivel" };
-    const html = renderToStaticMarkup(createElement(ListaProdutos, { produtos: [base, refri], aoEditar: () => {}, aoAlternarDisponibilidade: () => {} }));
-    const conteudo = texto(html);
-    for (const esperado of ["Pizza Calabresa", "R$ 39,90", "Disponível", "Refrigerante 2L", "R$ 12,00", "Indisponível", "Marcar indisponível", "Marcar disponível"]) {
-      assert.ok(conteudo.includes(esperado), esperado);
-    }
-    assert.equal((html.match(/>Editar</g) ?? []).length, 2);
-    assert.ok(html.includes('data-disponibilidade="indisponivel"'));
+  const lista = (produtos: Produto[], extra: Record<string, unknown> = {}) => renderToStaticMarkup(createElement(ListaProdutos, { produtos, aoEditar: () => {}, aoAlternarDisponibilidade: () => {}, ...extra }));
+  const refri: Produto = { ...base, id: "bbbbbbbb-0000-4000-8000-000000000000", nome: "Refrigerante 2L", descricao: null, precoCentavos: 1200, disponibilidade: "indisponivel" };
+  const tag = (html: string, atributo: string) => html.match(new RegExp(`<[^>]*${atributo}[^>]*>`))?.[0] ?? "";
+
+  it("mostra nome e preço de cada produto", () => {
+    const conteudo = texto(lista([base, refri]));
+    for (const esperado of ["Pizza Calabresa", "R$ 39,90", "Refrigerante 2L", "R$ 12,00"]) assert.ok(conteudo.includes(esperado), esperado);
   });
 
-  it("mostra a categoria e a imagem quando existem; sem imagem não fica buraco na lista", () => {
-    const comImagem: Produto = { ...base, categoriaNome: "Pizzas", imagemUrl: "https://arquivos.exemplo.invalid/imagem-produto/a/b.webp" };
-    const html = renderToStaticMarkup(createElement(ListaProdutos, { produtos: [comImagem], aoEditar: () => {}, aoAlternarDisponibilidade: () => {} }));
-    assert.ok(texto(html).includes("Pizzas"));
+  it("DISPONÍVEL é o normal e não tem selo; só a exceção (indisponível) é indicada, de forma discreta", () => {
+    const html = lista([base, refri]);
+    assert.ok(!/Dispon[ií]vel(?!\w)/.test(texto(html).replace(/Indisponível/g, "")), "a palavra 'Disponível' não aparece em lugar nenhum");
+    assert.equal((html.match(/data-rotulo-disponibilidade/g) ?? []).length, 1, "um selo só: o do produto indisponível");
+    const doRefri = html.slice(html.indexOf('data-disponibilidade="indisponivel"'));
+    assert.ok(texto(doRefri).includes("Indisponível") && doRefri.includes("bg-aviso/10"));
+    // Redução visual: nome e imagem esmaecidos, sem bloco grande.
+    assert.ok(tag(doRefri, "data-nome-do-produto").includes("text-conteudo-suave") && tag(doRefri, "data-sem-imagem").includes("opacity-60"));
+    assert.ok(!tag(html, "data-nome-do-produto").includes("text-conteudo-suave"), "o disponível fica com a cor normal");
+  });
+
+  it("composição do item: imagem, nome em cima, descrição logo abaixo, categoria discreta, preço à direita e ⋮ por último", () => {
+    const html = lista([{ ...base, categoriaNome: "Pizzas" }]);
+    const posicoes = ["data-sem-imagem", "data-nome-do-produto", "data-descricao", "data-categoria", "data-preco", "data-acoes-do-produto"].map((marca) => html.indexOf(marca));
+    assert.ok(posicoes.every((posicao, indice) => posicao > 0 && (indice === 0 || posicao > posicoes[indice - 1]!)), JSON.stringify(posicoes));
+  });
+
+  it("o nome pode usar duas linhas e é o texto mais forte; o preço é MENOR, não quebra e fica colado ao menu", () => {
+    const html = lista([base]);
+    const nome = tag(html, "data-nome-do-produto");
+    assert.ok(nome.includes("line-clamp-2") && nome.includes("text-[15px]") && nome.includes("[overflow-wrap:anywhere]") && !nome.includes("truncate"));
+    const preco = tag(html, "data-preco");
+    assert.ok(preco.includes("text-sm") && preco.includes("font-semibold") && preco.includes("whitespace-nowrap") && preco.includes("shrink-0"));
+  });
+
+  it("a descrição vem logo abaixo do nome e pode quebrar em duas linhas; a categoria é uma linha discreta com ícone", () => {
+    const html = lista([{ ...base, categoriaNome: "Pizzas" }]);
+    const descricao = tag(html, "data-descricao");
+    assert.ok(descricao.includes("line-clamp-2") && descricao.includes("text-conteudo-suave") && texto(html).includes("Molho e calabresa"));
+    const categoria = html.slice(html.indexOf("data-categoria"), html.indexOf("data-preco"));
+    assert.ok(categoria.includes("<svg") && categoria.includes("text-xs") && texto(categoria).includes("Pizzas"));
+    assert.ok(!lista([refri]).includes("data-descricao") && !lista([{ ...base, descricao: null }]).includes("data-categoria"), "o que não existe não ocupa linha");
+  });
+
+  it("tocar na linha abre a edição; nenhum botão de TEXTO ('Editar', 'Marcar indisponível') fica no cartão", () => {
+    const html = lista([base, refri]);
+    assert.equal((html.match(/data-abrir-produto/g) ?? []).length, 2);
+    assert.ok(tag(html, "data-abrir-produto").includes("flex-1") && tag(html, "data-abrir-produto").includes('type="button"'));
+    assert.ok(!/>Editar</.test(html) && !texto(html).includes("Marcar indisponível") && !texto(html).includes("Tornar disponível"));
+  });
+
+  it("a única ação do item é o menu de três pontos VERTICAIS, no topo direito — sem lápis nem botão de texto", () => {
+    const html = lista([base]);
+    assert.equal((html.match(/data-menu-mais/g) ?? []).length, 1);
+    assert.ok(html.includes('aria-label="Ações de Pizza Calabresa"') && />⋮</.test(html) && !/>⋯</.test(html));
+    assert.ok(!html.includes("data-editar-produto"));
+    assert.ok(tag(html, "data-produto-id").includes("items-start"), "o menu fica no topo do item");
+    assert.ok(html.indexOf("data-preco") < html.indexOf("data-menu-mais"), "o preço vem antes (à esquerda) dos três pontos");
+  });
+
+  it("o menu ⋯ traz Editar e a troca de disponibilidade, com o texto certo para cada situação", () => {
+    const codigo = readFileSync(new URL("./lista-produtos.tsx", import.meta.url), "utf8");
+    assert.ok(codigo.includes('{ id: "editar", rotulo: "Editar", aoEscolher: () => aoEditar(produto) }'));
+    assert.ok(codigo.includes('rotulo: disponivel ? "Marcar indisponível" : "Tornar disponível"') && codigo.includes("aoEscolher: () => aoAlternarDisponibilidade(produto)"));
+  });
+
+  it("um cartão por produto, com respiro entre eles; em tela larga, duas colunas", () => {
+    const ol = tag(lista([base]), "data-lista-de-produtos");
+    assert.ok(ol.includes("flex-col") && ol.includes("gap-2") && ol.includes("lg:grid") && ol.includes("lg:grid-cols-2"));
+    assert.ok(tag(lista([base]), "data-produto-id").includes("rounded-jaa border border-borda bg-superficie"));
+    assert.ok(!lista([base]).includes(" style="));
+  });
+
+  it("cabeçalho só com ícones (Categorias e Novo), filtro 'Todas' compacto e busca automática", () => {
+    const area = readFileSync(new URL("./area-produtos.tsx", import.meta.url), "utf8");
+    const cabecalho = area.slice(area.indexOf("data-lista-administrativa"), area.indexOf("data-filtros-de-produtos"));
+    assert.ok(cabecalho.includes('aria-label="Categorias"') && cabecalho.includes("<IconeGrade") && cabecalho.includes('aria-label="Novo produto"') && cabecalho.includes("<IconeMais"));
+    assert.ok(!/>\s*Categorias\s*</.test(cabecalho) && !/>\s*Novo/.test(cabecalho), "sem texto nos botões");
+    const filtros = area.slice(area.indexOf("data-filtros-de-produtos"), area.indexOf("</form>"));
+    assert.ok(filtros.includes('<option value="">Todas</option>') && filtros.includes("grid-cols-[minmax(0,1fr)_minmax(0,7rem)]") && filtros.includes('aria-label="Filtrar por categoria"'));
+    assert.ok(!filtros.includes('type="submit"') && !/>\s*Filtrar\s*</.test(filtros));
+    assert.ok(/setTimeout\(\(\) => \{\s*setPagina\(1\);\s*setBuscaAplicada\(termo\);\s*\}, 350\)/.test(area), "a busca se aplica sozinha");
+    assert.ok(area.includes('data-lista-administrativa className="-mx-1.5 flex flex-col gap-3 sm:mx-0'), "respiro lateral próprio desta tela");
+    assert.ok(!/style=\{/.test(area));
+  });
+
+  it("mostra a imagem quando existe; sem imagem, um marcador neutro do mesmo tamanho", () => {
+    const comImagem: Produto = { ...base, imagemUrl: "https://arquivos.exemplo.invalid/imagem-produto/a/b.webp" };
+    const html = lista([comImagem]);
     assert.ok(html.includes('src="https://arquivos.exemplo.invalid/imagem-produto/a/b.webp"'));
     // alt vazio: o nome do produto está ao lado e o leitor de tela não deve repetir.
     assert.ok(html.includes('alt=""'));
-
-    const semImagem = renderToStaticMarkup(createElement(ListaProdutos, { produtos: [base], aoEditar: () => {}, aoAlternarDisponibilidade: () => {} }));
-    assert.ok(semImagem.includes("data-sem-imagem"));
+    const semImagem = lista([base]);
+    assert.ok(semImagem.includes("data-sem-imagem") && tag(semImagem, "data-sem-imagem").includes("h-16 w-16 min-[380px]:h-[4.5rem]") && tag(html, "alt=").includes("h-16 w-16 min-[380px]:h-[4.5rem]"));
   });
 
   it("catálogo vazio oferece o próximo passo, em vez de uma tela morta", () => {
-    const html = renderToStaticMarkup(createElement(ListaProdutos, { produtos: [], aoEditar: () => {}, aoAlternarDisponibilidade: () => {}, aoNovo: () => {} }));
-    const conteudo = texto(html);
+    const conteudo = texto(lista([], { aoNovo: () => {} }));
     assert.ok(conteudo.includes("Nenhum produto por aqui"));
     assert.ok(conteudo.includes("Novo produto"));
   });
 });
 
 describe("ControlePaginacao", () => {
-  it("diz onde a pessoa está e desativa o que não existe", () => {
-    const primeira = renderToStaticMarkup(createElement(ControlePaginacao, { paginacao: { pagina: 1, limite: 20, total: 45, totalPaginas: 3 }, aoTrocar: () => {} }));
-    assert.ok(texto(primeira).includes("1–20 de 45 produtos"));
-    assert.ok(/disabled/.test(primeira.slice(primeira.indexOf("data-pagina-anterior"), primeira.indexOf("Anterior"))), "na primeira página não há anterior");
+  const paginas = (pagina: number, total: number, totalPaginas: number) => renderToStaticMarkup(createElement(ControlePaginacao, { paginacao: { pagina, limite: 20, total, totalPaginas }, aoTrocar: () => {} }));
+  const tag = (html: string, atributo: string) => html.match(new RegExp(`<[^>]*${atributo}[^>]*>`))?.[0] ?? "";
 
-    const ultima = renderToStaticMarkup(createElement(ControlePaginacao, { paginacao: { pagina: 3, limite: 20, total: 45, totalPaginas: 3 }, aoTrocar: () => {} }));
+  it("compacta: ‹ 1 / 3 › com setas de ícone e nome acessível — sem 'Anterior', 'Página 1 de 3' e 'Próxima' por extenso", () => {
+    const primeira = paginas(1, 45, 3);
+    assert.ok(texto(primeira).includes("1–20 de 45 produtos"));
+    assert.ok(/1\s*\/ 3/.test(texto(primeira)) && !/>Anterior<|>Próxima</.test(primeira) && !texto(primeira).includes("Página 1 de 3"));
+    assert.ok(tag(primeira, "data-pagina-anterior").includes('aria-label="Página anterior"') && tag(primeira, "data-pagina-proxima").includes('aria-label="Próxima página"'));
+    assert.ok(tag(primeira, "data-pagina-atual").includes('aria-label="Página 1 de 3"'), "o leitor de tela continua ouvindo por extenso");
+  });
+
+  it("desativa o que não existe: sem anterior na primeira, sem próxima na última", () => {
+    const primeira = paginas(1, 45, 3);
+    assert.ok(tag(primeira, "data-pagina-anterior").includes('disabled=""') && !tag(primeira, "data-pagina-proxima").includes('disabled=""'));
+    const ultima = paginas(3, 45, 3);
     assert.ok(texto(ultima).includes("41–45 de 45 produtos"), "a última página não promete mais do que tem");
-    assert.ok(/disabled/.test(ultima.slice(ultima.indexOf("data-pagina-proxima"))));
+    assert.ok(tag(ultima, "data-pagina-proxima").includes('disabled=""') && !tag(ultima, "data-pagina-anterior").includes('disabled=""'));
+  });
+
+  it("com uma página só não há para onde ir: sobra a contagem, sem botões", () => {
+    const unica = paginas(1, 7, 1);
+    assert.ok(texto(unica).includes("7 produtos") && !unica.includes("data-paginas") && !unica.includes("<button"));
+    assert.ok(texto(paginas(1, 1, 1)).includes("1 produto"));
   });
 
   it("sem produtos não há paginação nenhuma na tela", () => {
-    assert.equal(renderToStaticMarkup(createElement(ControlePaginacao, { paginacao: { pagina: 1, limite: 20, total: 0, totalPaginas: 1 }, aoTrocar: () => {} })), "");
+    assert.equal(paginas(1, 0, 1), "");
   });
 });
 

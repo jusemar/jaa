@@ -16,6 +16,8 @@ export function naoLidasSql(conversaId: SQL, lidaAteMensagemId: SQL, identidadeI
         and (${lidaAteMensagemId} is null or nao_lida.id > ${lidaAteMensagemId})
         and nao_lida.remetente_identidade_id <> ${identidadeId}
         and nao_lida.excluida_para_todos_em is null
+        -- Card de pedido não é mensagem para quem o recebe (a empresa): não conta como não lida.
+        and nao_lida.tipo <> 'pedido'
         and not exists (
           select 1 from mensagens_excluidas_para_identidade oculta
           where oculta.mensagem_id = nao_lida.id and oculta.identidade_id = ${identidadeId}

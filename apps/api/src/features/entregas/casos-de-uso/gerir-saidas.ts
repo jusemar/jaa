@@ -32,6 +32,7 @@ import {
   listarSaidasDaEmpresa,
   listarSaidasDosVinculos,
   marcarSaidaIniciada,
+  marcarSaidaLiberada,
   recusarSaidaLiberada,
   reordenarParadas,
   type SaidaComParadasRegistro,
@@ -110,10 +111,21 @@ export async function criarSaidaAutorizada(
   if ("tipo" in criada) return { tipo: "conflito" };
 
   await planejarRotaDaSaida(dependencias, criada.saidaId);
+  await liberarSaidaManualSeAutomatico(banco, empresaId, criada.saidaId);
 
   const saida = await buscarSaidaDaEmpresa(banco, empresaId, criada.saidaId);
   if (!saida) throw new Error("Saída criada não encontrada.");
   return { tipo: "criada", saida };
+}
+
+/**
+ * MANUAL = AUTOMÁTICO para quem entrega. A saída montada à mão nasce "preparada"; com a liberação
+ * automática da empresa ligada (o padrão), ela é liberada para retirada na hora — exatamente o que o
+ * despacho automático faz. Sem isso, a rota chegava ao entregador sem "Sair para entrega"/"Recusar
+ * rota" até alguém liberar à mão. Com a liberação automática desligada, o gestor continua liberando.
+ */
+export async function liberarSaidaManualSeAutomatico(banco: Banco, empresaId: string, saidaId: string): Promise<void> {
+  if ((await buscarConfiguracaoDespacho(banco, empresaId)).liberacaoAutomatica) await marcarSaidaLiberada(banco, saidaId, new Date());
 }
 
 export async function listarSaidasAutorizado(

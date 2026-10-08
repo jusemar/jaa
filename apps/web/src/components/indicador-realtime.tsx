@@ -24,7 +24,7 @@ export function IndicadorRealtime() {
       }`}
     >
       <span aria-hidden className="h-2 w-2 rounded-full bg-perigo" />
-      {conectado ? "Conectado" : "Sem conexão com o Jaa. Tentando reconectar…"}
+      {conectado ? "Conectado" : "Sem conexão com o Jaaa. Tentando reconectar…"}
     </p>
   );
 }

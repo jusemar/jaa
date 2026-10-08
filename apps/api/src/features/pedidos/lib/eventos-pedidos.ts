@@ -17,7 +17,14 @@ export interface PedidoStatusAtualizado {
   ocorridoEm: Date;
 }
 
-export type EventoDominioPedidos = PedidoStatusAtualizado;
+/** Pedido criado (já commitado): vai SÓ para a identidade da empresa que o recebeu. */
+export interface PedidoCriado {
+  tipo: "pedido-criado";
+  empresaIdentidadeId: string;
+  pedidoId: string;
+}
+
+export type EventoDominioPedidos = PedidoStatusAtualizado | PedidoCriado;
 
 type OuvinteEventosPedidos = (evento: EventoDominioPedidos) => void;
 

@@ -25,7 +25,7 @@ export const TEXTOS_ENTRADA = {
     semSenha: "Esqueci a senha — entrar com código",
   },
   novo: {
-    titulo: "Novo no Jaa?",
+    titulo: "Novo no Jaaa?",
     descricao: "Crie sua conta com o número do seu celular. Leva um minuto.",
     acao: "Criar conta",
   },
@@ -50,7 +50,7 @@ export const TEXTOS_ENTRADA = {
   },
   cadastro: {
     titulo: "Falta pouco",
-    descricao: "Diga como você aparece no Jaa e crie uma senha para entrar nas próximas vezes.",
+    descricao: "Diga como você aparece no Jaaa e crie uma senha para entrar nas próximas vezes.",
     acao: "Concluir cadastro",
   },
 } as const;

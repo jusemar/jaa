@@ -1,11 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import {
   SENHA_TAMANHO_MAXIMO,
   SENHA_TAMANHO_MINIMO,
   type ContaAtual,
 } from "@jaa/contratos";
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { AppJaa } from "@/components/navegacao/app-jaa";
 import { Aviso, Botao, CampoTexto, Cartao } from "@/components/ui/primitivos";
 import type { DestinoDoLink } from "@/features/link/lib/link-do-jaa";
@@ -45,7 +46,11 @@ type Etapa =
 export function FluxoAutenticacao({
   destino,
   moldura,
+  iniciarCadastro = false,
+  aoSairParaPaginaPublica,
 }: {
+  iniciarCadastro?: boolean;
+  aoSairParaPaginaPublica?: () => void;
   /*
    * Para onde a pessoa vai DEPOIS de entrar ou se cadastrar (Link do Jaa). Fica só na memória desta
    * página — o endereço `/@usuario` continua o mesmo durante todo o login —, então não existe
@@ -74,9 +79,9 @@ export function FluxoAutenticacao({
   // Realtime só com sessão válida e identidade pessoal; sair volta à entrada e desconecta.
   useConexaoRealtime(etapa.nome === "autenticado");
 
-  function aplicarConta(conta: Awaited<ReturnType<typeof buscarContaAtual>>) {
+  const aplicarConta = useCallback((conta: Awaited<ReturnType<typeof buscarContaAtual>>) => {
     if (!conta.ok) {
-      setEtapa({ nome: "entrar" });
+      setEtapa(iniciarCadastro ? { nome: "telefone", motivo: "criar" } : { nome: "entrar" });
       if (conta.status !== 401) setErro(conta.mensagem);
       return;
     }
@@ -85,7 +90,7 @@ export function FluxoAutenticacao({
         ? { nome: "autenticado", conta: conta.dados }
         : { nome: "cadastro" },
     );
-  }
+  }, [iniciarCadastro]);
 
   async function seguirConformeConta() {
     aplicarConta(await buscarContaAtual());
@@ -99,7 +104,7 @@ export function FluxoAutenticacao({
     return () => {
       ativo = false;
     };
-  }, []);
+  }, [aplicarConta]);
 
   // Trocar de etapa por escolha da pessoa limpa o erro da etapa anterior.
   function irPara(proxima: Etapa) {
@@ -210,6 +215,7 @@ export function FluxoAutenticacao({
         return;
       }
       setEtapa({ nome: "entrar" });
+      aoSairParaPaginaPublica?.();
     });
   }
 
@@ -218,7 +224,7 @@ export function FluxoAutenticacao({
   }
 
   const entrada = (
-    <section id={idEntrada} aria-label="Entrar no Jaa" data-entrada-jaa className="flex w-full scroll-mt-4 flex-col gap-4">
+    <section id={idEntrada} aria-label="Entrar no Jaaa" data-entrada-jaa className="flex w-full scroll-mt-4 flex-col gap-4">
       {destino && etapa.nome !== "carregando" && (
         <p data-destino-apos-entrar className="text-center text-sm text-conteudo-suave">
           {fraseDoDestino(destino.nomeExibicao ?? `@${destino.nomeUsuario}`)}
@@ -300,7 +306,7 @@ export function FluxoAutenticacao({
               required
               placeholder={EXEMPLOS_ENTRADA.usuario}
               autoComplete="username"
-              dica="É assim que as pessoas encontram você no Jaa."
+              dica="É assim que as pessoas encontram você no Jaaa."
             />
             <CampoTexto
               id="cadastro-senha"
@@ -346,7 +352,10 @@ export function FluxoAutenticacao({
      */
     <main className="flex min-h-dvh items-start justify-center bg-fundo px-4 py-10">
       <div className="my-auto flex w-full max-w-sm flex-col gap-4">
-        <h1 className="text-center text-3xl font-bold text-marca">Jaa</h1>
+        {/* A logo do Jaaa (o mesmo arquivo do app), com a proporção original e largura limitada. */}
+        <h1 className="flex justify-center pb-1">
+          <Image src="/jaaa-logo-login.png" alt="Jaaa" width={1020} height={275} priority className="h-auto w-56 max-w-[70%] sm:w-64" />
+        </h1>
         {entrada}
       </div>
     </main>

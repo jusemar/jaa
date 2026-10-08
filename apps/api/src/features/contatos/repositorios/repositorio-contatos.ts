@@ -60,6 +60,15 @@ export async function salvarContato(banco: Banco, identidadeId: string, contatoI
     .onConflictDoUpdate({ target: [contatos.identidadeId, contatos.contatoIdentidadeId], set: { apelido } });
 }
 
+/**
+ * Garante o contato SEM mexer no que já existe (apelido, favorito): usado quando o vínculo nasce de um
+ * fato do produto — ex.: quem faz um pedido entra na agenda da EMPRESA que o recebeu. Idempotente.
+ */
+export async function garantirContato(banco: Banco, identidadeId: string, contatoIdentidadeId: string): Promise<void> {
+  if (identidadeId === contatoIdentidadeId) return;
+  await banco.insert(contatos).values({ identidadeId, contatoIdentidadeId, apelido: null }).onConflictDoNothing();
+}
+
 export async function removerContato(banco: Banco, identidadeId: string, contatoIdentidadeId: string): Promise<boolean> {
   const removidos = await banco
     .delete(contatos)

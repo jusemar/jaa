@@ -65,7 +65,7 @@ export function criarEspecialidadeServico(banco: Banco, dados: { servicoId: stri
 
 export async function criarAtributoServico(
   banco: Executor,
-  dados: { servicoId: string; slug: string; nome: string; tipoSelecao?: "unica" | "multipla"; ordem?: number },
+  dados: { servicoId: string; slug: string; nome: string; tipoSelecao?: "unica" | "multipla"; obrigatorio?: boolean; ordem?: number },
 ) {
   const [atributo] = await banco.insert(atributosServico).values(dados).returning();
   if (!atributo) throw new Error("Atributo não criado.");
@@ -136,6 +136,7 @@ export async function listarCatalogoServicos(banco: Banco): Promise<CatalogoServ
             .map((atributo) => ({
               ...item(atributo),
               tipoSelecao: atributo.tipoSelecao,
+              obrigatorio: atributo.obrigatorio,
               opcoes: opcoes.filter((opcao) => opcao.atributoId === atributo.id).map(item),
             })),
         })),

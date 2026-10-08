@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { perfisProfissionais } from "@jaa/banco/schema";
+import { opcoesServicoPerfil, perfisProfissionais } from "@jaa/banco/schema";
 import {
   baseEmpresaSchema,
   empresaSchema,
@@ -11,7 +11,7 @@ import {
   sugestaoLocalizacaoSchema,
   TAMANHO_PAGINA_BUSCA_PROFISSIONAIS,
 } from "@jaa/contratos";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { como, criarAmbienteIntegracao, type Pessoa } from "./apoio/integracao.js";
 
 /*
@@ -28,7 +28,7 @@ const aoNorte = (km: number) => ({ latitude: Number((LOCAL.latitude + km * 0.009
 const SEMANA_INTEIRA = [1, 2, 3, 4, 5, 6, 7].map((diaSemana) => ({ diaSemana, inicio: "00:00", fim: "24:00" }));
 
 const QUANTIDADE_PAGINACAO = TAMANHO_PAGINA_BUSCA_PROFISSIONAIS + 1;
-const telefones = Array.from({ length: 8 + QUANTIDADE_PAGINACAO }, (_, indice) => `+55319876930${String(indice).padStart(2, "0")}`);
+const telefones = Array.from({ length: 10 + QUANTIDADE_PAGINACAO }, (_, indice) => `+55319876930${String(indice).padStart(2, "0")}`);
 const ctx = criarAmbienteIntegracao({ telefones, prefixoIp: "198.18.93." });
 
 let pesquisador: Pessoa;
@@ -240,3 +240,70 @@ describe("paginação", () => {
     assert.equal(ids.length, QUANTIDADE_PAGINACAO + 2);
   });
 });
+
+/*
+ * VEÍCULO OBRIGATÓRIO do Entregador. Caso real: perfil ativo, área cobrindo o local, atividade
+ * "Entregador" gravada SEM veículo — a busca "Entregador · Moto" (que exige Moto, e continua exigindo)
+ * nunca o encontrava e nada avisava. A regra geral: atributo obrigatório do catálogo precisa de ao
+ * menos uma opção para ADICIONAR ou SALVAR a atividade; perfil antigo só muda quando o dono edita.
+ */
+describe("Entregador exige veículo; perfil antigo sem veículo aparece ao completar", () => {
+  let novato: Pessoa;
+  let antigo: Pessoa;
+  const INDICE = 8 + QUANTIDADE_PAGINACAO;
+  const nomes = async () => (await encontrados(pesquisador, motoboyEm({ raioKm: 20 }))).itens.map((item) => item.nomeUsuario);
+
+  before(async () => {
+    novato = await ctx.criarPessoa(INDICE, "bp_sem_veiculo", "Sem Veículo");
+    antigo = await ctx.criarPessoa(INDICE + 1, "bp_perfil_antigo", "Perfil Antigo");
+    todos.push(novato, antigo);
+    await exigir(novato, "POST", "/profissional/perfil");
+    // "Antigo": completo e ativo, mas com o veículo retirado direto no banco (como ficou antes da regra).
+    // O mais próximo do local: fica na primeira página mesmo com os profissionais da paginação.
+    await profissional(antigo, { base: aoNorte(0.5), veiculos: [MOTO], raioAreaMetros: 10_000 });
+    const lido = respostaPerfilProfissionalSchema.parse((await chamar(antigo, "GET", "/profissional/perfil")).corpo).perfil;
+    const atividade = lido?.atividades.find((item) => item.atividadeId === ENTREGADOR);
+    assert.ok(atividade);
+    await ctx.banco.delete(opcoesServicoPerfil).where(eq(opcoesServicoPerfil.servicoPerfilId, atividade.id));
+  });
+
+  it("adicionar Entregador sem veículo é recusado e nada é gravado; com veículo, entra", async () => {
+    const semVeiculo = await chamar(novato, "POST", "/profissional/perfil/atividades", { servicoId: ENTREGADOR });
+    assert.equal(semVeiculo.status, 400);
+    assert.deepEqual(semVeiculo.corpo, { codigo: "ESCOLHAS_INVALIDAS", mensagem: "Escolha pelo menos uma opção em Veículo." });
+    const lido = respostaPerfilProfissionalSchema.parse((await chamar(novato, "GET", "/profissional/perfil")).corpo).perfil;
+    assert.deepEqual(lido?.atividades, []);
+    const comVeiculo = await exigir(novato, "POST", "/profissional/perfil/atividades", { servicoId: ENTREGADOR, opcaoIds: [CARRO] });
+    assert.deepEqual(comVeiculo?.atividades[0]?.opcaoIds, [CARRO]);
+  });
+
+  it("salvar a atividade tirando todos os veículos é recusado; a escolha anterior fica", async () => {
+    const lido = respostaPerfilProfissionalSchema.parse((await chamar(novato, "GET", "/profissional/perfil")).corpo).perfil;
+    const id = lido?.atividades[0]?.id;
+    const vazio = await chamar(novato, "PATCH", `/profissional/perfil/atividades/${id}`, { especialidadeIds: [], opcaoIds: [] });
+    assert.equal(vazio.status, 400);
+    const depois = respostaPerfilProfissionalSchema.parse((await chamar(novato, "GET", "/profissional/perfil")).corpo).perfil;
+    assert.deepEqual(depois?.atividades[0]?.opcaoIds, [CARRO]);
+  });
+
+  it("atividade sem item obrigatório (Mototáxi) continua entrando sem escolha nenhuma", async () => {
+    const perfil = await exigir(novato, "POST", "/profissional/perfil/atividades", { servicoId: MOTOTAXI });
+    assert.equal(perfil?.atividades.length, 2);
+  });
+
+  it("perfil ANTIGO sem veículo: continua ativo, fora de 'Entregador · Moto', dentro de 'Entregador'", async () => {
+    const lido = respostaPerfilProfissionalSchema.parse((await chamar(antigo, "GET", "/profissional/perfil")).corpo).perfil;
+    assert.equal(lido?.situacao, "ativo", "nada é alterado sozinho");
+    assert.equal((await nomes()).includes("bp_perfil_antigo"), false);
+    const soEntregador = await encontrados(pesquisador, busca({ servicoId: ENTREGADOR, ...LOCAL, raioKm: 20 }));
+    assert.ok(soEntregador.itens.some((item) => item.nomeUsuario === "bp_perfil_antigo"));
+  });
+
+  it("o dono completa o veículo (Moto) e passa a aparecer em 'Entregador · Moto'", async () => {
+    const lido = respostaPerfilProfissionalSchema.parse((await chamar(antigo, "GET", "/profissional/perfil")).corpo).perfil;
+    const id = lido?.atividades.find((item) => item.atividadeId === ENTREGADOR)?.id;
+    await exigir(antigo, "PATCH", `/profissional/perfil/atividades/${id}`, { especialidadeIds: [], opcaoIds: [MOTO] });
+    assert.ok((await nomes()).includes("bp_perfil_antigo"));
+  });
+});
+

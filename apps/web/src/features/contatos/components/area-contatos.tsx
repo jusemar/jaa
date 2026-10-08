@@ -48,7 +48,7 @@ export function AreaContatos({ aoAbrirConversa }: { aoAbrirConversa: (nomeUsuari
 
   return (
     <div className="flex flex-col gap-6">
-      <Secao titulo="Pesquisar no Jaa" descricao="Procure pelo nome ou @usuario. Seus contatos aparecem primeiro.">
+      <Secao titulo="Pesquisar no Jaaa" descricao="Procure pelo nome ou @usuario. Seus contatos aparecem primeiro.">
         <PesquisaJaa
           aoAbrirConversa={aoAbrirConversa}
           aoSalvarContato={() => {

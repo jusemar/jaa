@@ -28,7 +28,7 @@ describe("entrar com usuário e senha (Mobile)", () => {
   });
 
   it("sem rede, limite de tentativas e erro desconhecido têm texto próprio", () => {
-    assert.equal(mensagemFalhaEntrar(undefined), "Sem conexão com o Jaa.");
+    assert.equal(mensagemFalhaEntrar(undefined), "Sem conexão com o Jaaa.");
     assert.equal(mensagemFalhaEntrar({ status: 429, message: "Too many requests" }), "Muitas tentativas. Aguarde um pouco e tente de novo.");
     assert.equal(mensagemFalhaEntrar({ status: 500 }), "Não foi possível entrar agora.");
   });

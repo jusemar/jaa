@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Botao } from "@/components/ui/botao";
+import { TelaDeCarregamento } from "@/components/ui/tela-carregamento";
 import { Texto } from "@/components/ui/texto";
 import { Cores, Espaco } from "@/constants/theme";
 import { TelaEntrar } from "@/features/autenticacao/components/tela-entrar";
@@ -24,15 +24,13 @@ export function PortaoSessao({ children }: { children: ReactNode }) {
   if (contexto && !contexto.conta.cadastroCompleto) return <TelaEntrar aoEntrar={aoEntrar} etapaInicial="cadastro" />;
   if (contexto) return <SessaoAtiva>{children}</SessaoAtiva>;
 
+  // Carregando (ou sem conseguir falar com o servidor): a arte de carregamento do Jaaa, a mesma do início.
   return (
-    <SafeAreaView style={estilos.tela}>
-      <Texto variante="marca" cor="marca">
-        Jaa
-      </Texto>
+    <TelaDeCarregamento>
       {erro && !carregando ? (
         <View style={estilos.bloco}>
           <Texto variante="corpoForte" style={estilos.centro}>
-            Não foi possível falar com o Jaa
+            Não foi possível falar com o Jaaa
           </Texto>
           <Texto variante="pequeno" cor="conteudoSuave" style={estilos.centro}>
             {erro} Confira sua conexão e tente de novo.
@@ -47,7 +45,7 @@ export function PortaoSessao({ children }: { children: ReactNode }) {
       ) : (
         <ActivityIndicator color={Cores.marca} accessibilityLabel="Carregando" />
       )}
-    </SafeAreaView>
+    </TelaDeCarregamento>
   );
 }
 
@@ -66,7 +64,6 @@ function SessaoAtiva({ children }: { children: ReactNode }) {
 }
 
 const estilos = StyleSheet.create({
-  tela: { alignItems: "center", backgroundColor: Cores.fundo, flex: 1, gap: Espaco.cinco, justifyContent: "center", padding: Espaco.cinco },
   bloco: { alignItems: "center", gap: Espaco.tres },
   centro: { textAlign: "center" },
 });

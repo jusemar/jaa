@@ -256,9 +256,6 @@ export function DetalheProdutoCatalogo({
           <Texto variante="subtitulo" cor="marca" style={estilos.descricao}>
             {formatarPrecoCentavos(produto.precoCentavos)}
           </Texto>
-          <Texto variante="mini" cor="marca">
-            Disponível
-          </Texto>
         </View>
       </Cartao>
 

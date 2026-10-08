@@ -17,3 +17,18 @@ describe("sugerirSlug", () => {
     assert.equal(sugerirSlug("!!!"), "");
   });
 });
+
+describe("criar empresa: uma por conta", () => {
+  it("quem já criou uma empresa vê '+ Criar empresa' DESATIVADO, com o limite dito ao lado, e não abre o formulário", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { AVISO_LIMITE_DE_EMPRESAS } = await import("@jaa/contratos");
+    assert.equal(AVISO_LIMITE_DE_EMPRESAS, "Limite: 1 empresa por usuário.");
+    const tela = readFileSync(new URL("../components/area-empresas.tsx", import.meta.url), "utf8");
+    assert.ok(tela.includes("disabled={!podeCriar}"));
+    assert.ok(tela.includes("onClick={() => podeCriar && setCriando((atual) => !atual)}"));
+    assert.ok(tela.includes("{limiteAtingido && (") && tela.includes("{AVISO_LIMITE_DE_EMPRESAS}"));
+    assert.ok(tela.includes("{podeCriar && criando && ("), "o formulário só existe para quem pode criar");
+    // A lista das empresas existentes continua sendo mostrada sempre.
+    assert.ok(tela.includes("<ListaEmpresas empresas={empresas ?? []}"));
+  });
+});

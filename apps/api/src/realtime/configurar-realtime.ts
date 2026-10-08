@@ -21,6 +21,7 @@ import {
   EVENTO_PEDIDO_ENTREGA_PROXIMA,
   EVENTO_SITUACAO_OPERACIONAL,
   EVENTO_SAIDA_ATUALIZADA,
+  EVENTO_PEDIDO_NOVO,
   EVENTO_PEDIDO_STATUS_ATUALIZADO,
   EVENTO_PRESENCA_ATUALIZADA,
   type CodigoErroConexaoRealtime,
@@ -233,6 +234,10 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
    * (cliente dono e identidade da empresa). Não é mensagem — não mexe em conversa nem em não lidas.
    */
   const cancelarEntregaPedidos = eventosPedidos.inscrever((evento) => {
+    if (evento.tipo === "pedido-criado") {
+      realtime.to(salaDaIdentidade(evento.empresaIdentidadeId)).emit(EVENTO_PEDIDO_NOVO, { pedidoId: evento.pedidoId });
+      return;
+    }
     realtime.to(evento.destinatariosIdentidadeIds.map(salaDaIdentidade)).emit(EVENTO_PEDIDO_STATUS_ATUALIZADO, {
       conversaId: evento.conversaId,
       pedido: evento.pedido,

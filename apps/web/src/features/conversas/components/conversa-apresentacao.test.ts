@@ -224,21 +224,23 @@ describe("mensagem de pedido no balão", () => {
     },
   };
 
-  it("exibe o card do Pedido (dados do próprio pedido, não texto copiado)", () => {
+  it("a mensagem de pedido É o acompanhamento, aberto na conversa — não um balão com botão", () => {
     const marcacao = balao(comPedido);
-    assert.ok(marcacao.includes('data-card-pedido="dddddddd-0000-4000-8000-000000000000"'));
+    assert.ok(marcacao.includes("data-mensagem-de-pedido"));
+    assert.ok(marcacao.includes('data-pedido-na-conversa="dddddddd-0000-4000-8000-000000000000"') && marcacao.includes('data-apresentacao="completa"'));
     const conteudo = texto(marcacao).replace(/ /g, " ");
-    for (const esperado of ["Pedido #9", "2× Pizza Calabresa", "Total: R$ 91,80", "Pagamento: Dinheiro na entrega", "Status: Pedido recebido", "Ver pedido"]) {
-      assert.ok(conteudo.includes(esperado), esperado);
-    }
+    for (const esperado of ["Pedido #9", "2x Pizza Calabresa", "R$ 91,80", "Dinheiro na entrega", "Pedido recebido"]) assert.ok(conteudo.includes(esperado), esperado);
+    for (const antigo of ["Acompanhar pedido", "Ver pedido"]) assert.equal(conteudo.includes(antigo), false, antigo);
+    // Não é balão: sem a superfície de mensagem enviada e sem menu de mensagem.
+    assert.equal(marcacao.includes("bg-mensagem-enviada"), false);
   });
 
-  it("card de pedido não é texto: não oferece editar nem responder", () => {
-    const marcacao = balao(comPedido, noop, noop);
-    assert.ok(!marcacao.includes(ACAO.editar));
-    assert.ok(!marcacao.includes(ACAO.responder));
-    // A mesma mensagem como texto continua com as ações normais.
-    assert.ok(balao(mensagem(9, EU, ha(1)), noop, noop).includes(ACAO.editar));
+  it("pedido finalizado fica compacto; mensagem comum continua um balão normal", () => {
+    const entregue = balao({ ...comPedido, pedido: comPedido.pedido && { ...comPedido.pedido, status: "entregue" } });
+    assert.ok(entregue.includes('data-apresentacao="compacta"') && entregue.includes("data-ver-detalhes-do-pedido"));
+    const comum = balao(mensagem(9, EU, ha(1)), noop, noop);
+    assert.ok(comum.includes("bg-mensagem-enviada") && comum.includes(ACAO.editar));
+    assert.equal(comum.includes("data-pedido-na-conversa"), false);
   });
 });
 
@@ -254,7 +256,7 @@ describe("CabecalhoConversa", () => {
     // Cor sozinha não comunica: o equivalente textual existe para leitores de tela.
     assert.ok(texto(online).includes("Disponível agora"));
     assert.ok(cabecalho("offline", false).includes('data-presenca="offline"'));
-    assert.ok(texto(cabecalho("offline", false)).includes("Sem conexão agora"));
+    assert.ok(texto(cabecalho("offline", false)).includes("Off-line agora"));
     assert.ok(texto(cabecalho("online", true)).includes("digitando"));
     assert.equal(cabecalho(null, false).includes("data-presenca"), false, "sem conexão: não afirma online nem offline");
     assert.ok(texto(cabecalho(null, false)).includes("@mateus"));

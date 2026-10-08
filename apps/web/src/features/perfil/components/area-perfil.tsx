@@ -107,7 +107,7 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
 
           <form onSubmit={enviarDados} className="flex flex-col gap-4">
             <CampoTexto id="perfil-nome" rotulo="Nome" name="nomeExibicao" value={campos.nome} onChange={editar("nome")} maxLength={50} required autoComplete="name" />
-            <CampoTexto id="perfil-usuario" rotulo="@usuario" value={`@${perfil.nomeUsuario}`} readOnly disabled dica="O @usuario é seu endereço no Jaa e não muda por aqui." />
+            <CampoTexto id="perfil-usuario" rotulo="@usuario" value={`@${perfil.nomeUsuario}`} readOnly disabled dica="O @usuario é seu endereço no Jaaa e não muda por aqui." />
             <CampoTexto
               id="perfil-frase"
               rotulo="Frase de status"
@@ -128,7 +128,7 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
       </Secao>
 
       <Secao
-        titulo="Link do Jaa"
+        titulo="Link do Jaaa"
         descricao={
           ehEmpresa
             ? "Envie este endereço para seus clientes: ele abre a conversa com a empresa (e o cardápio) direto no navegador."
@@ -140,7 +140,7 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
         </Cartao>
       </Secao>
 
-      <Secao titulo="Status" descricao="Você escolhe como aparece. É diferente de estar conectado agora — isso o Jaa detecta sozinho.">
+      <Secao titulo="Status" descricao="Você escolhe como aparece. É diferente de estar conectado agora — isso o Jaaa detecta sozinho.">
         <Cartao className="flex flex-col gap-3 p-4">
           <div role="radiogroup" aria-label="Status" className="flex flex-wrap gap-2">
             {statusEscolhidoSchema.options.map((status: StatusEscolhido) => (

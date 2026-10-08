@@ -19,11 +19,11 @@ async function requisitar<T>(caminho: string, opcoes: RequestInit = {}): Promise
     const corpo: unknown = await resposta.json().catch(() => null);
     if (!resposta.ok) {
       const erro = corpo as { mensagem?: string } | null;
-      return { ok: false, mensagem: erro?.mensagem ?? "Não foi possível falar com o Jaa." };
+      return { ok: false, mensagem: erro?.mensagem ?? "Não foi possível falar com o Jaaa." };
     }
     return { ok: true, dados: corpo as T };
   } catch {
-    return { ok: false, mensagem: "Sem conexão com o Jaa." };
+    return { ok: false, mensagem: "Sem conexão com o Jaaa." };
   }
 }
 

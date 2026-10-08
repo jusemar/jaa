@@ -10,12 +10,12 @@ import { AreaLogisticaEmpresa } from "@/features/entregas/components/area-logist
 import { SeletorIdentidade } from "@/features/identidades/components/seletor-identidade";
 import { useIdentidadeAtiva } from "@/features/identidades/hooks/use-identidade-ativa";
 import { AreaPedidosEmpresa } from "@/features/pedidos/components/area-pedidos-empresa";
+import { usePedidosAguardando } from "@/features/pedidos/hooks/use-pedidos-aguardando";
 import { AreaPerfil } from "@/features/perfil/components/area-perfil";
 import { HorariosDeFuncionamento } from "@/features/empresas/components/horarios-de-funcionamento";
 import { AreaProdutos } from "@/features/produtos/components/area-produtos";
 import { AvisosDeAcao } from "@/components/ui/avisos";
 import { Botao, Carregando, Secao } from "@/components/ui/primitivos";
-import { IconeConversa } from "@/components/ui/icones";
 import type { DestinoDoLink } from "@/features/link/lib/link-do-jaa";
 import { areaValida, areasDaIdentidade } from "./areas";
 import { NavegacaoApp } from "./navegacao-app";
@@ -97,7 +97,10 @@ export function AppJaa({
 
   const ativa = identidades.ativa;
   // Não lidas + som de mensagem recebida da identidade ATUANTE, em qualquer área (não só em Conversas).
-  const naoLidasConversas = useAvisosMensagens(ativa?.identidadeId ?? null);
+  // Agindo como EMPRESA, um pedido novo toca o som de pedido (não o de mensagem).
+  const naoLidasConversas = useAvisosMensagens(ativa?.identidadeId ?? null, ativa?.tipo === "empresarial");
+  // Pedido não é conversa: o que espera a empresa aparece no item Pedidos, nunca em Conversas.
+  const pedidosAguardando = usePedidosAguardando(ativa?.tipo === "empresarial" ? ativa.empresa.id : null);
   /*
    * A identidade PESSOAL da conta, da mesma lista operável que alimenta o "Agindo como": é ela que
    * o topo da lista de conversas mostra, mesmo quando a pessoa está agindo como empresa.
@@ -142,6 +145,7 @@ export function AppJaa({
         aoAbrir={abrir}
         ocultarNoCelular={ehConversas && conversaAberta}
         naoLidasConversas={naoLidasConversas}
+        pedidosAguardando={pedidosAguardando}
         rodape={
           <>
             <SeletorIdentidade
@@ -164,12 +168,7 @@ export function AppJaa({
           className={`shrink-0 items-center gap-2.5 border-b border-borda bg-superficie px-4 py-3 md:hidden ${ehConversas && conversaAberta ? "hidden" : "flex"}`}
           style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
         >
-          <span
-            aria-hidden
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-marca text-marca-conteudo shadow-suave"
-          >
-            <IconeConversa className="h-5 w-5" />
-          </span>
+          {/* Só a identidade, limpa. "Sair da conta" fica no fim do menu dela. */}
           <div className="min-w-0 flex-1">
             <SeletorIdentidade
               operaveis={identidades.operaveis}
@@ -178,9 +177,13 @@ export function AppJaa({
               aoSelecionar={(identidadeId) =>
                 void identidades.selecionar(identidadeId)
               }
+              rodapeDoMenu={
+                <button type="button" role="menuitem" data-sair-da-conta disabled={saindo} onClick={aoSair} className="flex min-h-12 items-center px-3 text-left text-sm text-conteudo-suave hover:bg-superficie-suave disabled:opacity-50">
+                  {saindo ? "Saindo…" : "Sair da conta"}
+                </button>
+              }
             />
           </div>
-          {sair}
         </div>
 
         {!ativa && <Carregando texto="Carregando suas identidades…" />}
@@ -227,7 +230,7 @@ export function AppJaa({
                   {!ehEmpresa && (
                     <Secao
                       titulo="Minhas empresas"
-                      descricao="Crie uma empresa para vender pelo Jaa. Para administrá-la, toque no seu nome (no topo) e escolha a empresa."
+                      descricao="Crie uma empresa para vender pelo Jaaa. Para administrá-la, toque no seu nome (no topo) e escolha a empresa."
                     >
                       <AreaEmpresas
                         aoEmpresaCriada={() => void identidades.recarregar()}
@@ -242,6 +245,7 @@ export function AppJaa({
                   key={ativa.empresa.id}
                   empresaId={ativa.empresa.id}
                   nomeEmpresa={ativa.nomeExibicao}
+                  aoAbrirConversa={abrirConversaCom}
                 />
               )}
 

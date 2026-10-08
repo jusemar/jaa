@@ -14,8 +14,8 @@ const fonteCorpo = Manrope({ variable: "--font-jaa-sans", subsets: ["latin"], di
 const fonteDisplay = Sora({ variable: "--font-jaa-display", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Jaa — Suas conversas, do seu jeito",
-  description: "Converse com pessoas e empresas de um jeito simples, próximo e organizado no Jaa.",
+  title: "Jaaa — Suas conversas, do seu jeito",
+  description: "Converse com pessoas e empresas de um jeito simples, próximo e organizado no Jaaa.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

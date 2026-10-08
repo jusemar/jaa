@@ -21,7 +21,7 @@ export function registrarRotasIdentidadePublica(servidor: FastifyInstance, depen
 
   servidor.get("/publico/identidades/:nomeUsuario", async (requisicao, resposta) => {
     const naoEncontrada = () => {
-      const erro: ErroApi = { codigo: "IDENTIDADE_NAO_ENCONTRADA", mensagem: "Este endereço do Jaa não existe." };
+      const erro: ErroApi = { codigo: "IDENTIDADE_NAO_ENCONTRADA", mensagem: "Este endereço do Jaaa não existe." };
       return resposta.code(404).send(erro);
     };
     const parametros = requisicao.params as { nomeUsuario?: unknown };

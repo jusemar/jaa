@@ -1,4 +1,5 @@
 import type { Banco } from "@jaa/banco";
+import { presencaAtual } from "./repositorio-fila.js";
 import {
   atribuicoesEntrega,
   entregadoresEmpresa,
@@ -419,6 +420,8 @@ export async function atribuirSaidaAoPrimeiroDaFila(
           eq(entregadoresEmpresa.status, "ativo"),
           eq(entregadoresEmpresa.disponivel, true),
           eq(entregadoresEmpresa.naBase, true),
+          // Presença ATUAL: quem não confirma a localização há tempo demais não recebe rota "da base".
+          presencaAtual,
           eq(entregadoresEmpresa.aptoParaSaida, true),
           sql`${entregadoresEmpresa.filaEntrouEm} is not null`,
           sql`not exists (select 1 from ${saidasEntrega} where ${saidasEntrega.entregadorId} = ${entregadoresEmpresa.id} and ${saidasEntrega.status} <> 'concluida')`,

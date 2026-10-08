@@ -63,6 +63,9 @@ export const listaPedidosEmpresaSchema = z.object({
   pedidos: z.array(pedidoDaEmpresaSchema),
   // Cursor = id (UUIDv7) do pedido mais antigo da página; ordem determinística do mais recente ao mais antigo.
   proximoCursor: z.uuid().nullable(),
+  // Quantos pedidos o FILTRO tem ao todo (não só nesta página): é o que permite "1–10 de 36" e
+  // "Página 1 de 4" sem carregar a lista inteira.
+  total: z.number().int().min(0),
 });
 
 export type ListaPedidosEmpresa = z.infer<typeof listaPedidosEmpresaSchema>;

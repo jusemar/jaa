@@ -18,7 +18,22 @@ import type { AreaApp } from "./areas";
  * Item de navegação no padrão da referência: ícone de 20px com rótulo pequeno e em NEGRITO embaixo;
  * ativo em jade, inativo em texto suave. É a mesma linguagem nos dois lugares (coluna e barra).
  */
-function Item({ area, ativa, aoAbrir, compacto, naoLidas = 0 }: { area: AreaApp; ativa: boolean; aoAbrir: (id: string) => void; compacto: boolean; naoLidas?: number }) {
+function Item({
+  area,
+  ativa,
+  aoAbrir,
+  compacto,
+  naoLidas = 0,
+  pedidosAguardando = 0,
+}: {
+  area: AreaApp;
+  ativa: boolean;
+  aoAbrir: (id: string) => void;
+  compacto: boolean;
+  naoLidas?: number;
+  // Só no item Pedidos: pedidos recebidos que ainda esperam a empresa.
+  pedidosAguardando?: number;
+}) {
   const { Icone } = area;
   return (
     <button
@@ -26,7 +41,13 @@ function Item({ area, ativa, aoAbrir, compacto, naoLidas = 0 }: { area: AreaApp;
       data-area={area.id}
       aria-current={ativa ? "page" : undefined}
       // O número também vai no nome acessível: o indicador não depende só da cor.
-      aria-label={naoLidas > 0 ? `${area.rotulo}, ${naoLidas} ${naoLidas === 1 ? "mensagem não lida" : "mensagens não lidas"}` : undefined}
+      aria-label={
+        naoLidas > 0
+          ? `${area.rotulo}, ${naoLidas} ${naoLidas === 1 ? "mensagem não lida" : "mensagens não lidas"}`
+          : pedidosAguardando > 0
+            ? `${area.rotulo}, ${pedidosAguardando} ${pedidosAguardando === 1 ? "pedido aguardando" : "pedidos aguardando"}`
+            : undefined
+      }
       onClick={() => aoAbrir(area.id)}
       title={area.descricao}
       className={
@@ -48,6 +69,15 @@ function Item({ area, ativa, aoAbrir, compacto, naoLidas = 0 }: { area: AreaApp;
             {rotuloTotalNaoLidas(naoLidas)}
           </span>
         )}
+        {pedidosAguardando > 0 && (
+          <span
+            data-pedidos-aguardando={pedidosAguardando}
+            aria-hidden="true"
+            className="absolute -right-2.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-perigo px-1 text-[9px] font-bold leading-none text-white ring-2 ring-superficie"
+          >
+            {rotuloTotalNaoLidas(pedidosAguardando)}
+          </span>
+        )}
       </span>
       <span className="max-w-full truncate">{area.rotulo}</span>
     </button>
@@ -61,6 +91,7 @@ export function NavegacaoApp({
   rodape,
   ocultarNoCelular = false,
   naoLidasConversas = 0,
+  pedidosAguardando = 0,
 }: {
   areas: AreaApp[];
   areaAtiva: string;
@@ -71,6 +102,8 @@ export function NavegacaoApp({
   ocultarNoCelular?: boolean;
   // Não lidas da identidade atuante: indicador no item Conversas, visível em qualquer área.
   naoLidasConversas?: number;
+  // Pedidos recebidos aguardando a empresa: indicador no item Pedidos (pedido não é conversa).
+  pedidosAguardando?: number;
 }) {
   return (
     <>
@@ -81,7 +114,7 @@ export function NavegacaoApp({
           <IconeConversa className="h-5 w-5" />
         </span>
         {areas.map((area) => (
-          <Item key={area.id} area={area} ativa={area.id === areaAtiva} aoAbrir={aoAbrir} compacto={false} naoLidas={area.id === "conversas" ? naoLidasConversas : 0} />
+          <Item key={area.id} area={area} ativa={area.id === areaAtiva} aoAbrir={aoAbrir} compacto={false} naoLidas={area.id === "conversas" ? naoLidasConversas : 0} pedidosAguardando={area.id === "pedidos" ? pedidosAguardando : 0} />
         ))}
         {rodape && <div className="mt-auto flex flex-col items-center gap-1">{rodape}</div>}
       </nav>
@@ -93,7 +126,7 @@ export function NavegacaoApp({
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
         {areas.map((area) => (
-          <Item key={area.id} area={area} ativa={area.id === areaAtiva} aoAbrir={aoAbrir} compacto naoLidas={area.id === "conversas" ? naoLidasConversas : 0} />
+          <Item key={area.id} area={area} ativa={area.id === areaAtiva} aoAbrir={aoAbrir} compacto naoLidas={area.id === "conversas" ? naoLidasConversas : 0} pedidosAguardando={area.id === "pedidos" ? pedidosAguardando : 0} />
         ))}
       </nav>
     </>

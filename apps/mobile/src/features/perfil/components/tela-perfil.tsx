@@ -13,16 +13,20 @@ import { Tela } from "@/components/ui/tela";
 import { Texto } from "@/components/ui/texto";
 import { Cores, Espaco, Raio } from "@/constants/theme";
 import { useContextoConta } from "@/features/conta/components/provedor-contexto-conta";
+import { MinhasEmpresas } from "@/features/empresas/components/minhas-empresas";
+import { TelaPerfilProfissional } from "@/features/profissional/components/tela-perfil-profissional";
 import { buscarMeuPerfil, enviarFotoPerfil, removerFotoPerfil, salvarPerfil, salvarPrivacidade } from "../lib/api-perfil";
 import { opcoesDaFoto, removerFotoDoPerfil, trocarFotoDoPerfil, type OrigemFoto, type ResultadoFoto } from "../lib/foto-perfil";
 import { obterFoto, prepararFoto } from "../lib/seletor-foto";
+import { FormularioSenha } from "./formulario-senha";
+import { LinkPublico } from "./link-publico";
 
 /*
  * PERFIL da identidade ATUANTE — pessoa ou empresa, a mesma tela da Web (`AreaPerfil`).
  *
  * Três blocos, na ordem em que as pessoas pensam: quem eu sou (foto, nome, frase), como estou (status
- * escolhido) e quem vê o quê (privacidade). O que a Web tem a mais e o app ainda não trouxe (Perfil
- * profissional, senha, criar empresa) é dito no fim, sem botão que não funciona.
+ * escolhido) e quem vê o quê (privacidade). Depois, o que é da CONTA e só existe para a pessoa: link
+ * público, Perfil profissional (abre DENTRO de Perfil, como na Web), senha e Minhas empresas.
  */
 export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
   const router = useRouter();
@@ -40,6 +44,8 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
   const { recarregar: recarregarContexto } = useContextoConta();
   const [menuFotoAberto, setMenuFotoAberto] = useState(false);
   const [fotoOcupada, setFotoOcupada] = useState<"enviando" | "removendo" | null>(null);
+  // Perfil profissional abre DENTRO de Perfil (sem aba nova); só para a pessoa.
+  const [profissionalAberto, setProfissionalAberto] = useState(false);
 
   function receber(dados: MeuPerfil) {
     setPerfil(dados);
@@ -167,6 +173,8 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
       .finally(() => setFotoOcupada(null));
   }
 
+  if (profissionalAberto && !ehEmpresa) return <TelaPerfilProfissional aoVoltar={() => setProfissionalAberto(false)} />;
+
   if (!perfil) return <Tela>{erro ? <Aviso tom="erro">{erro}</Aviso> : <Carregando />}</Tela>;
 
   const alterado = perfilFoiAlterado(perfil, { nome, frase, cidade, sobre });
@@ -214,7 +222,7 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
           </View>
           <MenuAcoes titulo={ehEmpresa ? "Logo da empresa" : "Foto do perfil"} aberto={menuFotoAberto} aoFechar={() => setMenuFotoAberto(false)} acoes={acoesFoto} />
           <CampoTexto rotulo="Nome" value={nome} onChangeText={editar(setNome)} maxLength={50} autoComplete="name" />
-          <CampoTexto rotulo="@usuario" value={`@${perfil.nomeUsuario}`} editable={false} style={estilos.somenteLeitura} dica="O @usuario é seu endereço no Jaa e não muda por aqui." />
+          <CampoTexto rotulo="@usuario" value={`@${perfil.nomeUsuario}`} editable={false} style={estilos.somenteLeitura} dica="O @usuario é seu endereço no Jaaa e não muda por aqui." />
           <CampoTexto
             rotulo="Frase de status"
             value={frase}
@@ -238,7 +246,19 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
         </Cartao>
       </Secao>
 
-      <Secao titulo="Status" descricao="Você escolhe como aparece. É diferente de estar conectado agora — isso o Jaa detecta sozinho.">
+      <Secao
+        titulo="Seu link público"
+        descricao={
+          ehEmpresa
+            ? "Envie este endereço para seus clientes: ele abre a conversa com a empresa (e o cardápio) direto no navegador."
+            : "Envie este endereço para quem quiser falar com você: ele abre a conversa direto no navegador."
+        }>
+        <Cartao style={estilos.cartao}>
+          <LinkPublico nomeUsuario={perfil.nomeUsuario} />
+        </Cartao>
+      </Secao>
+
+      <Secao titulo="Status" descricao="Você escolhe como aparece. É diferente de estar conectado agora — isso o Jaaa detecta sozinho.">
         <Cartao style={estilos.cartao}>
           <View accessibilityRole="radiogroup" accessibilityLabel="Status" style={estilos.status}>
             {statusEscolhidoSchema.options.map((status: StatusEscolhido) => {
@@ -289,11 +309,25 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
       )}
       {erro && <Aviso tom="erro">{erro}</Aviso>}
 
-      <Aviso>
-        {ehEmpresa
-          ? "Pedidos, produtos e logística da empresa são administrados no Jaa Web."
-          : "Perfil profissional, senha da conta e criação de empresas ficam no Jaa Web por enquanto."}
-      </Aviso>
+      {!ehEmpresa && (
+        <Secao titulo="Perfil profissional" descricao="Ofereça seus serviços: atividades, horários e onde você atende.">
+          <Botao rotulo="Abrir perfil profissional" aparencia="secundario" onPress={() => setProfissionalAberto(true)} />
+        </Secao>
+      )}
+
+      {!ehEmpresa && (
+        <Secao titulo="Conta" descricao="Sua senha para entrar sem esperar código.">
+          <FormularioSenha />
+        </Secao>
+      )}
+
+      {!ehEmpresa && (
+        <Secao titulo="Minhas empresas" descricao="Crie uma empresa para vender pelo Jaaa. Para administrá-la, toque no seu nome (no topo) e escolha a empresa.">
+          <MinhasEmpresas />
+        </Secao>
+      )}
+
+      {ehEmpresa && <Aviso>Pedidos, produtos, logística e horários de funcionamento da empresa são administrados no Jaaa Web.</Aviso>}
 
       {__DEV__ && <Botao aparencia="secundario" rotulo="Diagnóstico do contexto (desenvolvimento)" onPress={() => router.push("/diagnostico")} />}
 

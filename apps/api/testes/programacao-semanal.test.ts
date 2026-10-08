@@ -15,6 +15,7 @@ import {
 import { eq, inArray } from "drizzle-orm";
 import { consultarCatalogo, consultarProdutoDoCatalogo } from "../src/features/catalogo/casos-de-uso/consultar-catalogo.js";
 import { criarCanalEventosMensagens } from "../src/features/mensagens/lib/eventos-mensagens.js";
+import { criarCanalEventosPedidos } from "../src/features/pedidos/lib/eventos-pedidos.js";
 import { criarPedido } from "../src/features/pedidos/casos-de-uso/criar-pedido.js";
 import { serializarGruposPublicos } from "../src/features/produtos/lib/serializar-personalizacao.js";
 import { definirOpcoesDoDia, definirProgramacaoSemanalDoGrupo, listarProgramacaoDoGrupo } from "../src/features/produtos/repositorios/repositorio-personalizacao.js";
@@ -89,7 +90,7 @@ const programar = (chaveGrupo: string, dia: DiaSemana, chaves: string[]) =>
 const ligar = (chaveGrupo: string, ligada = true) => definirProgramacaoSemanalDoGrupo(ctx.banco, empresaId, grupo[chaveGrupo]!, ligada);
 
 const pedirEm = (instante: Date, opcaoIds: string[], produtoId = prato) =>
-  criarPedido({ banco: ctx.banco, eventosMensagens: criarCanalEventosMensagens(), agora: () => instante }, cliente.identidadeId, clienteUsuarioId, {
+  criarPedido({ banco: ctx.banco, eventosMensagens: criarCanalEventosMensagens(), eventosPedidos: criarCanalEventosPedidos(), agora: () => instante }, cliente.identidadeId, clienteUsuarioId, {
     idCliente: randomUUID(),
     empresaIdentidadeId: identidadeEmpresa,
     conversaId: conversa,

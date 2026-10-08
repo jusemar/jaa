@@ -103,7 +103,7 @@ export function SequenciaDaSaida({
         {editando
           ? "Toque nas setas até ficar na ordem em que você vai entregar. Depois, confirme."
           : ativas.length > 1
-            ? "Sequência sugerida pelo Jaa — você pode mudar a ordem se conhecer um caminho melhor."
+            ? "Sequência sugerida pelo Jaaa — você pode mudar a ordem se conhecer um caminho melhor."
             : "Parada única nesta rota."}
       </p>
       {podeReordenar && (

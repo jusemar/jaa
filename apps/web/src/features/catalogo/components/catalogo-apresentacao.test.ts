@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { OBSERVACAO_ITEM_TAMANHO_MAXIMO, type CategoriaPublica, type EmpresaPublica, type GrupoOpcoesPublico, type ProdutoPublico } from "@jaa/contratos";
 import { createElement } from "react";
@@ -113,9 +114,11 @@ describe("cardápio do cliente (Web)", () => {
   it("mostra busca e as categorias REAIS da empresa como abas, SEM a opção “Todos”", () => {
     const html = cardapio();
     const conteudo = texto(html);
-    for (const esperado of ["Cardápio de Pizzaria BH", "Pizzas", "Bebidas", "Outros"]) {
+    for (const esperado of ["Pizzas", "Bebidas", "Outros"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
+    // A faixa "Cardápio de <empresa>" saiu da tela (redundante); o nome fica só no rótulo acessível.
+    assert.ok(!conteudo.includes("Cardápio de Pizzaria BH") && html.includes('aria-label="Cardápio de Pizzaria BH"'));
     assert.ok(html.includes('name="buscaCardapio"'), "campo de busca do cardápio");
     assert.ok(html.includes('role="tablist"'));
 
@@ -169,7 +172,7 @@ describe("cardápio do cliente (Web)", () => {
   it("produto que precisa ser montado oferece Montar, não Adicionar direto", () => {
     // "Monte seu prato" está sem categoria neste cenário, então cai em "Outros" (que nunca é montador).
     const html = cardapio(() => {}, ID_SECAO_SEM_CATEGORIA);
-    assert.ok(html.includes("data-montar-produto"), "produto personalizável abre a montagem");
+    assert.ok(html.includes("data-montar-produto") && html.includes('aria-label="Montar Monte seu prato"'), "produto personalizável abre a montagem");
     assert.ok(!html.includes('aria-label="Adicionar Monte seu prato"'), "montagem não é adicionada às cegas");
 
     // O produto comum, na categoria dele, ganha a ação rápida de adicionar.
@@ -184,14 +187,18 @@ describe("cardápio do cliente (Web)", () => {
     for (const proibido of ["Editar", "Marcar", "Preço (R$)", "<form"]) assert.ok(!html.includes(proibido), proibido);
   });
 
-  it("detalhe do produto comum: nome, descrição, preço, empresa e quantidade", () => {
+  it("detalhe do produto comum: nome, descrição, preço e quantidade — sem 'Disponível' nem o nome da empresa repetido", () => {
     const html = renderToStaticMarkup(
       createElement(DetalheProdutoCatalogo, { empresa, produto: calabresa, grupos: [], aoVoltar: () => {}, aoAdicionar: () => {} }),
     );
     const conteudo = texto(html);
-    for (const esperado of ["Pizza Calabresa", "Molho e calabresa", "R$ 39,90", "Pizzaria BH", "Disponível", "Adicionar ao pedido"]) {
+    for (const esperado of ["Pizza Calabresa", "Molho e calabresa", "R$ 39,90", "Adicionar ao pedido"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
+    // Produto indisponível nem chega ao cliente: escrever "Disponível" era ruído.
+    assert.ok(!conteudo.includes("Disponível") && !html.includes("data-disponibilidade"));
+    assert.ok(/<span class="sr-only">, de Pizzaria BH<\/span>/.test(html), "a empresa fica só para leitor de tela");
+    assert.ok(html.includes("data-voltar-ao-cardapio") && html.includes('aria-label="Voltar ao cardápio"'));
     // Produto sem grupos não mostra montagem.
     assert.ok(!html.includes("data-grupo-opcoes"));
   });
@@ -397,6 +404,58 @@ describe("cardápio do cliente (Web)", () => {
     assert.ok(blocoDoGrupo(montador(), tamanho.id).includes("min-w-0"));
   });
 });
+describe("cardápio do cliente: redesenho mobile-first", () => {
+  const tag = (html: string, atributo: string) => html.match(new RegExp(`<[^>]*${atributo}[^>]*>`))?.[0] ?? "";
+
+  it("o topo é UM bloco só (barra do cardápio): busca e categorias juntas, sem faixa de título", () => {
+    const html = cardapio();
+    assert.equal((html.match(/data-barra-do-cardapio/g) ?? []).length, 1);
+    const barra = html.slice(html.indexOf("data-barra-do-cardapio"), html.indexOf("data-produtos-do-cardapio"));
+    assert.ok(barra.includes('name="buscaCardapio"') && barra.includes('role="tablist"') && !barra.includes("<h3"));
+  });
+
+  it("fechar continua existindo, como um X discreto com nome acessível; sem `aoFechar` (link público) não aparece", () => {
+    assert.ok(!cardapio().includes("data-fechar-cardapio"));
+    const comFechar = renderToStaticMarkup(createElement(Cardapio, { empresa, secoes: secoesDoCardapio, secaoEscolhidaId: null, aoEscolherSecao: () => {}, aoVer: () => {}, aoFechar: () => {} }));
+    assert.equal((comFechar.match(/data-fechar-cardapio/g) ?? []).length, 1);
+    assert.ok(tag(comFechar, "data-fechar-cardapio").includes('aria-label="Fechar cardápio"') && !texto(comFechar).includes("Fechar"));
+  });
+
+  it("categorias: a selecionada é cheia na cor da marca, as outras numa superfície suave; sem contador pendurado", () => {
+    const html = cardapio();
+    const abas = [...html.matchAll(/<button[^>]*role="tab"[^>]*>([^<]*)<\/button>/g)];
+    assert.equal(abas.length, 3);
+    assert.ok(abas[0]![0].includes('aria-selected="true"') && abas[0]![0].includes("bg-marca text-marca-conteudo"));
+    assert.ok(abas[1]![0].includes('aria-selected="false"') && abas[1]![0].includes("bg-superficie-suave"));
+    assert.ok(abas.every((aba) => /^[^\d]+$/.test(aba[1]!.trim())), "o chip mostra só o nome da categoria");
+    assert.ok(abas[0]![0].includes("min-h-10") && abas[0]![0].includes("whitespace-nowrap") && abas[0]![0].includes("shrink-0"));
+  });
+
+  it("produtos numa superfície só, com divisórias — não um cartão por produto", () => {
+    const lista = tag(cardapio(), "data-produtos-do-cardapio");
+    assert.ok(lista.includes("divide-y") && lista.includes("rounded-jaa") && lista.includes("border-borda"));
+    assert.ok(!tag(cardapio(), "data-produto-catalogo-id").includes("shadow-cartao"));
+  });
+
+  it("produto: nome em até 2 linhas, descrição secundária, preço em destaque e nenhum selo 'Disponível'", () => {
+    const html = cardapio();
+    const nome = tag(html, "data-nome-do-produto");
+    assert.ok(nome.includes("line-clamp-2") && nome.includes("font-semibold") && !nome.includes("truncate"));
+    assert.ok(tag(html, "data-preco").includes("font-bold") && tag(html, "data-preco").includes("text-marca"));
+    assert.ok(!texto(html).includes("Disponível") && !html.includes("data-disponibilidade"));
+    const posicoes = ["data-sem-imagem", "data-nome-do-produto", "data-preco"].map((marca) => html.indexOf(marca, html.indexOf("data-produto-catalogo-id")));
+    assert.ok(posicoes[0]! < posicoes[1]! && posicoes[1]! < posicoes[2]!, "imagem → nome → preço");
+  });
+
+  it("no celular o cardápio usa quase toda a largura (1 px de folga, com área segura) — só nesta área", () => {
+    const codigo = readFileSync(new URL("./catalogo-da-empresa.tsx", import.meta.url), "utf8");
+    assert.ok(codigo.includes("pl-[max(1px,env(safe-area-inset-left))]") && codigo.includes("pr-[max(1px,env(safe-area-inset-right))]") && codigo.includes("@container") && codigo.includes("@lg:pl-5 @lg:pr-5"));
+    for (const arquivo of ["./catalogo-da-empresa.tsx", "./catalogo-apresentacao.tsx", "./funcionamento-da-empresa.tsx", "./montagem-produto.tsx"]) {
+      assert.ok(!/style=\{/.test(readFileSync(new URL(arquivo, import.meta.url), "utf8")), `${arquivo}: sem style inline`);
+    }
+  });
+});
+
 describe("imagem do produto no catálogo do cliente", () => {
   const URL = "https://pub-exemplo.r2.dev/imagem-produto/aaaaaaaa-0000-4000-8000-000000000000/a.webp";
   const comImagem: ProdutoPublico = { ...calabresa, imagemUrl: URL };

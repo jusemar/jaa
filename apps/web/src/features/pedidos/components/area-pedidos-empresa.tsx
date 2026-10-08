@@ -1,24 +1,49 @@
 "use client";
 
-import { EVENTO_SAIDA_ATUALIZADA, entregadorPodeReceberAtribuicao, eventoSaidaAtualizadaSchema, type EntregaDoPedido, type EntregadorDaEmpresa, type FiltroPedidosEmpresa, type Pedido, type PedidoDaEmpresa, type SaidaEntrega } from "@jaa/contratos";
-import { useCallback, useEffect, useState } from "react";
+import { EVENTO_PEDIDO_NOVO, EVENTO_SAIDA_ATUALIZADA, entregadorPodeReceberAtribuicao, eventoSaidaAtualizadaSchema, type EntregaDoPedido, type EntregadorDaEmpresa, type ListaPedidosEmpresa as PaginaDaLista, type Pedido, type SaidaEntrega } from "@jaa/contratos";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { avisar } from "@/components/ui/avisos";
+import { Carregando } from "@/components/ui/primitivos";
+import { IconeConversa, IconeVoltar } from "@/components/ui/icones";
 import { ConfirmarTransferencia, EntregaDoPedidoEmpresa } from "@/features/entregas/components/entrega-do-pedido";
 import { atribuirEntrega, listarEntregadores, listarSaidasDaEmpresa, obterEntregaDoPedido } from "@/features/entregas/lib/api-entregas";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
+import type { ResultadoApi } from "@/lib/api";
 import { useStatusPedido } from "../hooks/use-status-pedido";
 import { avancarStatusPedido, cancelarPedido, listarPedidosDaEmpresa, obterPedidoDaEmpresa } from "../lib/api-pedidos";
+import { CONSULTA_INICIAL, PEDIDOS_POR_PAGINA, cursorDaPagina, irParaAnterior, irParaProxima, paginaAtual, paginaFicouVazia, resumoDaPagina, trocarFiltro, type ConsultaPedidos } from "../lib/paginacao-pedidos";
 import { AcoesPedidoEmpresa } from "./acoes-pedido-empresa";
 import { DetalhePedido } from "./apresentacao-pedido";
-import { FiltrosPedidos, ListaPedidosEmpresa } from "./lista-pedidos-empresa";
+import { FiltrosPedidos, ListaPedidosEmpresa, PaginacaoPedidos } from "./lista-pedidos-empresa";
 import { LegendaStatusEntrega } from "./resumo-logistico-pedido";
 
-// Interface TÉCNICA da operação: a empresa recebe, acompanha e conduz seus pedidos. Não é o design final.
-// Toda ação é autorizada e validada pela API; a tela só mostra a próxima ação possível.
+/*
+ * PEDIDOS DA EMPRESA: a empresa recebe, acompanha e conduz seus pedidos. Toda ação é autorizada e
+ * validada pela API; a tela só mostra a próxima ação possível.
+ *
+ * Duas telas, uma de cada vez, na mesma área:
+ *
+ *   LISTA (filtros + página)  ── Abrir ──▶  PEDIDO (só ele)  ── Voltar ──▶  a MESMA lista
+ *
+ * O filtro e a página (`consulta`) vivem aqui e não são tocados ao abrir um pedido: voltar devolve a
+ * pessoa exatamente aonde estava.
+ */
 
-export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: string; nomeEmpresa: string }) {
-  const [filtro, setFiltro] = useState<FiltroPedidosEmpresa>("todos");
-  const [pedidos, setPedidos] = useState<PedidoDaEmpresa[]>([]);
+type PaginaDePedidos = [ResultadoApi<PaginaDaLista>, Awaited<ReturnType<typeof listarSaidasDaEmpresa>>];
+
+export function AreaPedidosEmpresa({
+  empresaId,
+  nomeEmpresa,
+  aoAbrirConversa,
+}: {
+  empresaId: string;
+  nomeEmpresa: string;
+  // Abre a conversa DIRETA de sempre com o cliente, como a empresa (nada de "chat do pedido").
+  aoAbrirConversa?: ((nomeUsuario: string) => void) | undefined;
+}) {
+  const [consulta, setConsulta] = useState<ConsultaPedidos>(CONSULTA_INICIAL);
+  const [lista, setLista] = useState<PaginaDaLista | null>(null);
+  const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState<Pedido | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -29,32 +54,47 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
   // Atribuição pedindo confirmação: o pedido está numa saída que ainda não saiu.
   const [transferencia, setTransferencia] = useState<{ pedidoId: string; entregadorId: string } | null>(null);
 
-  const carregar = useCallback(
-    async (filtroAtual: FiltroPedidosEmpresa) => {
-      const [resultado, rotas] = await Promise.all([listarPedidosDaEmpresa(empresaId, { filtro: filtroAtual }), listarSaidasDaEmpresa(empresaId, false)]);
-      if (!resultado.ok) {
-        setErro(resultado.mensagem);
-        return;
-      }
-      setErro(null);
-      setPedidos(resultado.dados.pedidos);
-      if (rotas.ok) setSaidas(rotas.dados.saidas);
-    },
-    [empresaId],
+  const filtro = consulta.filtro;
+  const cursor = cursorDaPagina(consulta);
+  const pedidos = lista?.pedidos ?? [];
+
+  // Só a página pedida vem do servidor (10 por vez), com o total do filtro.
+  const buscar = useCallback(
+    (): Promise<PaginaDePedidos> => Promise.all([listarPedidosDaEmpresa(empresaId, { filtro, antesDe: cursor, limite: PEDIDOS_POR_PAGINA }), listarSaidasDaEmpresa(empresaId, false)]),
+    [empresaId, filtro, cursor],
   );
+
+  const adotar = useCallback(([resultado, rotas]: PaginaDePedidos) => {
+    setCarregando(false);
+    if (rotas.ok) setSaidas(rotas.dados.saidas);
+    if (!resultado.ok) {
+      setErro(resultado.mensagem);
+      return;
+    }
+    setErro(null);
+    // A página deixou de existir (os pedidos dela saíram do filtro): recua em vez de ficar vazia.
+    setConsulta((atual) => (paginaFicouVazia(atual, resultado.dados.pedidos.length) ? irParaAnterior(atual) : atual));
+    setLista(resultado.dados);
+  }, []);
+
+  // "Atualizar" e as releituras depois de uma ação: a MESMA página e o MESMO filtro.
+  const carregar = useCallback(async () => adotar(await buscar()), [adotar, buscar]);
 
   useEffect(() => {
     let ativo = true;
-    void Promise.all([listarPedidosDaEmpresa(empresaId, { filtro }), listarSaidasDaEmpresa(empresaId, false)]).then(([resultado, rotas]) => {
-      if (!ativo) return;
-      if (resultado.ok) setPedidos(resultado.dados.pedidos);
-      else setErro(resultado.mensagem);
-      if (rotas.ok) setSaidas(rotas.dados.saidas);
+    void buscar().then((pagina) => {
+      if (ativo) adotar(pagina);
     });
     return () => {
       ativo = false;
     };
-  }, [empresaId, filtro]);
+  }, [buscar, adotar]);
+
+  const navegar = (proxima: ConsultaPedidos) => {
+    if (proxima === consulta) return;
+    setCarregando(true);
+    setConsulta(proxima);
+  };
 
   useEffect(() => {
     const socket = obterClienteRealtime();
@@ -70,12 +110,30 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
     };
   }, []);
 
+  /*
+   * PEDIDO NOVO sem F5: `pedido:novo` chega só à identidade da empresa (pedido não é mensagem para
+   * ela). A lista relê a página em que está (mesmo filtro, mesma página; o total anda). Reconectar
+   * também relê: o que chegou com a conexão caída não vem por evento.
+   */
+  useEffect(() => {
+    const socket = obterClienteRealtime();
+    const aoChegarPedido = () => void carregar();
+    const aoReconectar = () => void carregar();
+    socket.on(EVENTO_PEDIDO_NOVO, aoChegarPedido);
+    socket.on("connect", aoReconectar);
+    return () => {
+      socket.off(EVENTO_PEDIDO_NOVO, aoChegarPedido);
+      socket.off("connect", aoReconectar);
+    };
+  }, [carregar]);
+
   // Status mudado aqui ou por outro operador: lista e pedido aberto acompanham sem F5.
   const abertoId = aberto?.id ?? null;
+
   useStatusPedido(
     useCallback(
       (evento) => {
-        setPedidos((atuais) => atuais.map((pedido) => (pedido.id === evento.pedido.id ? { ...pedido, status: evento.pedido.status } : pedido)));
+        setLista((atual) => (atual ? { ...atual, pedidos: atual.pedidos.map((pedido) => (pedido.id === evento.pedido.id ? { ...pedido, status: evento.pedido.status } : pedido)) } : atual));
         // O detalhe (incluindo a timeline) é relido do servidor, nunca remendado pelo evento.
         if (abertoId === evento.pedido.id) {
           void obterPedidoDaEmpresa(empresaId, evento.pedido.id).then((resultado) => {
@@ -87,6 +145,19 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
     ),
   );
 
+  /*
+   * A lista e o pedido ocupam a mesma área, um de cada vez. Ao abrir, a tela do pedido começa do
+   * topo; ao voltar, a lista reaparece na altura em que a pessoa a deixou.
+   */
+  const secaoRef = useRef<HTMLElement>(null);
+  const rolagemDaLista = useRef(0);
+  const areaRolavel = () => secaoRef.current?.closest<HTMLElement>("[data-area-de-trabalho]") ?? null;
+  const mostrandoPedido = aberto !== null;
+  useEffect(() => {
+    const area = areaRolavel();
+    if (area) area.scrollTop = mostrandoPedido ? 0 : rolagemDaLista.current;
+  }, [mostrandoPedido]);
+
   async function abrir(pedidoId: string) {
     // Sempre relê do servidor: a lista local não é autorização nem fonte da verdade.
     const [resultado, daEntrega, quadro] = await Promise.all([obterPedidoDaEmpresa(empresaId, pedidoId), obterEntregaDoPedido(empresaId, pedidoId), listarEntregadores(empresaId)]);
@@ -95,6 +166,7 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
       return;
     }
     setErro(null);
+    if (!aberto) rolagemDaLista.current = areaRolavel()?.scrollTop ?? 0;
     setAberto(resultado.dados);
     setEntrega(daEntrega.ok ? daEntrega.dados : null);
     // Só quem pode receber AGORA: vínculo ativo E disponível (o servidor confere de novo).
@@ -124,7 +196,7 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
       const nome = resultado.dados.entregadorAtual?.pessoa.nomeExibicao;
       avisar.sucesso(nome ? `Pedido atribuído a ${nome}.` : "Pedido atribuído.");
       // Saídas e lista mudam (o pedido pode ter saído de uma formação): relê sem F5.
-      await carregar(filtro);
+      await carregar();
     } finally {
       setOcupado(false);
     }
@@ -138,61 +210,85 @@ export function AreaPedidosEmpresa({ empresaId, nomeEmpresa }: { empresaId: stri
         // Inclui o caso de outro operador ter mudado o pedido: recarrega para mostrar a situação real.
         // O aviso vem por último: `abrir` limpa o erro.
         if (aberto) await abrir(aberto.id);
-        await carregar(filtro);
+        await carregar();
         setErro(resultado.mensagem);
         return;
       }
       setErro(null);
       setAberto(resultado.dados);
-      await carregar(filtro);
+      await carregar();
     } finally {
       setOcupado(false);
     }
   }
 
+  function voltarParaPedidos() {
+    setErro(null);
+    setTransferencia(null);
+    setAberto(null);
+  }
+
+  const resumo = resumoDaPagina({ pagina: paginaAtual(consulta), quantidadeNaPagina: pedidos.length, total: lista?.total ?? 0, temProxima: Boolean(lista?.proximoCursor) });
+
   return (
-    <section aria-label="Pedidos da empresa" className="flex flex-col gap-3 rounded-jaa border border-borda p-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">Pedidos — {nomeEmpresa}</h3>
-        <button type="button" onClick={() => void carregar(filtro)} className="rounded-jaa border px-2 py-1 text-xs">
-          Atualizar
-        </button>
-      </div>
-
-      <FiltrosPedidos filtro={filtro} aoFiltrar={setFiltro} />
-      <LegendaStatusEntrega />
-      <ListaPedidosEmpresa pedidos={pedidos} saidas={saidas} aoAbrir={(pedido) => void abrir(pedido.id)} />
-
-      {aberto && (
-        <DetalhePedido
-          pedido={aberto}
-          aoFechar={() => setAberto(null)}
-          acoes={
-            <>
-              <EntregaDoPedidoEmpresa
-                status={aberto.status}
-                entrega={entrega}
-                entregadoresAtivos={entregadores}
-                ocupado={ocupado}
-                aoAtribuir={(entregadorId) => void atribuir(aberto.id, entregadorId)}
-              />
-              {transferencia?.pedidoId === aberto.id && (
-                <ConfirmarTransferencia
-                  nomeEntregador={entregadores.find((item) => item.id === transferencia.entregadorId)?.pessoa.nomeExibicao ?? null}
+    <section ref={secaoRef} aria-label="Pedidos da empresa" data-tela-de-pedidos={aberto ? "pedido" : "lista"} className="flex flex-col gap-3 rounded-jaa border border-borda p-3">
+      {aberto ? (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+          <button type="button" data-voltar-para-pedidos onClick={voltarParaPedidos} className="flex min-h-10 items-center gap-1.5 self-start rounded-jaa-compacto pr-2 text-sm font-medium text-marca transition-colors hover:bg-superficie-suave">
+            <IconeVoltar className="h-4 w-4" />
+            Voltar para pedidos
+          </button>
+          {aoAbrirConversa && (
+            <button
+              type="button"
+              data-conversar-com-cliente={aberto.cliente.nomeUsuario}
+              onClick={() => aoAbrirConversa(aberto.cliente.nomeUsuario)}
+              className="flex min-h-10 items-center gap-1.5 rounded-jaa-compacto border border-borda px-3 text-sm font-medium text-marca transition-colors hover:bg-superficie-suave"
+            >
+              <IconeConversa className="h-4 w-4" />
+              Conversar com {aberto.cliente.nomeExibicao}
+            </button>
+          )}
+          </div>
+          <DetalhePedido
+            pedido={aberto}
+            titulo={`Pedido #${aberto.numero} — ${aberto.cliente.nomeExibicao}`}
+            acoes={
+              <>
+                <EntregaDoPedidoEmpresa status={aberto.status} entrega={entrega} entregadoresAtivos={entregadores} ocupado={ocupado} aoAtribuir={(entregadorId) => void atribuir(aberto.id, entregadorId)} />
+                {transferencia?.pedidoId === aberto.id && (
+                  <ConfirmarTransferencia
+                    nomeEntregador={entregadores.find((item) => item.id === transferencia.entregadorId)?.pessoa.nomeExibicao ?? null}
+                    ocupado={ocupado}
+                    aoConfirmar={() => void atribuir(transferencia.pedidoId, transferencia.entregadorId, true)}
+                    aoCancelar={() => setTransferencia(null)}
+                  />
+                )}
+                <AcoesPedidoEmpresa
+                  pedido={aberto}
                   ocupado={ocupado}
-                  aoConfirmar={() => void atribuir(transferencia.pedidoId, transferencia.entregadorId, true)}
-                  aoCancelar={() => setTransferencia(null)}
+                  aoAvancar={() => void operar(() => avancarStatusPedido(empresaId, aberto.id, aberto.status))}
+                  aoCancelar={(motivo) => void operar(() => cancelarPedido(empresaId, aberto.id, aberto.status, motivo))}
                 />
-              )}
-              <AcoesPedidoEmpresa
-                pedido={aberto}
-                ocupado={ocupado}
-                aoAvancar={() => void operar(() => avancarStatusPedido(empresaId, aberto.id, aberto.status))}
-                aoCancelar={(motivo) => void operar(() => cancelarPedido(empresaId, aberto.id, aberto.status, motivo))}
-              />
-            </>
-          }
-        />
+              </>
+            }
+          />
+        </>
+      ) : (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Pedidos — {nomeEmpresa}</h3>
+            <button type="button" data-atualizar-pedidos onClick={() => void carregar()} className="rounded-jaa border px-2 py-1 text-xs">
+              Atualizar
+            </button>
+          </div>
+
+          <FiltrosPedidos filtro={filtro} aoFiltrar={(novo) => navegar(trocarFiltro(consulta, novo))} />
+          <LegendaStatusEntrega />
+          {lista === null && !erro ? <Carregando texto="Carregando pedidos…" /> : <ListaPedidosEmpresa pedidos={pedidos} saidas={saidas} aoAbrir={(pedido) => void abrir(pedido.id)} />}
+          <PaginacaoPedidos resumo={resumo} ocupado={carregando} aoAnterior={() => navegar(irParaAnterior(consulta))} aoProxima={() => navegar(irParaProxima(consulta, lista?.proximoCursor ?? null))} />
+        </>
       )}
 
       {erro && (

@@ -60,8 +60,13 @@ export function ehViolacaoReferenciaResposta(erro: unknown): boolean {
 
 // Mensagem não excluída "para mim" pela identidade (usa a PK de mensagens_excluidas_para_identidade).
 export function visivelPara(identidadeId: string): SQL {
+  /*
+   * PEDIDO NÃO É CONVERSA PARA A EMPRESA: o card do pedido (tipo "pedido") só existe na conversa de
+   * quem o fez — o cliente, que é o remetente. Para a outra identidade ele não é mensagem: não entra
+   * no histórico, na lista de conversas nem em prévia; a empresa o recebe na área de Pedidos.
+   */
   // Também some o que a identidade LIMPOU ("Limpar/Apagar conversa"): id <= limpa_ate dela, pela PK.
-  return sql`not exists (
+  return sql`not (${mensagens.tipo} = 'pedido' and ${mensagens.remetenteIdentidadeId} <> ${identidadeId}) and not exists (
     select 1 from ${mensagensExcluidasParaIdentidade}
     where ${mensagensExcluidasParaIdentidade.mensagemId} = ${mensagens.id}
       and ${mensagensExcluidasParaIdentidade.identidadeId} = ${identidadeId}

@@ -70,6 +70,21 @@ export const ROTULO_STATUS_PEDIDO_CLIENTE: Record<StatusPedido, string> = {
   pronto: "Aguardando coleta",
 };
 
+/**
+ * Frase curta que acompanha o status no acompanhamento do CLIENTE: diz o que está acontecendo agora,
+ * sem prometer prazo (não existe ETA). Só apresentação — a máquina de estados não muda.
+ */
+export const EXPLICACAO_STATUS_PEDIDO_CLIENTE: Record<StatusPedido, string> = {
+  recebido: "A empresa recebeu seu pedido e já vai começar a preparar.",
+  confirmado: "A empresa recebeu seu pedido e já vai começar a preparar.",
+  em_preparacao: "Seu pedido está sendo preparado.",
+  pronto: "Seu pedido está separado e aguardando o entregador.",
+  saiu_para_entrega: "Seu pedido saiu para entrega.",
+  em_rota: "Seu pedido saiu para entrega.",
+  entregue: "Pedido entregue. Bom proveito!",
+  cancelado: "Este pedido foi cancelado pela empresa.",
+};
+
 // Terminais: não avançam, não regridem, não cancelam.
 export function statusPedidoTerminal(status: StatusPedido): boolean {
   return status === "entregue" || status === "cancelado";
@@ -128,4 +143,22 @@ export function montarTimelinePedido(status: StatusPedido, historico: EventoStat
   const posicaoAtual = FLUXO_STATUS_PEDIDO.indexOf(statusVisual as (typeof FLUXO_STATUS_PEDIDO)[number]);
   const futuras = FLUXO_STATUS_PEDIDO.slice(posicaoAtual + 1).map((etapa): EtapaTimelinePedido => ({ status: etapa, situacao: "futura", ocorridoEm: null }));
   return [...concluidas, ...futuras];
+}
+
+/**
+ * Linha do tempo do ACOMPANHAMENTO DO CLIENTE. É a mesma de `montarTimelinePedido`; a diferença é só
+ * enquanto o histórico ainda não chegou (o resumo do pedido já diz o status, o detalhe ainda está
+ * sendo lido): as etapas são derivadas do status atual, SEM horário — nenhum horário é inventado.
+ */
+export function montarTimelineAcompanhamento(status: StatusPedido, historico: EventoStatusPedido[]): EtapaTimelinePedido[] {
+  const etapas = montarTimelinePedido(status, historico);
+  if (status === "cancelado" || etapas.some((etapa) => etapa.situacao === "atual")) return etapas;
+  const statusVisual = status === "confirmado" ? "recebido" : status === "em_rota" ? "saiu_para_entrega" : status;
+  const posicaoAtual = FLUXO_STATUS_PEDIDO.indexOf(statusVisual as (typeof FLUXO_STATUS_PEDIDO)[number]);
+  const ocorrido = new Map(etapas.map((etapa) => [etapa.status, etapa.ocorridoEm]));
+  return FLUXO_STATUS_PEDIDO.map((etapa, indice): EtapaTimelinePedido => ({
+    status: etapa,
+    situacao: indice < posicaoAtual ? "concluida" : indice === posicaoAtual ? "atual" : "futura",
+    ocorridoEm: indice <= posicaoAtual ? (ocorrido.get(etapa) ?? null) : null,
+  }));
 }

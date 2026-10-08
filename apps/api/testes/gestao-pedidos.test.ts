@@ -168,6 +168,14 @@ describe("lista de pedidos da empresa", () => {
     const segunda: ListaPedidosEmpresa = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos?limite=1&antesDe=${primeira.proximoCursor}`)).json();
     assert.equal(segunda.pedidos.length, 1);
     assert.notEqual(segunda.pedidos[0]?.id, primeira.pedidos[0]?.id);
+
+    // `total` é do FILTRO inteiro, igual em qualquer página — é o que sustenta "1–10 de 36".
+    const todos: ListaPedidosEmpresa = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos?limite=50`)).json();
+    assert.ok(todos.total >= 2 && todos.total === todos.pedidos.length);
+    assert.equal(primeira.total, todos.total);
+    assert.equal(segunda.total, todos.total);
+    assert.equal(emPreparacao.total, emPreparacao.pedidos.length);
+    assert.ok(emPreparacao.total < todos.total);
   });
 
   it("pedidos não vazam entre empresas: a Farmácia não vê nem abre pedido da Pizzaria", async () => {

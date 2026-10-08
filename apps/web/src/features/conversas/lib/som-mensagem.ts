@@ -40,6 +40,21 @@ export const PADRAO_SOM_ENTREGA_PROXIMA: PadraoSom = {
   volume: 0.16,
 };
 
+/*
+ * NOVO PEDIDO para a empresa: o mesmo desenho do som de pedido do app (duas notas que sobem e uma
+ * terceira mais alta que fecha), mais forte e mais longo que o de mensagem — é um chamado de trabalho,
+ * não uma conversa. Toca uma vez por pedido.
+ */
+export const PADRAO_SOM_NOVO_PEDIDO: PadraoSom = {
+  notas: [
+    { frequencia: 784, inicio: 0 },
+    { frequencia: 1047, inicio: 0.17 },
+    { frequencia: 1568, inicio: 0.34 },
+  ],
+  duracao: 0.22,
+  volume: 0.2,
+};
+
 const LEMBRAR_ULTIMAS = 200;
 
 export function criarTocadorSomMensagem(criarContexto: () => ContextoAudioMinimo | null) {

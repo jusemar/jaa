@@ -87,6 +87,12 @@ async function combinarZonasCompativeis(dependencias: DependenciasDespacho, said
     const movidos = await moverParadas(banco, { origemId: candidata.id, destinoId: saidaId, pedidoIds: levar, agora: relogio(dependencias) });
     restante -= movidos;
     combinou ||= movidos > 0;
+    /*
+     * A formação de ORIGEM perdeu paradas: a empresa precisa ver isso na hora. Sem este aviso, o
+     * painel dela continuava mostrando o pedido na formação antiga até a próxima releitura — parecia
+     * que o pedido tinha "sumido" de um lugar e aparecido em outro sem explicação.
+     */
+    if (movidos > 0) await publicarSaidaPorId(dependencias, candidata.id);
   }
   return combinou;
 }
@@ -210,6 +216,9 @@ export async function liberarSaidaManualmente(dependencias: DependenciasDespacho
   const { banco } = dependencias;
   const saida = await buscarSaida(banco, saidaId);
   if (!saida || saida.saida.empresaId !== empresaId) return false;
+  // Já liberada (a saída manual é liberada na criação quando a liberação automática está ligada):
+  // liberar de novo não é erro nem muda nada.
+  if (saida.saida.status === "liberada_retirada") return true;
   if (saida.saida.status === "em_formacao") {
     if (!(await fecharFormacao(banco, saidaId, relogio(dependencias)))) return false;
     await aplicarSequenciaSugerida(dependencias, saidaId);

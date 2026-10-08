@@ -128,7 +128,7 @@ describe("resumo do percurso", () => {
   it("saída sem rota calculada continua mostrando a sequência sugerida", () => {
     const html = render({ rota: null });
     assert.ok(html.includes('data-percurso="sem_rota"'));
-    assert.ok(texto(html).includes("Sequência sugerida pelo Jaa"));
+    assert.ok(texto(html).includes("Sequência sugerida pelo Jaaa"));
   });
 });
 
@@ -148,5 +148,24 @@ describe("respeito aos termos do provedor", () => {
       false,
       "sem provedor não há traçado real para desenhar",
     );
+  });
+});
+
+describe("Logística → Operação: mapa da saída em Mapbox, com o trajeto real", () => {
+  it("a Operação usa o MESMO mapa Mapbox da área do entregador (o componente Leaflet saiu)", async () => {
+    const { readFileSync, existsSync } = await import("node:fs");
+    const operacao = readFileSync(new URL("./area-saidas-empresa.tsx", import.meta.url), "utf8");
+    assert.ok(operacao.includes('import { MapaPercursoMapbox } from "./mapa-percurso-mapbox";') && operacao.includes("<MapaPercursoMapbox saida={saida} posicao="));
+    assert.ok(!operacao.includes("./mapa-percurso\"") && !existsSync(new URL("./mapa-percurso.tsx", import.meta.url)));
+  });
+
+  it("o traçado é a geometria que a API guardou (LineString), só do Mapbox, real e da ordem atual; a base aparece mesmo sem traçado", async () => {
+    const { readFileSync } = await import("node:fs");
+    const mapa = readFileSync(new URL("./mapa-percurso-mapbox.tsx", import.meta.url), "utf8");
+    assert.match(mapa, /rota\?\.provedor === "mapbox" &&\s*rotaTemPercursoReal\(rota\) &&\s*rotaCobreSequenciaAtual\(rota, saida\.versaoSequencia\)/);
+    assert.ok(mapa.includes('type: "LineString", coordinates: coordenadas') && mapa.includes("rota.geometria.map("));
+    assert.ok(mapa.includes("rota?.inicio ?? rota?.origem") && mapa.includes('elementoMarcador("B")'));
+    // Nenhuma chamada de rota no navegador: o Directions fica no servidor.
+    assert.ok(!/fetch\(|optimized-trips|api\.mapbox\.com/i.test(mapa));
   });
 });

@@ -7,11 +7,12 @@ import {
 } from "@jaa/contratos";
 import { useEffect, useRef, useState } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
-import { IconeBusca } from "@/components/ui/icones";
+import { IconeBusca, IconeSeta } from "@/components/ui/icones";
 import { BuscaProfissionais } from "@/features/busca-profissionais/components/busca-profissionais";
 import { listarIntencoesProfissionais } from "@/features/busca-profissionais/lib/api-busca-profissionais";
 import { modoDaPesquisa } from "@/features/busca-profissionais/lib/apresentacao-busca";
 import { pesquisarNoJaa, salvarContato } from "../lib/api-contatos";
+import { ROTULO_FILTRO_PESQUISA, filtrosDaPesquisa, organizarResultados, textoSemResultados, type FiltroPesquisa } from "../lib/pesquisa-jaa";
 
 /**
  * PESQUISAR NO JAA — busca única da área de conversas.
@@ -24,7 +25,11 @@ import { pesquisarNoJaa, salvarContato } from "../lib/api-contatos";
  *
  * Com `comProfissionais` (Conversas): "@joao" é só a busca de pessoas/empresas; SEM @ a busca de
  * pessoas continua igual e, se o texto for uma atividade do catálogo ("motoboy"), aparece também
- * "Procurar profissionais". Texto ambíguo ("moto") lista as opções: quem escolhe é a pessoa.
+ * a atividade em "Profissionais". Texto ambíguo ("moto") lista as opções: quem escolhe é a pessoa.
+ *
+ * COMO APARECE: logo abaixo do campo, filtros compactos (Tudo · Pessoas · Profissionais · Empresas) e
+ * os resultados agrupados pelo TIPO — Profissionais (só o nome da atividade), Empresas e Pessoas.
+ * Tocar numa atividade abre a busca de profissionais de sempre (local, raio, pesquisar, selecionar).
  */
 const ESPERA_DIGITACAO_MS = 300;
 
@@ -47,6 +52,8 @@ export function PesquisaJaa({
   const [salvando, setSalvando] = useState<string | null>(null);
   const [intencoes, setIntencoes] = useState<IntencaoProfissional[]>([]);
   const [intencaoAberta, setIntencaoAberta] = useState<IntencaoProfissional | null>(null);
+  // Recorte de leitura dos resultados que já vieram: trocar de filtro não consulta nada.
+  const [filtro, setFiltro] = useState<FiltroPesquisa>("tudo");
   const requisicaoAtual = useRef(0);
 
   // Debounce: digitar não vira uma consulta por tecla.
@@ -124,60 +131,74 @@ export function PesquisaJaa({
     }
   }
 
-  const semResultados =
-    resultado !== null &&
-    resultado.contatos.length === 0 &&
-    resultado.externos.length === 0 &&
-    intencoes.length === 0 &&
-    !buscando;
-  const algumaExata = intencoes.some((intencao) => intencao.exata);
+  const organizados = organizarResultados(resultado, intencoes, filtro);
+  const semResultados = resultado !== null && !buscando && organizados.vazio;
 
   return (
     <search className="flex flex-col gap-2">
       {/* Campo suave com o ícone à esquerda, como na referência de UI/UX aprovada. */}
       {/* Mesma superfície clara da navegação; a borda desenha o campo, sem um cinza só daqui. */}
       <label className="flex min-h-11 items-center gap-2 rounded-jaa-compacto border border-borda bg-superficie px-3 text-conteudo-suave focus-within:ring-2 focus-within:ring-marca/30 sm:min-h-10">
-        <span className="sr-only">Pesquisar no Jaa</span>
+        <span className="sr-only">Pesquisar no Jaaa</span>
         <IconeBusca className="h-4 w-4 shrink-0" />
         <input
           type="search"
           name="pesquisaJaa"
           value={termo}
           onChange={(evento) => setTermo(evento.target.value)}
-          placeholder="Pesquisar no Jaa"
-          aria-label="Pesquisar no Jaa"
+          placeholder="Pesquisar no Jaaa"
+          aria-label="Pesquisar no Jaaa"
           autoComplete="off"
           className="min-w-0 flex-1 bg-transparent text-sm text-conteudo outline-none placeholder:text-conteudo-suave"
         />
       </label>
 
-      {buscando && (
-        <p className="px-1 text-xs text-conteudo-suave">Procurando…</p>
-      )}
-      {semResultados && (
-        <p className="px-1 text-xs text-conteudo-suave">
-          Nada encontrado para “{termo.trim()}”.
-        </p>
+      {/* Filtros compactos: aparecem com a busca e cabem na coluna estreita (quebram de linha se preciso). */}
+      {termoValido && (
+        <div role="tablist" aria-label="Filtrar resultados da pesquisa" className="flex flex-wrap gap-1.5">
+          {filtrosDaPesquisa(comProfissionais).map((opcao) => {
+            const ativo = filtro === opcao;
+            return (
+              <button
+                key={opcao}
+                type="button"
+                role="tab"
+                aria-selected={ativo}
+                data-filtro-pesquisa={opcao}
+                onClick={() => setFiltro(opcao)}
+                className={`flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-colors ${
+                  ativo ? "border-marca bg-marca-suave text-marca-suave-conteudo" : "border-borda text-conteudo-suave hover:bg-realce hover:text-conteudo"
+                }`}
+              >
+                {ROTULO_FILTRO_PESQUISA[opcao]}
+              </button>
+            );
+          })}
+        </div>
       )}
 
-      {intencoes.length > 0 && (
+      {buscando && <p className="px-1 text-xs text-conteudo-suave">Procurando…</p>}
+      {semResultados && <p className="px-1 text-xs text-conteudo-suave">{textoSemResultados(termoProcurado, filtro)}</p>}
+
+      {organizados.profissionais.length > 0 && (
         <div data-intencoes-profissionais className="flex flex-col gap-1">
-          <p className="px-1 text-xs font-semibold uppercase tracking-wide text-conteudo-suave">
-            {algumaExata && intencoes.length === 1 ? "Profissionais" : "Você procura:"}
-          </p>
-          <ul className="flex flex-col divide-y divide-borda overflow-hidden rounded-xl border border-borda bg-superficie">
-            {intencoes.map((intencao) => (
+          <p className="px-1 text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Profissionais</p>
+          <ul aria-label="Profissionais" className="flex flex-col divide-y divide-borda overflow-hidden rounded-xl border border-borda bg-superficie">
+            {organizados.profissionais.map((intencao) => (
               <li key={`${intencao.servicoId}|${intencao.especialidadeId ?? ""}|${intencao.opcaoId ?? ""}`}>
+                {/* Só o nome da atividade: tocar abre a busca de profissionais (local, raio, pesquisar). */}
                 <button
                   type="button"
                   data-intencao-profissional={intencao.rotulo}
+                  aria-label={`Procurar ${intencao.rotulo}`}
                   onClick={() => setIntencaoAberta(intencao)}
-                  className="flex min-h-12 w-full items-center gap-2 px-3 text-left text-sm hover:bg-superficie-suave focus-visible:bg-superficie-suave focus-visible:outline-2"
+                  className="flex min-h-12 w-full items-center gap-2.5 px-3 text-left text-sm font-medium text-conteudo hover:bg-superficie-suave focus-visible:bg-superficie-suave focus-visible:outline-2"
                 >
-                  <IconeBusca className="h-4 w-4 shrink-0 text-marca" />
-                  <span className="min-w-0 flex-1 truncate">
-                    Procurar <strong className="font-semibold">{intencao.rotulo}</strong> perto de um local
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-marca-suave text-marca">
+                    <IconeBusca className="h-4 w-4" />
                   </span>
+                  <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{intencao.rotulo}</span>
+                  <IconeSeta className="h-4 w-4 shrink-0 text-conteudo-suave" />
                 </button>
               </li>
             ))}
@@ -185,29 +206,13 @@ export function PesquisaJaa({
         </div>
       )}
 
-      {intencaoAberta && (
-        <BuscaProfissionais
-          intencao={intencaoAberta}
-          aoFechar={() => setIntencaoAberta(null)}
-          aoAbrirConversa={aoAbrirConversa}
-        />
-      )}
+      {intencaoAberta && <BuscaProfissionais intencao={intencaoAberta} aoFechar={() => setIntencaoAberta(null)} aoAbrirConversa={aoAbrirConversa} />}
 
-      {resultado && resultado.contatos.length > 0 && (
-        <GrupoResultados
-          titulo="Meus contatos"
-          itens={resultado.contatos}
-          aoAbrirConversa={aoAbrirConversa}
-        />
+      {organizados.empresas.length > 0 && (
+        <GrupoResultados titulo="Empresas" itens={organizados.empresas} aoAbrirConversa={aoAbrirConversa} aoSalvar={(item) => void salvar(item)} salvando={salvando} />
       )}
-      {resultado && resultado.externos.length > 0 && (
-        <GrupoResultados
-          titulo="No Jaa"
-          itens={resultado.externos}
-          aoAbrirConversa={aoAbrirConversa}
-          aoSalvar={(item) => void salvar(item)}
-          salvando={salvando}
-        />
+      {organizados.pessoas.length > 0 && (
+        <GrupoResultados titulo="Pessoas" itens={organizados.pessoas} aoAbrirConversa={aoAbrirConversa} aoSalvar={(item) => void salvar(item)} salvando={salvando} />
       )}
 
       {erro && (
@@ -255,11 +260,12 @@ function GrupoResultados({
             >
               <AvatarIdentidade identidade={item.identidade} />
               <span className="flex min-w-0 flex-col">
-                <span className="flex items-center gap-1.5 truncate text-sm font-medium text-conteudo">
-                  {item.apelido ?? item.identidade.nomeExibicao}
-                  {item.identidade.tipo === "empresarial" && (
-                    <span className="rounded-full bg-ouro/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-aviso">
-                      Empresa
+                <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-conteudo">
+                  <span className="truncate">{item.apelido ?? item.identidade.nomeExibicao}</span>
+                  {/* O grupo já diz se é empresa ou pessoa; o selo marca quem já está na MINHA agenda. */}
+                  {item.ehContato && (
+                    <span data-ja-e-contato className="shrink-0 rounded-full bg-marca-suave px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-marca-suave-conteudo">
+                      Contato
                     </span>
                   )}
                 </span>

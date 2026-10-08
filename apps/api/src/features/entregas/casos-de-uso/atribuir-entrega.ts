@@ -12,11 +12,12 @@ import {
   listarAtribuicoesAtuaisDosVinculos,
 } from "../repositorios/repositorio-atribuicoes.js";
 import { buscarEntregadorDaEmpresa, listarVinculosAtivosDaPessoa } from "../repositorios/repositorio-entregadores.js";
-import { buscarSaidaAtivaDoPedido, transferirPedidoParaSaidaManual } from "../repositorios/repositorio-saidas.js";
+import { buscarSaida, buscarSaidaAtivaDoPedido, transferirPedidoParaSaidaManual } from "../repositorios/repositorio-saidas.js";
 import { buscarConfiguracaoDespacho } from "../repositorios/repositorio-zonas.js";
 import { publicarOperacao } from "../lib/publicar-operacao.js";
 import { publicarSaidaPorId } from "../lib/publicar-saida.js";
 import { publicarDespacho, type DependenciasDespacho } from "./despacho-automatico.js";
+import { criarSaidaAutorizada, liberarSaidaManualSeAutomatico } from "./gerir-saidas.js";
 import { planejarRotaDaSaida, recalcularPercursoDaSaida } from "./planejar-rota.js";
 import { reavaliarFila } from "./presenca-e-fila.js";
 
@@ -75,11 +76,48 @@ export async function atribuirEntregaAutorizada(
   const saidaAtual = await buscarSaidaAtivaDoPedido(banco, pedidoId);
   if (saidaAtual) {
     if (!saidaPermiteTransferencia(saidaAtual.status)) return { tipo: "pedido-em-saida" };
-    if (!entrada.transferirDaSaida) return { tipo: "confirmar-transferencia" };
+    /*
+     * A confirmação existe para o gerente não desmontar sem querer uma rota com OUTROS pedidos. Rota
+     * que tem só este pedido (é o que a atribuição manual cria) não afeta mais ninguém: trocar o
+     * entregador dela é a mesma troca direta de sempre, sem segunda pergunta.
+     */
+    const rota = await buscarSaida(banco, saidaAtual.saidaId);
+    const soEstePedido = rota !== null && rota.saida.entregadorId !== null && rota.paradas.filter((parada) => parada.encerradaEm === null).length === 1;
+    if (soEstePedido && entrada.entregadorAtualId !== undefined && rota.saida.entregadorId !== entrada.entregadorAtualId) return { tipo: "conflito" };
+    if (!entrada.transferirDaSaida && !soEstePedido) return { tipo: "confirmar-transferencia" };
     return transferirDaSaida(dependencias, usuarioId, empresaId, pedidoId, entrada.entregadorId);
   }
 
   const anterior = await buscarAtribuicaoAtual(banco, pedidoId);
+
+  /*
+   * PEDIDO PRONTO, fora de qualquer saída: atribuir à mão É montar a rota dele. Quem entrega age pela
+   * SAÍDA (sair para entrega, recusar, concluir) — uma atribuição solta chegava ao app sem ação
+   * nenhuma. Então a atribuição manual cria a saída de um pedido, pelo MESMO caso de uso da montagem
+   * manual (mesmas checagens, mesmo planejamento, mesma liberação), e o entregador vê o que veria no
+   * despacho automático. Pedido que não pode entrar em saída (sem ponto de entrega confirmado) e
+   * pedido que já saiu para entrega seguem pela atribuição simples, como antes.
+   */
+  if (pedido.pedido.status === "pronto") {
+    // A empresa manda quem via na tela; se mudou, conflito (igual à atribuição simples).
+    if (entrada.entregadorAtualId !== undefined && (anterior?.entregadorId ?? null) !== entrada.entregadorAtualId) return { tipo: "conflito" };
+    const criada = await criarSaidaAutorizada(dependencias, usuarioId, empresaId, { entregadorId: entrada.entregadorId, pedidoIds: [pedidoId] });
+    if (criada.tipo === "entregador-indisponivel") return { tipo: "entregador-indisponivel" };
+    if (criada.tipo === "conflito") return { tipo: "conflito" };
+    if (criada.tipo === "criada") {
+      // Recebeu saída: sai da fila da base (está indo para a rua) — igual à saída manual.
+      const aposSaida = await reavaliarFila(banco, entrada.entregadorId, "Recebeu saída de entrega");
+      if (aposSaida) await publicarOperacao(dependencias, aposSaida.registro);
+      if (anterior && anterior.entregadorId !== entrada.entregadorId) {
+        eventosEntregas.publicar({ tipo: "entrega-atualizada", destinatariosIdentidadeIds: [anterior.pessoa.identidadeId], pedidoId, entrega: null });
+      }
+      await publicarEntrega(dependencias, pedidoId);
+      await publicarSaidaPorId(dependencias, criada.saida.saida.id);
+      await publicarDespacho(dependencias, empresaId);
+      return { tipo: "atribuido" };
+    }
+  }
+
   const resultado = await atribuirEntrega(banco, {
     pedidoId,
     empresaId,
@@ -139,6 +177,7 @@ async function transferirDaSaida(
   }
   // Saída NOVA: planejamento normal (base da empresa, retorno à base conforme a saída).
   await planejarRotaDaSaida(dependencias, resultado.saidaNovaId);
+  await liberarSaidaManualSeAutomatico(banco, empresaId, resultado.saidaNovaId);
 
   // Quem recebeu a saída sai da fila da base (está indo para a rua) — igual à saída manual.
   const aposSaida = await reavaliarFila(banco, entregadorId, "Recebeu saída de entrega");

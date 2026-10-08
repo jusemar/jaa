@@ -24,8 +24,15 @@ describe("seletor de identidade: direção do menu", () => {
     assert.ok(!classes.includes("md:bottom-auto"), "a direção não depende mais de um breakpoint que a variante nunca alcança");
   });
 
+  it("no celular o topo é só a identidade: sem ícone de marca, sem frase visível, e 'Sair da conta' dentro do menu", () => {
+    const topo = app.slice(app.indexOf("Celular: a marca e a identidade atuante no topo"), app.indexOf("Carregando suas identidades"));
+    assert.ok(!topo.includes("IconeConversa") && !topo.includes("{sair}") && topo.includes("data-sair-da-conta") && topo.includes("rodapeDoMenu="));
+    assert.ok(/<p role="note" className="sr-only">/.test(fonte), "a frase 'Você responde como…' fica só para leitor de tela");
+    assert.ok(fonte.includes("{rodapeDoMenu &&"));
+  });
+
   it("a variante completa só existe abaixo de `md`; a compacta, a partir de `md`", () => {
-    const completo = app.slice(app.indexOf("md:hidden"), app.indexOf("{sair}", app.indexOf("md:hidden")));
+    const completo = app.slice(app.indexOf("md:hidden"), app.indexOf("Carregando suas identidades"));
     assert.ok(completo.includes("<SeletorIdentidade") && !completo.includes("compacto"));
     assert.equal([...app.matchAll(/<SeletorIdentidade\s+compacto/g)].length, 1);
   });

@@ -127,20 +127,17 @@ export function MapaPercursoMapbox({
             });
           });
 
-          const origem = rota.origem ?? rota.geometria[0];
-          if (origem) {
-            const coordenada: [number, number] = [
-              origem.longitude,
-              origem.latitude,
-            ];
-            limites.extend(coordenada);
-            new mapboxgl.Marker({ color: "#2563eb" })
-              .setLngLat(coordenada)
-              .setPopup(
-                new mapboxgl.Popup({ offset: 18 }).setText("Origem da rota"),
-              )
-              .addTo(mapa);
-          }
+        }
+
+        // De onde a rota parte (a base da empresa, snapshot da saída): aparece mesmo sem traçado.
+        const origem = rota?.inicio ?? rota?.origem ?? null;
+        if (origem) {
+          const coordenada: [number, number] = [origem.longitude, origem.latitude];
+          limites.extend(coordenada);
+          new mapboxgl.Marker({ element: elementoMarcador("B") })
+            .setLngLat(coordenada)
+            .setPopup(new mapboxgl.Popup({ offset: 18 }).setText("Base · origem da rota"))
+            .addTo(mapa);
         }
 
         const marcadorEntregador = new mapboxgl.Marker({ color: "#f59e0b" });
@@ -176,7 +173,7 @@ export function MapaPercursoMapbox({
 
   if (paradas.length === 0) return null;
   return (
-    <div className="h-56 w-full overflow-hidden rounded-jaa border border-borda">
+    <div className="h-72 w-full overflow-hidden rounded-jaa border border-borda sm:h-80">
       {(erroConfiguracao ?? erro) ? (
         <p role="alert" className="p-3 text-sm text-perigo">
           {erroConfiguracao ?? erro}

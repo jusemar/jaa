@@ -28,7 +28,7 @@ describe("exemplos (placeholders) da entrada e do cadastro", () => {
 describe("textos da entrada", () => {
   it("separam quem já tem conta de quem é novo, sem jargão", () => {
     assert.equal(TEXTOS_ENTRADA.entrar.titulo, "Entrar");
-    assert.equal(TEXTOS_ENTRADA.novo.titulo, "Novo no Jaa?");
+    assert.equal(TEXTOS_ENTRADA.novo.titulo, "Novo no Jaaa?");
     assert.equal(TEXTOS_ENTRADA.novo.acao, "Criar conta");
     const todos = JSON.stringify(TEXTOS_ENTRADA) + TEXTOS_ENTRADA.codigo.descricao("(00) 00000-0000");
     for (const jargao of ["OTP", "token", "SMS", "autentica", "credencia"]) assert.ok(!todos.toLowerCase().includes(jargao.toLowerCase()), jargao);

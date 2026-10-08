@@ -53,8 +53,9 @@ export function rotuloHorario(atendeNoHorario: boolean | null): string | null {
 }
 
 /*
- * Cada destinatário é escolhido À MÃO (não existe "selecionar todos": distribuição ampla será das
- * Oportunidades). O teto evita transformar a busca em disparo em massa.
+ * Os destinatários são escolhidos por quem pesquisa — um a um ou com "Selecionar todos". O TETO vale
+ * nos dois casos e evita transformar a busca em disparo em massa (distribuição ampla será das
+ * Oportunidades).
  */
 export const MAXIMO_SELECIONADOS = 10;
 
@@ -62,6 +63,29 @@ export function alternarSelecionado(selecionados: readonly string[], identidadeI
   if (selecionados.includes(identidadeId)) return selecionados.filter((id) => id !== identidadeId);
   if (selecionados.length >= MAXIMO_SELECIONADOS) return [...selecionados];
   return [...selecionados, identidadeId];
+}
+
+export type EstadoSelecionarTodos = "todos" | "alguns" | "nenhum";
+
+/**
+ * Estado do "Selecionar todos" para a lista EXIBIDA. "Todos" = tudo o que cabe está marcado: a lista
+ * inteira ou, se ela passa do teto, o teto. Desmarcar um só já deixa de ser "todos".
+ */
+export function estadoSelecionarTodos(exibidos: readonly string[], selecionados: readonly string[]): EstadoSelecionarTodos {
+  const marcados = exibidos.filter((id) => selecionados.includes(id)).length;
+  if (marcados === 0) return "nenhum";
+  return marcados >= Math.min(exibidos.length, MAXIMO_SELECIONADOS) ? "todos" : "alguns";
+}
+
+/**
+ * Toque em "Selecionar todos": com tudo marcado, desmarca tudo; senão, mantém quem já estava marcado
+ * e completa com os próximos da lista, na ordem exibida, ATÉ O TETO.
+ */
+export function alternarTodos(exibidos: readonly string[], selecionados: readonly string[]): string[] {
+  if (estadoSelecionarTodos(exibidos, selecionados) === "todos") return [];
+  const mantidos = exibidos.filter((id) => selecionados.includes(id));
+  const restantes = exibidos.filter((id) => !selecionados.includes(id));
+  return [...mantidos, ...restantes].slice(0, MAXIMO_SELECIONADOS);
 }
 
 /**

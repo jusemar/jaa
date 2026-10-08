@@ -1,7 +1,7 @@
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import type { Banco } from "@jaa/banco";
-import { TAMANHO_MAXIMO_IMAGEM_BYTES } from "@jaa/contratos";
+import { MAXIMO_EMPRESAS_CRIADAS_POR_CONTA, TAMANHO_MAXIMO_IMAGEM_BYTES } from "@jaa/contratos";
 import Fastify, { type FastifyServerOptions } from "fastify";
 import type { Autenticacao } from "./features/autenticacao/autenticacao.js";
 import { registrarRotasBetterAuth } from "./features/autenticacao/rotas/rotas-better-auth.js";
@@ -73,6 +73,9 @@ interface DependenciasAplicacao {
   armazenamento?: ArmazenamentoDeArquivos;
   // Bucket PRIVADO (imagens de conversa): leitura só por URL assinada.
   armazenamentoPrivado?: ArmazenamentoPrivado;
+  // Quantas empresas uma conta pode CRIAR. Padrão = a regra do produto (`@jaa/contratos`); só os
+  // testes de integração que montam várias empresas da mesma conta informam outro valor.
+  maximoEmpresasCriadasPorConta?: number;
   logger: FastifyServerOptions["logger"];
 }
 
@@ -88,6 +91,7 @@ export async function criarAplicacao({
   motorRotas = criarMotorDeRotas(null),
   armazenamento = armazenamentoIndisponivel,
   armazenamentoPrivado = armazenamentoPrivadoIndisponivel,
+  maximoEmpresasCriadasPorConta = MAXIMO_EMPRESAS_CRIADAS_POR_CONTA,
   logger,
 }: DependenciasAplicacao) {
   // Atrás do proxy da hospedagem, o IP do cliente vem de X-Forwarded-For — só do trecho confiável.
@@ -130,7 +134,7 @@ export async function criarAplicacao({
   registrarRotaTesteProtegido(servidor, autenticacao);
   registrarRotasUsuarios(servidor, { banco, autenticacao, armazenamento });
   registrarRotasIdentidades(servidor, { banco, autenticacao, armazenamento });
-  registrarRotasEmpresas(servidor, { banco, autenticacao });
+  registrarRotasEmpresas(servidor, { banco, autenticacao, maximoEmpresasCriadasPorConta });
   registrarRotasFuncionamento(servidor, { banco, autenticacao });
   registrarRotasProdutosAdministracao(servidor, {
     banco,
@@ -149,7 +153,9 @@ export async function criarAplicacao({
     banco,
     autenticacao,
     eventosMensagens,
+    eventosPedidos,
     eventosEntregas,
+    urlPublica: (chave) => armazenamento.urlPublica(chave),
   });
   registrarRotasPedidosEmpresa(servidor, {
     banco,
@@ -161,6 +167,7 @@ export async function criarAplicacao({
     banco,
     autenticacao,
     eventosEntregas,
+    urlPublica: (chave) => armazenamento.urlPublica(chave),
     geocodificador,
     motorRotas,
     // Iniciar a saída avança cada pedido pronto pela MESMA máquina de estados da empresa (com

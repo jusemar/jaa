@@ -37,6 +37,7 @@ import {
   inserirServicoDoPerfil,
   listarServicosDoPerfilComEscolhas,
   municipioAtivoExiste,
+  atributosObrigatoriosDoServico,
   opcoesDoServico,
   perfilJaTemServico,
   poligonosFormamAreaValida,
@@ -125,9 +126,15 @@ export async function confirmarPontoBaseProfissional(
 
 /* ---------- Serviços ---------- */
 
-type ErroEscolhas = { tipo: "especialidade-invalida" } | { tipo: "opcao-invalida" } | { tipo: "selecao-unica-violada" };
+type ErroEscolhas =
+  | { tipo: "especialidade-invalida" }
+  | { tipo: "opcao-invalida" }
+  | { tipo: "selecao-unica-violada" }
+  | { tipo: "atributo-obrigatorio"; atributo: string };
 
-// Especialidades e opções precisam ser ATIVAS e do MESMO serviço; atributo de seleção única, uma opção.
+// Especialidades e opções precisam ser ATIVAS e do MESMO serviço; atributo de seleção única, uma opção;
+// atributo OBRIGATÓRIO (ex.: Veículo do Entregador), pelo menos uma. Vale ao adicionar e ao salvar a
+// atividade — perfis gravados antes da regra não são tocados até o dono editar.
 async function validarEscolhas(banco: Executor, servicoId: string, especialidadeIds: string[], opcaoIds: string[]): Promise<ErroEscolhas | null> {
   if ((await contarEspecialidadesDoServico(banco, servicoId, especialidadeIds)) !== especialidadeIds.length) return { tipo: "especialidade-invalida" };
   const opcoes = await opcoesDoServico(banco, servicoId, opcaoIds);
@@ -136,7 +143,10 @@ async function validarEscolhas(banco: Executor, servicoId: string, especialidade
   for (const opcao of opcoes) {
     if (opcao.tipoSelecao === "unica") porAtributoUnico.set(opcao.atributoId, (porAtributoUnico.get(opcao.atributoId) ?? 0) + 1);
   }
-  return [...porAtributoUnico.values()].some((total) => total > 1) ? { tipo: "selecao-unica-violada" } : null;
+  if ([...porAtributoUnico.values()].some((total) => total > 1)) return { tipo: "selecao-unica-violada" };
+  const escolhidos = new Set(opcoes.map((opcao) => opcao.atributoId));
+  const faltando = (await atributosObrigatoriosDoServico(banco, servicoId)).find((atributo) => !escolhidos.has(atributo.id));
+  return faltando ? { tipo: "atributo-obrigatorio", atributo: faltando.nome } : null;
 }
 
 export type ResultadoAdicionarServico =

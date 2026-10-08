@@ -100,3 +100,20 @@ export const listaEmpresasSchema = z.object({
 });
 
 export type ListaEmpresas = z.infer<typeof listaEmpresasSchema>;
+
+/*
+ * LIMITE DE CRIAÇÃO: por enquanto cada conta pode CRIAR uma empresa. "Criada por ela" = empresa em que
+ * a conta é PROPRIETÁRIA (hoje só a criação torna alguém proprietário). Participar de outras empresas
+ * por vínculo/permissão não conta. Quem garante é a API (409 `LIMITE_DE_EMPRESAS_ATINGIDO`); a
+ * interface usa `podeCriarEmpresa` só para não oferecer uma ação que seria recusada.
+ */
+export const MAXIMO_EMPRESAS_CRIADAS_POR_CONTA = 1;
+
+export const MENSAGEM_LIMITE_DE_EMPRESAS = "Você já possui uma empresa criada.";
+
+// Dito ao lado do botão "Criar empresa" desativado (Web e Mobile).
+export const AVISO_LIMITE_DE_EMPRESAS = `Limite: ${MAXIMO_EMPRESAS_CRIADAS_POR_CONTA} empresa por usuário.`;
+
+export function podeCriarEmpresa(empresas: readonly Pick<Empresa, "papel">[]): boolean {
+  return empresas.filter((empresa) => empresa.papel === "proprietario").length < MAXIMO_EMPRESAS_CRIADAS_POR_CONTA;
+}

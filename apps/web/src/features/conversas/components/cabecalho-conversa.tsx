@@ -12,7 +12,7 @@ import { IconeVoltar } from "@/components/ui/icones";
  * para quem não distingue cores), a bolinha carrega o texto equivalente.
  *
  * Quando a presença não é conhecida (a outra pessoa pode tê-la restringido nas configurações de
- * privacidade), NADA é afirmado: sem bolinha e sem linha. Dizer "sem conexão" nesse caso seria
+ * privacidade), NADA é afirmado: sem bolinha e sem linha. Dizer "Off-line" nesse caso seria
  * mentira, e é exatamente o que a privacidade quer evitar.
  */
 export function CabecalhoConversa({
@@ -42,7 +42,7 @@ export function CabecalhoConversa({
     presenca === "online"
       ? "Disponível agora"
       : presenca === "offline"
-        ? "Sem conexão agora"
+        ? "Off-line agora"
         : null;
 
   return (
@@ -125,7 +125,7 @@ export function CabecalhoConversa({
               : descricaoPresenca
                 ? presenca === "online"
                   ? "online agora"
-                  : "sem conexão"
+                  : "Off-line"
                 : `@${outraIdentidade.nomeUsuario}`}
           </p>
         </div>

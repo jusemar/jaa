@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { expirarPresencasEPublicar } from "../src/features/entregas/lib/publicar-operacao.js";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import {
@@ -832,5 +833,121 @@ describe("aptidão operacional", () => {
       .update(entregadoresEmpresa)
       .set({ aptoParaSaida: true })
       .where(eq(entregadoresEmpresa.id, joao));
+  });
+});
+
+describe("presença só vale com confirmação recente", () => {
+  // Simula o tempo passando sem leitura (app fechado, tela bloqueada, sem rede): só o horário muda.
+  const semLeituraHa = (entregadorId: string, minutos: number) =>
+    ctx.banco
+      .update(entregadoresEmpresa)
+      .set({ ultimaLeituraEm: new Date(Date.now() - minutos * 60_000) })
+      .where(eq(entregadoresEmpresa.id, entregadorId));
+  const situacaoDe = async (pessoa: Pessoa, entregadorId: string): Promise<SituacaoOperacional> => {
+    const lista: ListaSituacoesOperacionais = (await ctx.api(pessoa, "GET", "/entregas/situacao")).json();
+    const situacao = lista.situacoes.find((item) => item.entregadorId === entregadorId);
+    assert.ok(situacao);
+    return situacao;
+  };
+  const gravado = async (entregadorId: string) =>
+    (await ctx.banco.select({ naBase: entregadoresEmpresa.naBase, fila: entregadoresEmpresa.filaEntrouEm, status: entregadoresEmpresa.status, disponivel: entregadoresEmpresa.disponivel }).from(entregadoresEmpresa).where(eq(entregadoresEmpresa.id, entregadorId)))[0];
+
+  async function todosNaBase() {
+    for (const [pessoa, vinculo] of [[P, paulo], [C, carlos], [J, joao]] as const) {
+      await ctx.api(pessoa, "PATCH", `/entregas/vinculos/${vinculo}`, { disponivel: true });
+      await sairDaBase(pessoa, vinculo);
+    }
+    await chegarNaBase(P, paulo);
+    await chegarNaBase(C, carlos);
+    await chegarNaBase(J, joao);
+  }
+
+  it("localização recente dentro da base entra na fila; recente FORA da base não entra", async () => {
+    await todosNaBase();
+    assert.deepEqual((await painel()).fila.map((item) => item.id), [paulo, carlos, joao]);
+    const fora = await sairDaBase(J, joao);
+    assert.equal(fora.estado, "disponivel_fora_base");
+    assert.equal(fora.posicaoFila, null);
+    assert.deepEqual((await painel()).fila.map((item) => item.id), [paulo, carlos]);
+    assert.ok((await painel()).foraDaBase.some((item) => item.id === joao));
+  });
+
+  it("dois entregadores sem leitura recente + um realmente presente: só o presente fica na fila, em 1º — na Web e no app", async () => {
+    await todosNaBase();
+    // O cenário real: os dois primeiros da fila pararam de confirmar a localização há dias.
+    await semLeituraHa(paulo, 60 * 24 * 9);
+    await semLeituraHa(carlos, 10);
+
+    // WEB (painel da empresa) e MOBILE (situação do próprio entregador) leem o MESMO estado do servidor.
+    const web = await painel();
+    assert.deepEqual(web.fila.map((item) => [item.id, item.posicaoFila, item.estado]), [[joao, 1, "disponivel_na_base"]]);
+    const app = await situacaoDe(J, joao);
+    assert.deepEqual([app.posicaoFila, app.totalNaFila, app.estado], [1, 1, "disponivel_na_base"]);
+
+    // Os outros dois: "não sei onde está" nunca é "na base". Vínculo e disponibilidade continuam.
+    for (const [pessoa, vinculo] of [[P, paulo], [C, carlos]] as const) {
+      const situacao = await situacaoDe(pessoa, vinculo);
+      assert.deepEqual([situacao.naBase, situacao.posicaoFila, situacao.estado, situacao.status, situacao.disponivel], [false, null, "disponivel_fora_base", "ativo", true]);
+      assert.ok(web.foraDaBase.some((item) => item.id === vinculo) && !web.fila.some((item) => item.id === vinculo));
+    }
+  });
+
+  it("no limite: leitura há 2 minutos ainda vale; há mais de 3 minutos, não", async () => {
+    await todosNaBase();
+    await semLeituraHa(paulo, 2);
+    assert.ok((await painel()).fila.some((item) => item.id === paulo));
+    await semLeituraHa(paulo, 3.5);
+    assert.ok(!(await painel()).fila.some((item) => item.id === paulo));
+  });
+
+  it("a passada periódica GRAVA a expiração, registra o motivo e avisa a empresa e quem continua na fila", async () => {
+    await todosNaBase();
+    const [socketEmpresa, socketJoao, socketPaulo] = await Promise.all([ctx.conectar(como(A, pizzaria.identidadeId)), ctx.conectar(J), ctx.conectar(P)]);
+    const paineis = coletar<EventoFilaAtualizada>(socketEmpresa, EVENTO_FILA_ATUALIZADA);
+    const doJoao = coletar<EventoSituacaoOperacional>(socketJoao, EVENTO_SITUACAO_OPERACIONAL);
+    const doPaulo = coletar<EventoSituacaoOperacional>(socketPaulo, EVENTO_SITUACAO_OPERACIONAL);
+
+    await semLeituraHa(paulo, 10);
+    await semLeituraHa(carlos, 10);
+    assert.equal(await expirarPresencasEPublicar({ banco: ctx.banco, eventosEntregas: ctx.eventosEntregas }), 2);
+
+    assert.deepEqual(await gravado(paulo), { naBase: false, fila: null, status: "ativo", disponivel: true });
+    assert.deepEqual(await gravado(carlos), { naBase: false, fila: null, status: "ativo", disponivel: true });
+    const historico = await ctx.banco.select().from(historicoFilaEntregador).where(eq(historicoFilaEntregador.entregadorId, paulo));
+    assert.equal(historico.at(-1)?.motivoSaida, "Presença sem confirmação recente");
+
+    // Tempo real: a empresa vê a fila nova; João sabe que virou o 1º; Paulo sabe que saiu.
+    await aguardarAte(() => paineis.length >= 1 && doJoao.length >= 1 && doPaulo.length >= 1);
+    assert.deepEqual(paineis.at(-1)?.painel.fila.map((item) => item.id), [joao]);
+    assert.deepEqual([doJoao.at(-1)?.situacao.posicaoFila, doJoao.at(-1)?.situacao.totalNaFila], [1, 1]);
+    assert.deepEqual([doPaulo.at(-1)?.situacao.posicaoFila, doPaulo.at(-1)?.situacao.naBase], [null, false]);
+    assert.equal(JSON.stringify(paineis).includes("latitude"), false);
+
+    // Sem nada vencido, a passada não escreve nem avisa de novo.
+    assert.equal(await expirarPresencasEPublicar({ banco: ctx.banco, eventosEntregas: ctx.eventosEntregas }), 0);
+  });
+
+  it("quem volta à base confirma de novo (duas leituras) e entra no FIM da fila", async () => {
+    await todosNaBase();
+    await semLeituraHa(paulo, 10);
+    await expirarPresencasEPublicar({ banco: ctx.banco, eventosEntregas: ctx.eventosEntregas });
+    assert.deepEqual((await painel()).fila.map((item) => item.id), [carlos, joao]);
+
+    // Uma leitura só não basta (estabilização do GPS); a contagem antiga não é reaproveitada.
+    const primeira: SituacaoOperacional = (await enviarLocalizacao(P, paulo, NA_BASE)).json();
+    assert.equal(primeira.naBase, false);
+    const segunda: SituacaoOperacional = (await enviarLocalizacao(P, paulo, NA_BASE)).json();
+    assert.deepEqual([segunda.naBase, segunda.posicaoFila, segunda.totalNaFila], [true, 3, 3]);
+    assert.deepEqual((await painel()).fila.map((item) => item.id), [carlos, joao, paulo]);
+  });
+
+  it("presença vencida não volta à fila por outro caminho (ex.: ligar a disponibilidade de novo)", async () => {
+    await todosNaBase();
+    await semLeituraHa(carlos, 10);
+    // Ainda não houve a passada periódica: `na_base` continua gravado, mas não vale.
+    await ctx.api(C, "PATCH", `/entregas/vinculos/${carlos}`, { disponivel: false });
+    await ctx.api(C, "PATCH", `/entregas/vinculos/${carlos}`, { disponivel: true });
+    assert.ok(!(await painel()).fila.some((item) => item.id === carlos));
+    assert.deepEqual(await gravado(carlos), { naBase: false, fila: null, status: "ativo", disponivel: true });
   });
 });

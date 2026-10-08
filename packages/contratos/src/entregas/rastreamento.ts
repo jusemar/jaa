@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { latitudeSchema, longitudeSchema } from "../enderecos/endereco.ts";
-import { participanteConversaSchema } from "../conversas/conversa.ts";
+import { identidadeVisivelSchema } from "../conversas/conversa.ts";
 import { filaDoPedidoSchema } from "./saida.ts";
 
 /*
@@ -83,6 +83,9 @@ export type RespostaPosicaoSaida = z.infer<typeof respostaPosicaoSaidaSchema>;
  * O que o CLIENTE pode saber: a fila derivada de sempre e — SOMENTE quando a entrega dele é a parada
  * atual — a posição do entregador. Nunca os destinos, coordenadas, nomes ou ids das outras paradas.
  */
+// Teto de pontos do trecho enviado ao cliente (o evento vai a cada posição: nada de payload gigante).
+export const MAXIMO_DE_PONTOS_DO_TRECHO = 240;
+
 export const acompanhamentoPedidoSchema = z.object({
   fila: filaDoPedidoSchema,
   /*
@@ -90,13 +93,30 @@ export const acompanhamentoPedidoSchema = z.object({
    * para o cliente saber quem vem e poder conversar pelo chat de sempre. null sem entregador.
    * Nada além disso: nem telefone, nem vínculo, nem outras entregas dele.
    */
-  entregador: participanteConversaSchema.nullable(),
+  // `fotoUrl` já vem filtrada pela privacidade de foto do entregador (a mesma regra do perfil); sem
+  // foto ou sem permissão é null, e a tela mostra as iniciais.
+  entregador: identidadeVisivelSchema.nullable(),
   // null enquanto não é a vez dele, quando não há saída em andamento ou quando não há posição válida.
   posicaoEntregador: z
     .object({
       latitude: z.number(),
       longitude: z.number(),
       capturadaEm: z.iso.datetime(),
+    })
+    .nullable(),
+  /*
+   * O TRECHO que falta até ESTE cliente, quando a entrega dele é a atual: a parte da rota real da
+   * saída (calculada no servidor, uma vez) que vai de onde o entregador está até o destino dele, com
+   * a distância e a PREVISÃO desse trecho. Nunca a rota inteira: o resto do traçado passa pelos
+   * endereços das outras entregas. null quando não é a vez dele, não há percurso real para a ordem
+   * atual ou o entregador está fora do traçado — nesses casos o mapa mostra só os dois pontos.
+   */
+  rota: z
+    .object({
+      geometria: z.array(z.object({ latitude: z.number(), longitude: z.number() })).min(2).max(MAXIMO_DE_PONTOS_DO_TRECHO),
+      distanciaMetros: z.number().int().min(0),
+      // Previsão: parte proporcional da duração que o provedor calculou para o percurso. Não é promessa.
+      duracaoSegundos: z.number().int().min(0),
     })
     .nullable(),
 });
@@ -196,3 +216,98 @@ export const ROTULO_SITUACAO_RASTREAMENTO: Record<SituacaoRastreamento, string> 
   ativo: "Localização ativa durante esta saída.",
   degradado: "Sinal fraco: a última posição pode demorar a atualizar.",
 };
+
+/**
+ * O que dizer no lugar do MAPA quando ele ainda não pode aparecer. O mapa do cliente só existe com a
+ * entrega DELE sendo a atual e com posição recente do entregador; fora disso, uma frase curta.
+ */
+export const TEXTO_MAPA_DA_ENTREGA = {
+  aguardandoVez: "O mapa aparece quando o entregador estiver a caminho de você.",
+  semPosicao: "Aguardando a localização do entregador para mostrar o mapa.",
+  indisponivelNoAparelho: "O mapa não está disponível nesta versão do app.",
+} as const;
+
+/** Qual frase mostrar no lugar do mapa (null = há mapa, ou não há entrega para acompanhar). */
+export function avisoNoLugarDoMapa(acompanhamento: Pick<AcompanhamentoPedido, "fila" | "posicaoEntregador">): string | null {
+  const { situacao } = acompanhamento.fila;
+  if (situacao === "sem_saida" || situacao === "encerrado") return null;
+  if (situacao !== "indo_ate_voce") return TEXTO_MAPA_DA_ENTREGA.aguardandoVez;
+  return acompanhamento.posicaoEntregador ? null : TEXTO_MAPA_DA_ENTREGA.semPosicao;
+}
+
+/* ---------- Trecho da rota para o cliente (regra pura, usada só no servidor) ---------- */
+
+type Ponto = { latitude: number; longitude: number };
+
+// Quão longe do traçado ainda consideramos "em cima dele". Além disso, não há trecho: nada é inventado.
+const TOLERANCIA_DO_ENTREGADOR_METROS = 250;
+const TOLERANCIA_DO_DESTINO_METROS = 200;
+
+/** Ponto do segmento a→b mais próximo de p (em metros, plano local: suficiente para ruas de uma cidade). */
+function projetarNoSegmento(p: Ponto, a: Ponto, b: Ponto): { ponto: Ponto; fracao: number; distancia: number } {
+  const metrosPorGrau = 111_320;
+  const escalaLongitude = Math.cos((p.latitude * Math.PI) / 180) * metrosPorGrau;
+  const bx = (b.longitude - a.longitude) * escalaLongitude;
+  const by = (b.latitude - a.latitude) * metrosPorGrau;
+  const px = (p.longitude - a.longitude) * escalaLongitude;
+  const py = (p.latitude - a.latitude) * metrosPorGrau;
+  const comprimento = bx * bx + by * by;
+  const fracao = comprimento === 0 ? 0 : Math.max(0, Math.min(1, (px * bx + py * by) / comprimento));
+  const ponto = { latitude: a.latitude + (b.latitude - a.latitude) * fracao, longitude: a.longitude + (b.longitude - a.longitude) * fracao };
+  return { ponto, fracao, distancia: Math.hypot(px - bx * fracao, py - by * fracao) };
+}
+
+function maisProximoNoTracado(geometria: readonly Ponto[], p: Ponto, ateSegmento: number): { segmento: number; ponto: Ponto; fracao: number; distancia: number } | null {
+  let melhor: { segmento: number; ponto: Ponto; fracao: number; distancia: number } | null = null;
+  for (let segmento = 0; segmento <= ateSegmento && segmento < geometria.length - 1; segmento += 1) {
+    const projecao = projetarNoSegmento(p, geometria[segmento] as Ponto, geometria[segmento + 1] as Ponto);
+    if (!melhor || projecao.distancia < melhor.distancia) melhor = { segmento, ...projecao };
+  }
+  return melhor;
+}
+
+const comprimentoMetros = (pontos: readonly Ponto[]) => pontos.reduce((total, ponto, indice) => (indice === 0 ? 0 : total + distanciaAproximadaMetros(pontos[indice - 1] as Ponto, ponto)), 0);
+
+/**
+ * O trecho da rota REAL que falta para o cliente da vez: do ponto do traçado mais próximo do
+ * entregador até o ponto mais próximo do destino dele. Sai só esse pedaço — o que vem antes (por onde
+ * ele já passou, inclusive outros endereços) e o que vem depois (as próximas entregas) ficam de fora.
+ * Distância = comprimento do pedaço; previsão = a mesma fração da duração calculada pelo provedor.
+ * null quando o entregador ou o destino não estão sobre o traçado, ou quando ele já passou do destino.
+ */
+export function trechoAteODestino(
+  geometria: readonly Ponto[],
+  duracaoTotalSegundos: number,
+  entregador: Ponto,
+  destino: Ponto,
+): { geometria: Ponto[]; distanciaMetros: number; duracaoSegundos: number } | null {
+  if (geometria.length < 2) return null;
+  const chegada = maisProximoNoTracado(geometria, destino, geometria.length - 2);
+  if (!chegada || chegada.distancia > TOLERANCIA_DO_DESTINO_METROS) return null;
+  const partida = maisProximoNoTracado(geometria, entregador, chegada.segmento);
+  if (!partida || partida.distancia > TOLERANCIA_DO_ENTREGADOR_METROS) return null;
+  // No mesmo segmento, só vale se ele ainda está ANTES do destino.
+  if (partida.segmento === chegada.segmento && partida.fracao >= chegada.fracao) return null;
+
+  const pedaco = [partida.ponto, ...geometria.slice(partida.segmento + 1, chegada.segmento + 1), chegada.ponto];
+  const total = comprimentoMetros(geometria);
+  const distancia = comprimentoMetros(pedaco);
+  if (total <= 0) return null;
+
+  // Reduz para o teto sem mexer nas pontas (o traçado continua seguindo as ruas na escala do mapa).
+  const passo = Math.max(1, Math.ceil(pedaco.length / (MAXIMO_DE_PONTOS_DO_TRECHO - 1)));
+  const reduzido = pedaco.filter((_, indice) => indice % passo === 0 || indice === pedaco.length - 1);
+  return {
+    geometria: reduzido.map((ponto) => ({ latitude: Number(ponto.latitude.toFixed(6)), longitude: Number(ponto.longitude.toFixed(6)) })),
+    distanciaMetros: Math.round(distancia),
+    duracaoSegundos: Math.round(duracaoTotalSegundos * Math.min(1, distancia / total)),
+  };
+}
+
+/** "18 min" — a PREVISÃO do trecho que falta (nunca menos de 1 min; não é horário prometido). */
+export function formatarPrevisaoDoTrecho(duracaoSegundos: number): string {
+  const minutos = Math.max(1, Math.round(duracaoSegundos / 60));
+  if (minutos < 60) return `${minutos} min`;
+  const resto = minutos % 60;
+  return resto === 0 ? `${Math.floor(minutos / 60)} h` : `${Math.floor(minutos / 60)} h ${resto} min`;
+}

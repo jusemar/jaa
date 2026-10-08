@@ -92,11 +92,15 @@ export function registrarRotasPerfilProfissional(
   }
 
   // Erro conhecido → resposta de erro; sucesso → perfil atualizado.
-  async function concluir(resposta: FastifyReply, identidadeId: string, resultado: { tipo: string; mensagem?: string; pendencias?: string[] }) {
+  async function concluir(resposta: FastifyReply, identidadeId: string, resultado: { tipo: string; mensagem?: string; pendencias?: string[]; atributo?: string }) {
     if (resultado.tipo === "dados-invalidos") return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: resultado.mensagem ?? "Dados inválidos." });
     if (resultado.tipo === "requisitos-pendentes") {
       const falta = (resultado.pendencias ?? []).map((pendencia) => ROTULO_PENDENCIA[pendencia] ?? pendencia).join(", ");
       return responder(resposta, 409, { codigo: "PERFIL_PROFISSIONAL_INCOMPLETO", mensagem: `Falta: ${falta}.` });
+    }
+    // O nome do item vem do catálogo ("Veículo"): a rota não conhece atividade nenhuma pelo nome.
+    if (resultado.tipo === "atributo-obrigatorio") {
+      return responder(resposta, 400, { codigo: "ESCOLHAS_INVALIDAS", mensagem: `Escolha pelo menos uma opção em ${resultado.atributo ?? "todos os itens obrigatórios"}.` });
     }
     const erro = ERROS[resultado.tipo];
     if (erro) return responder(resposta, erro.status, { codigo: erro.codigo, mensagem: erro.mensagem });

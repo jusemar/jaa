@@ -16,7 +16,6 @@ import {
   type Mensagem,
   type IdentidadeVisivel,
   type EnderecoCliente,
-  type Pedido,
   type TipoIdentidade,
 } from "@jaa/contratos";
 import {
@@ -75,7 +74,6 @@ import {
 import { EtapaEnderecoEntrega } from "@/features/enderecos/components/etapa-endereco-entrega";
 import { useCarrinho } from "@/features/carrinho/hooks/use-carrinho";
 import { useFreteEntrega } from "@/features/carrinho/hooks/use-frete-entrega";
-import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import {
   escolhasDaMontagem,
   itensParaPedido,
@@ -83,10 +81,8 @@ import {
   type Carrinho,
   type EscolhaCarrinho,
 } from "@/features/carrinho/lib/carrinho";
-import { AcompanhamentoDoPedido } from "@/features/entregas/components/acompanhamento-cliente";
-import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
 import { useStatusPedido } from "@/features/pedidos/hooks/use-status-pedido";
-import { criarPedido, obterPedido } from "@/features/pedidos/lib/api-pedidos";
+import { criarPedido } from "@/features/pedidos/lib/api-pedidos";
 import { BalaoAudioPendente } from "./balao-audio-pendente";
 import { BalaoImagemPendente } from "./balao-imagem-pendente";
 import { AudioProntoParaEnviar, BotaoGravarAudio, GravandoAudio } from "./gravacao-audio-compositor";
@@ -353,8 +349,6 @@ export function ConversaTecnica({
     useState<TentativaPedido | null>(null);
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [erroPedido, setErroPedido] = useState<string | null>(null);
-  const [avisoPedido, setAvisoPedido] = useState<string | null>(null);
-  const [pedidoAberto, setPedidoAberto] = useState<Pedido | null>(null);
   // Posição do PRÓPRIO pedido na saída (situação + quantas entregas antes). Nunca a rota.
   const atividade = useAtividadeConversa({
     conversaId: conversa.id,
@@ -465,27 +459,17 @@ export function ConversaTecnica({
   }, [conversa.id, adicionar]);
 
   /*
-   * Status do pedido mudou (a empresa avançou ou cancelou): o MESMO card passa a mostrar o novo
-   * estado e o pedido aberto acompanha. Não é mensagem nova — não reordena a conversa nem conta
-   * como não lida.
+   * Status do pedido mudou (a empresa avançou ou cancelou): o resumo da MESMA mensagem de pedido é
+   * trocado e o acompanhamento na conversa reage sozinho (ele relê o detalhe quando o status muda).
+   * Não é mensagem nova — não reordena a conversa nem conta como não lida.
    */
-  const pedidoAbertoId = pedidoAberto?.id ?? null;
   useStatusPedido(
     useCallback(
       (evento) => {
-        if (evento.conversaId !== null && evento.conversaId !== conversa.id)
-          return;
-        setReconciliada((atual) =>
-          atualizarPedidoNasMensagens(atual, evento.pedido),
-        );
-        // Timeline e motivo vêm do servidor (fonte da verdade); o evento só avisa que mudou.
-        if (pedidoAbertoId === evento.pedido.id) {
-          void obterPedido(evento.pedido.id).then((resultado) => {
-            if (resultado.ok) setPedidoAberto(resultado.dados);
-          });
-        }
+        if (evento.conversaId !== null && evento.conversaId !== conversa.id) return;
+        setReconciliada((atual) => atualizarPedidoNasMensagens(atual, evento.pedido));
       },
-      [conversa.id, pedidoAbertoId],
+      [conversa.id],
     ),
   );
 
@@ -826,7 +810,6 @@ export function ConversaTecnica({
     },
   ) {
     setErroPedido(null);
-    setAvisoPedido(null);
     // Os nomes e o acréscimo das opções ficam no item só para EXIBIR; o servidor recalcula tudo.
     const escolhas = escolhasDaMontagem(montagem.grupos, montagem.opcaoIds);
     const resultado = adicionarAoCarrinho(
@@ -912,7 +895,6 @@ export function ConversaTecnica({
         : { idCliente: crypto.randomUUID(), assinatura };
     setTentativaPedido(tentativa);
     setErroPedido(null);
-    setAvisoPedido(null);
     setEnviandoPedido(true);
     try {
       const resultado = await criarPedido({
@@ -948,24 +930,12 @@ export function ConversaTecnica({
       setTentativaPedido(null);
       setPainelPedido("automatico");
       setEscolhendoEndereco(false);
-      // Valores OFICIAIS do pedido criado (o servidor recalculou itens e taxa de entrega).
-      setAvisoPedido(
-        `Pedido #${resultado.dados.numero} enviado para a empresa — total ${formatarPrecoCentavos(resultado.dados.totalCentavos)}.`,
-      );
+      // O pedido foi feito: o cardápio sai da frente e o acompanhamento aparece na própria conversa
+      // (a mensagem do pedido chega por `mensagem:nova`, já aberta).
+      setCatalogoAberto(false);
     } finally {
       setEnviandoPedido(false);
     }
-  }
-
-  async function abrirPedido(pedidoId: string) {
-    setErroPedido(null);
-    // Fila e posição do entregador vêm do acompanhamento (componente próprio, com realtime e reconexão).
-    const resultado = await obterPedido(pedidoId);
-    if (!resultado.ok) {
-      setErroPedido(resultado.mensagem);
-      return;
-    }
-    setPedidoAberto(resultado.dados);
   }
 
   const outro = conversa.outraIdentidade;
@@ -1005,8 +975,6 @@ export function ConversaTecnica({
     pedidoVazioVisivel ||
     trocaDeEmpresa !== null ||
     (carrinhoVisivel && carrinho !== null) ||
-    pedidoAberto !== null ||
-    (avisoPedido !== null && telaLarga) ||
     (erroPedido !== null && !carrinhoVisivel);
   /*
    * Atalho para o pedido no RODAPÉ, só na largura em que ele não é coluna: com itens no carrinho e a
@@ -1237,34 +1205,6 @@ export function ConversaTecnica({
               />
             </div>
           )}
-          {pedidoAberto && (
-            <div className="p-4">
-              <DetalhePedido
-                pedido={pedidoAberto}
-                aoFechar={() => setPedidoAberto(null)}
-                visaoCliente={tipoIdentidade === "pessoal"}
-                acoes={
-                  <AcompanhamentoDoPedido
-                    pedidoId={pedidoAberto.id}
-                    {...(aoConversarCom ? { aoConversarCom } : {})}
-                    {...(pedidoAberto.destino
-                      ? {
-                          destino: {
-                            latitude: pedidoAberto.destino.latitude,
-                            longitude: pedidoAberto.destino.longitude,
-                          },
-                        }
-                      : {})}
-                  />
-                }
-              />
-            </div>
-          )}
-          {avisoPedido && telaLarga && (
-            <p role="status" className="px-4 py-3 text-sm text-marca">
-              {avisoPedido}
-            </p>
-          )}
           {erroPedido && !carrinhoVisivel && (
             <p role="alert" className="px-4 py-3 text-sm text-perigo">
               {erroPedido}
@@ -1351,8 +1291,6 @@ export function ConversaTecnica({
                       aoEditar={iniciarEdicao}
                       aoExcluirParaMim={(alvo) => void excluirParaMim(alvo)}
                       aoExcluirParaTodos={(alvo) => void excluirParaTodos(alvo)}
-                      aoAbrirPedido={(pedidoId) => void abrirPedido(pedidoId)}
-                      visaoCliente={tipoIdentidade === "pessoal"}
                       {...(mensagem.tipo === "audio"
                         ? {
                             estadoAudio: estadoDoAudio(mensagem.id),

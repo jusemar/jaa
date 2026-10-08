@@ -15,9 +15,10 @@ import {
   type GrupoOpcoesPublico,
   type Mensagem,
   type ParticipanteConversa,
-  type Pedido,
   type TipoIdentidade,
 } from "@jaa/contratos";
+import { avisarUmaVez } from "@/lib/sons/avisar";
+import { aparelhoLivreParaSom } from "../lib/som-nativo";
 import { useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, BackHandler, FlatList, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
@@ -36,10 +37,8 @@ import { CatalogoDaEmpresa } from "@/features/catalogo/components/catalogo-da-em
 import { useFuncionamento } from "@/features/catalogo/hooks/use-funcionamento";
 import { ehEmpresaFechada, motivoDoBloqueio } from "@/features/catalogo/lib/funcionamento";
 import { EtapaEnderecoEntrega } from "@/features/enderecos/components/etapa-endereco-entrega";
-import { AcompanhamentoDoPedido } from "@/features/pedidos/components/acompanhamento-cliente";
-import { DetalhePedido } from "@/features/pedidos/components/apresentacao-pedido";
 import { useStatusPedido } from "@/features/pedidos/hooks/use-status-pedido";
-import { criarPedido, obterPedido } from "@/features/pedidos/lib/api-pedidos";
+import { criarPedido } from "@/features/pedidos/lib/api-pedidos";
 import { gerarIdCliente } from "@/lib/id-cliente";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { useAppVisivel } from "@/lib/use-app-visivel";
@@ -114,6 +113,11 @@ export type ConversaAberta = {
 };
 
 /** Remonta a conversa quando ela é LIMPA (aqui ou em outro aparelho) e fecha quando é APAGADA. */
+/** Mensagem ACEITA pelo servidor: confirmação discreta, uma vez por mensagem, só com o áudio livre. */
+function avisarEnvio(mensagemId: string) {
+  if (aparelhoLivreParaSom()) avisarUmaVez("mensagemEnviada", mensagemId);
+}
+
 export function TelaConversa(props: { identidadeId: string; tipoIdentidade: TipoIdentidade; conversa: ConversaAberta }) {
   const router = useRouter();
   const [versaoLimpeza, setVersaoLimpeza] = useState(0);
@@ -222,7 +226,6 @@ function Conversa({
   const [tentativaPedido, setTentativaPedido] = useState<TentativaPedido | null>(null);
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [erroPedido, setErroPedido] = useState<string | null>(null);
-  const [pedidoAberto, setPedidoAberto] = useState<Pedido | null>(null);
   const atividade = useAtividadeConversa({ conversaId: conversa.id, outraIdentidadeId: conversa.outraIdentidade.identidadeId });
 
   // A lista (coberta por esta tela) deixa de mostrar o contador desta conversa enquanto ela é lida.
@@ -307,23 +310,17 @@ function Conversa({
   }, [conversa.id, adicionar]);
 
   /*
-   * Status do pedido mudou (a empresa avançou ou cancelou): o MESMO card passa a mostrar o novo estado e
-   * o pedido aberto acompanha. Não é mensagem nova — não reordena a conversa nem conta como não lida.
+   * Status do pedido mudou (a empresa avançou ou cancelou): o resumo da MESMA mensagem de pedido é
+   * trocado e o acompanhamento na conversa reage sozinho (ele relê o detalhe quando o status muda).
+   * Não é mensagem nova — não reordena a conversa nem conta como não lida.
    */
-  const pedidoAbertoId = pedidoAberto?.id ?? null;
   useStatusPedido(
     useCallback(
       (evento) => {
         if (evento.conversaId !== null && evento.conversaId !== conversa.id) return;
         setReconciliada((atual) => atualizarPedidoNasMensagens(atual, evento.pedido));
-        // Timeline e motivo vêm do servidor (fonte da verdade); o evento só avisa que mudou.
-        if (pedidoAbertoId === evento.pedido.id) {
-          void obterPedido(evento.pedido.id).then((resultado) => {
-            if (resultado.ok) setPedidoAberto(resultado.dados);
-          });
-        }
       },
-      [conversa.id, pedidoAbertoId],
+      [conversa.id],
     ),
   );
 
@@ -365,6 +362,7 @@ function Conversa({
     try {
       const resultado = await enviarMensagem(conversa.id, tentativa);
       if (resultado.ok) {
+        avisarEnvio(resultado.dados.id);
         adicionar([resultado.dados]);
         setPendente(null);
         setTexto("");
@@ -410,6 +408,7 @@ function Conversa({
     setImagemPendente({ tentativa, situacao: "enviando", idsAntesDoEnvio });
     const resultado = await enviarMensagemImagem(conversa.id, tentativa);
     if (resultado.ok) {
+      avisarEnvio(resultado.dados.id);
       adicionar([resultado.dados]);
       setImagemPendente(null);
       return;
@@ -439,6 +438,7 @@ function Conversa({
     setAudioPendente({ tentativa, situacao: "enviando", idsAntesDoEnvio });
     const resultado = await enviarMensagemAudio(conversa.id, tentativa);
     if (resultado.ok) {
+      avisarEnvio(resultado.dados.id);
       adicionar([resultado.dados]);
       setAudioPendente(null);
       return;
@@ -657,7 +657,8 @@ function Conversa({
         setErroPedido(resultado.status === 0 || resultado.status >= 500 ? "Falha ao enviar o pedido. Confirme de novo para tentar sem duplicar." : resultado.mensagem);
         return;
       }
-      // Pedido criado: o card dele chega na conversa (é ele o retorno para a pessoa), e o carrinho zera.
+      // Pedido criado: o cardápio sai da frente e o acompanhamento aparece na própria conversa.
+      avisarUmaVez("sucesso", `pedido:${resultado.dados.id}`);
       limpar();
       setEnderecoEntrega(null);
       void consultarFreteEntrega(null);
@@ -668,16 +669,6 @@ function Conversa({
     } finally {
       setEnviandoPedido(false);
     }
-  }
-
-  async function abrirPedido(pedidoId: string) {
-    setErroPedido(null);
-    const resultado = await obterPedido(pedidoId);
-    if (!resultado.ok) {
-      setErroPedido(resultado.mensagem);
-      return;
-    }
-    setPedidoAberto(resultado.dados);
   }
 
   // Abre OUTRA conversa direta (ex.: o cliente falando com o entregador a partir do pedido).
@@ -703,7 +694,7 @@ function Conversa({
   const temItensNoCarrinho = itensNoCarrinho > 0 && carrinhoDestaEmpresa;
   const carrinhoVisivel = temItensNoCarrinho && painelPedidoAberto;
   // "Seu pedido" tem CONTEÚDO agora? Então ele é a tela, e a conversa e o compositor ficam escondidos.
-  const painelPedidoOcupado = trocaDeEmpresa !== null || (carrinhoVisivel && carrinho !== null) || pedidoAberto !== null || (erroPedido !== null && !carrinhoVisivel);
+  const painelPedidoOcupado = trocaDeEmpresa !== null || (carrinhoVisivel && carrinho !== null) || (erroPedido !== null && !carrinhoVisivel);
   // Atalho para o pedido no RODAPÉ: com itens no carrinho e a pessoa na conversa/cardápio.
   const barraPedidoVisivel = podeComprar && temItensNoCarrinho && !painelPedidoOcupado;
 
@@ -712,7 +703,6 @@ function Conversa({
     if (!emFoco) return;
     const assinatura = BackHandler.addEventListener("hardwareBackPress", () => {
       if (escolhendoEndereco) setEscolhendoEndereco(false);
-      else if (pedidoAberto) setPedidoAberto(null);
       else if (trocaDeEmpresa) setTrocaDeEmpresa(null);
       else if (erroPedido && !carrinhoVisivel) setErroPedido(null);
       else if (painelPedidoAberto) setPainelPedidoAberto(false);
@@ -721,7 +711,7 @@ function Conversa({
       return true;
     });
     return () => assinatura.remove();
-  }, [emFoco, escolhendoEndereco, pedidoAberto, trocaDeEmpresa, erroPedido, carrinhoVisivel, painelPedidoAberto, catalogoAberto]);
+  }, [emFoco, escolhendoEndereco, trocaDeEmpresa, erroPedido, carrinhoVisivel, painelPedidoAberto, catalogoAberto]);
 
   // Evento em tempo real pode chegar antes da resposta do envio: aí a foto já está na lista.
   const fotoPendenteVisivel = imagemPendente !== null && !tentativaJaChegou(imagemPendente.tentativa, mensagens, imagemPendente.idsAntesDoEnvio, identidadeId);
@@ -763,7 +753,8 @@ function Conversa({
 
         {/* A escolha de endereço substitui visualmente o carrinho, que continua montado por baixo. */}
         {carrinhoVisivel && escolhendoEndereco && (
-          <ScrollView contentContainerStyle={[estilos.rolagemPedido, { paddingTop: top + Espaco.quatro, paddingBottom: bottom + Espaco.quatro }]}>
+          // Com o teclado aberto: tocar em "Continuar" funciona no primeiro toque e o campo em foco rola à vista.
+          <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={[estilos.rolagemPedido, { paddingTop: top + Espaco.quatro, paddingBottom: bottom + Espaco.quatro }]}>
             <EtapaEnderecoEntrega
               empresaIdentidadeId={outro.identidadeId}
               aoSelecionar={(endereco) => {
@@ -809,18 +800,7 @@ function Conversa({
           </View>
         )}
 
-        {pedidoAberto && (
-          <ScrollView contentContainerStyle={[estilos.rolagemPedido, { paddingTop: top + Espaco.quatro, paddingBottom: bottom + Espaco.quatro }]}>
-            <DetalhePedido
-              pedido={pedidoAberto}
-              aoFechar={() => setPedidoAberto(null)}
-              visaoCliente={tipoIdentidade === "pessoal"}
-              acoes={<AcompanhamentoDoPedido pedidoId={pedidoAberto.id} aoConversarCom={(nomeUsuario) => void conversarCom(nomeUsuario)} />}
-            />
-          </ScrollView>
-        )}
-
-        {erroPedido && !carrinhoVisivel && !pedidoAberto && !trocaDeEmpresa && <AvisoDoPedido texto={erroPedido} tom="perigo" aoFechar={() => setErroPedido(null)} />}
+        {erroPedido && !carrinhoVisivel && !trocaDeEmpresa && <AvisoDoPedido texto={erroPedido} tom="perigo" aoFechar={() => setErroPedido(null)} />}
       </View>
     );
   }
@@ -948,8 +928,7 @@ function Conversa({
                   identidadeAtualId={identidadeId}
                   nomeRemetente={outro.nomeExibicao}
                   aoPedirAcoes={(tocada) => setAcoesDaMensagemAberta(acoesDaMensagem(tocada))}
-                  aoAbrirPedido={(pedidoId) => void abrirPedido(pedidoId)}
-                  visaoCliente={tipoIdentidade === "pessoal"}
+                  aoConversarCom={(nomeUsuario) => void conversarCom(nomeUsuario)}
                   estadoImagem={estadoDaImagem(mensagem.id)}
                   estadoAudio={estadoDoAudio(mensagem.id)}
                   aoFalharAudio={(falhou) => void cacheAudios.aoFalharCarregamento(falhou.id)}

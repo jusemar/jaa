@@ -48,7 +48,7 @@ describe("links nas mensagens (marcação)", () => {
     assert.ok(link.includes('data-link-mensagem="externo"'));
   });
 
-  it("Link do Jaa deste site é reconhecido como conversa (abre aqui mesmo) e não vai para nova aba", () => {
+  it("Link do Jaaa deste site é reconhecido como conversa (abre aqui mesmo) e não vai para nova aba", () => {
     const [link] = linksDe(balao(mensagem({ conteudo: "peça em https://jaa.com.br/@pizzaria" })));
     assert.ok(link);
     assert.ok(link.includes('data-link-mensagem="conversa"') && link.includes('href="https://jaa.com.br/@pizzaria"'));

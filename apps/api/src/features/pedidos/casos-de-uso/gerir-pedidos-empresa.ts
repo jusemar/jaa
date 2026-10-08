@@ -24,6 +24,7 @@ import type { CanalEventosPedidos } from "../lib/eventos-pedidos.js";
 import {
   alterarStatusPedido,
   buscarPedidoDaEmpresa,
+  contarPedidosDaEmpresa,
   listarPedidosDaEmpresa,
   type PedidoComItensRegistro,
   type PedidoDaEmpresaRegistro,
@@ -44,17 +45,17 @@ export async function listarPedidosDaEmpresaAutorizado(
   usuarioId: string,
   empresaId: string,
   consulta: { filtro: FiltroPedidosEmpresa; limite: number; antesDe?: string | undefined },
-): Promise<{ tipo: "lista"; pedidos: PedidoDaEmpresaRegistro[] } | SemAcesso> {
+): Promise<{ tipo: "lista"; pedidos: PedidoDaEmpresaRegistro[]; total: number } | SemAcesso> {
   const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "ver-pedidos");
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
 
   const limite = Math.min(Math.max(Math.trunc(consulta.limite), 1), LIMITE_MAXIMO_PEDIDOS_EMPRESA);
-  const pedidos = await listarPedidosDaEmpresa(banco, empresaId, {
-    status: STATUS_POR_FILTRO_PEDIDOS[consulta.filtro],
-    limite,
-    antesDe: consulta.antesDe,
-  });
-  return { tipo: "lista", pedidos };
+  const status = STATUS_POR_FILTRO_PEDIDOS[consulta.filtro];
+  const [pedidos, total] = await Promise.all([
+    listarPedidosDaEmpresa(banco, empresaId, { status, limite, antesDe: consulta.antesDe }),
+    contarPedidosDaEmpresa(banco, empresaId, status),
+  ]);
+  return { tipo: "lista", pedidos, total };
 }
 
 export async function obterPedidoDaEmpresaAutorizado(

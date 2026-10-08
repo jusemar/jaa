@@ -1,0 +1,11 @@
+SONS ORIGINAIS — JAAA
+
+01_jaaa_mensagem.wav — nova mensagem recebida no chat.
+02_jaaa_novo_pedido.wav — empresa recebe um novo pedido.
+03_jaaa_nova_rota_entregador.wav — entregador recebe nova rota/pedido liberado para retirada; alerta mais forte e longo.
+04_jaaa_sucesso_confirmacao.wav — confirmação de ação concluída com sucesso.
+05_jaaa_alerta_atencao.wav — aviso importante que exige atenção.
+06_jaaa_chamada.wav — toque para futura chamada de voz do Jaaa.
+07_jaaa_mensagem_enviada.wav — confirmação discreta de mensagem enviada, se desejado.
+
+Sons sintetizados especificamente para esta proposta, sem samples de outros aplicativos.

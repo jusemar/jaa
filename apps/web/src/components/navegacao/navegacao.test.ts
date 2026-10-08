@@ -32,7 +32,7 @@ describe("áreas do aplicativo", () => {
     for (const empresarialSo of ["pedidos", "produtos", "logistica"]) assert.equal(ids.includes(empresarialSo), false, empresarialSo);
   });
 
-  it("conversas é a primeira área nos dois casos: o Jaa é um mensageiro", () => {
+  it("conversas é a primeira área nos dois casos: o Jaaa é um mensageiro", () => {
     assert.equal(AREAS_PESSOAIS[0]?.id, "conversas");
     assert.equal(AREAS_EMPRESARIAIS[0]?.id, "conversas");
   });

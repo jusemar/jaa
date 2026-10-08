@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import type { Pedido, ResumoPedido } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CardPedido, DetalhePedido } from "./apresentacao-pedido.tsx";
+import { DetalhePedido } from "./apresentacao-pedido.tsx";
+import { PedidoNaConversaApresentacao } from "./pedido-na-conversa.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
 
@@ -63,80 +64,114 @@ const pedido: Pedido = {
   atualizadoEm: "2026-09-15T12:00:00.000Z",
 };
 
-const card = (dados: ResumoPedido) => renderToStaticMarkup(createElement(CardPedido, { pedido: dados, aoAbrir: () => {} }));
+const detalhe = (dados: Pedido) => renderToStaticMarkup(createElement(DetalhePedido, { pedido: dados, aoFechar: () => {} }));
+const naConversa = (propriedades: Partial<Parameters<typeof PedidoNaConversaApresentacao>[0]> = {}) =>
+  renderToStaticMarkup(createElement(PedidoNaConversaApresentacao, { resumo, criadoEm: "2026-09-15T12:00:00.000Z", pedido: null, aberto: true, ...propriedades }));
 
-describe("card e detalhe do Pedido Jaa (Web técnica)", () => {
-  it("card mostra itens, total, pagamento, status e abre o pedido", () => {
-    const html = card(resumo);
-    const conteudo = texto(html);
-    for (const esperado of ["Pedido #15", "2× Pizza Calabresa — R$ 79,80", "1× Refrigerante 2L — R$ 12,00", "Total: R$ 91,80", "Pagamento: Dinheiro na entrega", "Status: Pedido recebido", "Ver pedido"]) {
-      assert.ok(conteudo.includes(esperado), esperado);
-    }
-    assert.ok(html.includes(`data-card-pedido="${resumo.id}"`));
-    assert.ok(html.includes('data-status-pedido="recebido"'));
-  });
-
-  it("o card não herda a cor do balão: fundo claro e texto escuro também no pedido que EU enviei", () => {
-    const html = card(resumo);
-    /*
-     * O balão próprio é jade com texto quase branco. Se o card herdasse isso, o conteúdo do pedido
-     * ficaria branco sobre verde-claro — foi exatamente o problema relatado na validação manual.
-     * Por isso ele declara a PRÓPRIA superfície e a PRÓPRIA cor de texto.
-     */
-    const abertura = html.slice(0, html.indexOf(">") + 1);
-    assert.ok(abertura.includes("bg-mensagem-recebida"), "mesma superfície clara das mensagens recebidas");
-    assert.ok(abertura.includes("text-conteudo"), "cor de texto própria, não a herdada do balão");
-    assert.equal(abertura.includes("bg-superficie/70"), false, "nada de fundo translúcido sobre o balão");
-  });
-
-  it("troco aparece só quando o cliente pediu troco em dinheiro", () => {
-    assert.ok(!card(resumo).includes("data-troco"));
-
-    const comTroco = texto(card({ ...resumo, trocoParaCentavos: 10000 }));
-    assert.ok(comTroco.includes("Troco para: R$ 100,00"));
-    assert.ok(comTroco.includes("levar R$ 8,20 de troco"));
-  });
-
-  it("cartão na entrega nunca exibe troco", () => {
-    const html = card({ ...resumo, formaPagamentoNaEntrega: "cartao" });
-    assert.ok(texto(html).includes("Pagamento: Cartão na entrega"));
-    assert.ok(!html.includes("data-troco"));
-    assert.ok(!texto(html).toLowerCase().includes("troco"));
-  });
-
-  it("detalhe mostra cliente, preço unitário de cada item, total e status", () => {
-    const conteudo = texto(renderToStaticMarkup(createElement(DetalhePedido, { pedido, aoFechar: () => {} })));
+describe("detalhe do Pedido na gestão da EMPRESA", () => {
+  it("mostra cliente, preço unitário de cada item, total e status", () => {
+    const conteudo = texto(detalhe(pedido));
     for (const esperado of ["Pedido #15 — Pizzaria BH", "Cliente: Junior Rocha", "2× Pizza Calabresa — R$ 39,90 cada = R$ 79,80", "1× Refrigerante 2L — R$ 12,00 cada = R$ 12,00", "Total: R$ 91,80", "Status: Pedido recebido"]) {
       assert.ok(conteudo.includes(esperado), esperado);
     }
   });
 
   it("pedido histórico mostra subtotal, taxa e total do SNAPSHOT, sem recalcular", () => {
-    // Snapshot com R$ 5,00 de frete: é o que vale, mesmo que a zona hoje cobre outro valor.
     const comFrete = { ...pedido, subtotalCentavos: 9180, freteOriginalCentavos: 500, freteFinalCentavos: 500, totalCentavos: 9680, zonaEntregaNome: "Bairro A" };
-    const detalhe = texto(renderToStaticMarkup(createElement(DetalhePedido, { pedido: comFrete, aoFechar: () => {} })));
-    for (const esperado of ["Subtotal", "R$ 91,80", "Taxa de entrega", "R$ 5,00", "Total: R$ 96,80"]) {
-      assert.ok(detalhe.includes(esperado), esperado);
-    }
-    const doCard = texto(card({ ...resumo, subtotalCentavos: 9180, freteFinalCentavos: 500, totalCentavos: 9680 }));
-    for (const esperado of ["Subtotal", "Taxa de entrega", "R$ 5,00", "Total: R$ 96,80"]) {
-      assert.ok(doCard.includes(esperado), esperado);
-    }
-    // Frete 0 no snapshot (zona grátis, empresa sem zonas ou pedido anterior ao frete): "Grátis".
-    assert.ok(texto(card(resumo)).includes("Taxa de entregaGrátis"));
+    for (const esperado of ["Subtotal", "R$ 91,80", "Taxa de entrega", "R$ 5,00", "Total: R$ 96,80"]) assert.ok(texto(detalhe(comFrete)).includes(esperado), esperado);
   });
 
-  it("nem card nem detalhe pedem ou exibem dados de cartão", () => {
-    const html = (card(resumo) + renderToStaticMarkup(createElement(DetalhePedido, { pedido, aoFechar: () => {} }))).toLowerCase();
-    for (const proibido of ["cvv", "validade", "número do cartão", "numero do cartao", "titular", "<input", "<form"]) {
-      assert.ok(!html.includes(proibido), proibido);
+  it("timeline compacta de sempre (✓ ● ○), itens abertos, sem o acompanhamento do cliente", () => {
+    const emPreparo: Pedido = { ...pedido, status: "em_preparacao", historico: [...pedido.historico, { id: "55555555-0000-4000-8000-000000000002", status: "em_preparacao", ocorridoEm: "2026-09-15T12:10:00.000Z", motivo: null }] };
+    const html = detalhe(emPreparo);
+    assert.ok(texto(html).includes("● Em preparação") && texto(html).includes("○ Pronto"));
+    assert.equal(html.includes('aria-current="step"'), false);
+    assert.equal(html.includes("data-pedido-na-conversa"), false);
+  });
+});
+
+describe("pedido do CLIENTE dentro da conversa", () => {
+  it("ATIVO: o acompanhamento aparece aberto, direto — sem 'Acompanhar pedido' nem 'Ver pedido' no meio", () => {
+    const html = naConversa();
+    assert.ok(html.includes('data-apresentacao="completa"') && html.includes(`data-pedido-na-conversa="${resumo.id}"`));
+    const conteudo = texto(html);
+    for (const esperado of ["Pedido #15", "15/09/2026 às", "Pedido recebido", "A empresa recebeu seu pedido", "Resumo do pedido", "3 itens", "2x Pizza Calabresa, 1x Refrigerante 2L", "R$ 91,80", "Dinheiro na entrega", "Itens do pedido"]) {
+      assert.ok(conteudo.includes(esperado), esperado);
     }
+    for (const antigo of ["Acompanhar pedido", "Ver pedido", "Ver detalhes", "Recolher"]) assert.equal(conteudo.includes(antigo), false, antigo);
+    assert.equal(html.includes("data-card-pedido"), false, "o card antigo não existe mais");
   });
 
-  it("na visão do cliente, pedido pronto aparece como aguardando coleta", () => {
-    const pronto = { ...resumo, status: "pronto" as const };
-    const html = renderToStaticMarkup(createElement(CardPedido, { pedido: pronto, aoAbrir: () => {}, visaoCliente: true }));
-    assert.ok(texto(html).includes("Aguardando coleta"));
-    assert.equal(texto(html).includes("Status: Pronto"), false);
+  it("linha do tempo dos status REAIS: concluídas, UMA atual em destaque e as próximas; hora só quando existe", () => {
+    const historico = [
+      ...pedido.historico,
+      { id: "55555555-0000-4000-8000-000000000002", status: "em_preparacao" as const, ocorridoEm: "2026-09-15T12:10:00.000Z", motivo: null },
+      { id: "55555555-0000-4000-8000-000000000003", status: "pronto" as const, ocorridoEm: "2026-09-15T12:30:00.000Z", motivo: null },
+    ];
+    const html = naConversa({ resumo: { ...resumo, status: "pronto" }, pedido: { ...pedido, status: "pronto", historico } });
+    const situacao = (status: string) => new RegExp(`data-etapa="${status}" data-situacao="(\\w+)"`).exec(html)?.[1];
+    assert.deepEqual(["recebido", "em_preparacao", "pronto", "saiu_para_entrega", "entregue"].map(situacao), ["concluida", "concluida", "atual", "futura", "futura"]);
+    assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
+    assert.ok(texto(html).includes("Aguardando coleta") && texto(html).includes("Seu pedido está separado e aguardando o entregador."));
+    // Sem o histórico (pedido completo ainda carregando), as etapas aparecem e nenhum horário é inventado.
+    const semHistorico = naConversa({ resumo: { ...resumo, status: "pronto" } });
+    assert.equal(/data-etapa="pronto" data-situacao="atual"/.test(semHistorico), true);
+    assert.equal(/\d{2}:\d{2}<\/span><\/span><\/li>/.test(semHistorico), false);
+  });
+
+  it("itens abrem e fecham NO LUGAR (details), com opções, observação e preço", () => {
+    const comMontagem = { ...resumo, itens: [{ nomeProduto: "Monte seu prato", quantidade: 1, subtotalCentavos: 2490, escolhas: ["Pequeno", "Feijão"], observacao: "sem cebola" }] };
+    const fechado = naConversa({ resumo: comMontagem });
+    assert.ok(/<details[^>]*data-itens-do-pedido/.test(fechado) && !/<details[^>]*data-itens-do-pedido[^>]* open/.test(fechado));
+    assert.ok(texto(fechado).includes("Ver itens (1)"));
+    const aberto = naConversa({ resumo: comMontagem, itensAbertosInicialmente: true });
+    assert.ok(/<details[^>]* open/.test(aberto));
+    for (const esperado of ["Monte seu prato", "1x", "Pequeno · Feijão", "sem cebola", "R$ 24,90"]) assert.ok(texto(aberto).includes(esperado), esperado);
+    assert.equal(/<a |href=/.test(aberto), false, "nada navega para outra tela");
+  });
+
+  it("endereço e ponto confirmado vêm do pedido; a entrega (fila/entregador/mapa) só entra em pedido ATIVO", () => {
+    const entrega = createElement("div", { "data-entrega-teste": "" }, "mapa");
+    const ativo = naConversa({ pedido, entrega });
+    assert.ok(ativo.includes("data-entrega-teste"));
+    if (pedido.destino) assert.ok(texto(ativo).includes("Endereço de entrega") && texto(ativo).includes("Ponto de entrega confirmado"));
+    // O endereço existe UMA vez, na coluna das informações (depois de Resumo e Itens) — nunca duplicado.
+    assert.equal((ativo.match(/data-destino-pedido/g) ?? []).length, pedido.destino ? 1 : 0);
+    if (pedido.destino) assert.ok(ativo.indexOf("data-itens-do-pedido") < ativo.indexOf("data-destino-pedido") && ativo.indexOf("data-entrega-teste") < ativo.indexOf("data-total-pedido"));
+    // As colunas são alinhadas pelo topo: nenhuma altura fixa nem cartão esticado.
+    assert.ok(/data-colunas-do-pedido[^>]*items-start/.test(ativo) && !/h-full|items-stretch/.test(ativo));
+    const entregue = naConversa({ resumo: { ...resumo, status: "entregue" }, pedido: { ...pedido, status: "entregue" }, entrega });
+    assert.equal(entregue.includes("data-entrega-teste"), false);
+  });
+
+  it("ENTREGUE ou CANCELADO: compacto na conversa; 'Ver detalhes' abre ali mesmo e 'Recolher' fecha", () => {
+    for (const [status, rotulo] of [["entregue", "Entregue"], ["cancelado", "Cancelado"]] as const) {
+      const compacto = naConversa({ resumo: { ...resumo, status }, aberto: false });
+      assert.ok(compacto.includes('data-apresentacao="compacta"'), status);
+      assert.ok(texto(compacto).includes(`Pedido #15 · ${rotulo}`) && texto(compacto).includes("3 itens · R$ 91,80 · 15/09/2026"));
+      assert.ok(compacto.includes("data-ver-detalhes-do-pedido") && compacto.includes('aria-expanded="false"'));
+      assert.equal(compacto.includes("data-etapa="), false, "sem linha do tempo enquanto recolhido");
+    }
+    const aberto = naConversa({ resumo: { ...resumo, status: "cancelado" }, pedido: { ...pedido, status: "cancelado", motivoCancelamento: "Produto indisponível" }, aberto: true });
+    assert.ok(aberto.includes('data-apresentacao="completa"') && aberto.includes("data-recolher-pedido"));
+    assert.ok(texto(aberto).includes("Motivo: Produto indisponível") && texto(aberto).includes("Este pedido foi cancelado pela empresa."));
+  });
+
+  it("troco só no dinheiro com troco; nada de dados de cartão", () => {
+    assert.equal(texto(naConversa()).toLowerCase().includes("troco"), false);
+    const comTroco = texto(naConversa({ resumo: { ...resumo, trocoParaCentavos: 10000 } }));
+    assert.ok(comTroco.includes("Troco para") && comTroco.includes("R$ 100,00 (levar R$ 8,20)"));
+    const cartao = naConversa({ resumo: { ...resumo, formaPagamentoNaEntrega: "cartao" } });
+    assert.ok(texto(cartao).includes("Cartão na entrega") && !texto(cartao).toLowerCase().includes("troco"));
+    for (const proibido of ["cvv", "validade", "número do cartão", "titular", "<input", "<form"]) assert.ok(!(cartao + detalhe(pedido)).toLowerCase().includes(proibido), proibido);
+  });
+});
+
+describe("conversa sem sobras do pedido", () => {
+  it("a frase 'Pedido #N enviado para a empresa' e o painel que a exibia não existem mais", async () => {
+    const { readFileSync } = await import("node:fs");
+    const conversa = readFileSync(new URL("../../conversas/components/conversa-tecnica.tsx", import.meta.url), "utf8");
+    assert.equal(conversa.includes("enviado para a empresa"), false);
+    assert.equal(conversa.includes("avisoPedido"), false);
   });
 });

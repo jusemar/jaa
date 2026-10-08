@@ -9,7 +9,13 @@ export function CabecalhoDaPagina({
   titulo,
   subtitulo,
   acoes,
+  compacto = false,
 }: {
+  /*
+   * Telas de LISTA, que a pessoa abre para operar e não para ler: no celular o título e as ações
+   * dividem UMA linha, sem trilha nem frase — a lista começa mais em cima. De `sm` para cima é igual.
+   */
+  compacto?: boolean;
   // O último item é a tela atual; os anteriores com `aoIr` são caminhos de volta.
   trilha: Array<{ rotulo: string; aoIr?: () => void }>;
   titulo: string;
@@ -17,8 +23,8 @@ export function CabecalhoDaPagina({
   acoes?: ReactNode;
 }) {
   return (
-    <header data-cabecalho-pagina className="flex flex-col gap-4">
-      <nav aria-label="Você está em" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-conteudo-suave">
+    <header data-cabecalho-pagina className={`flex flex-col ${compacto ? "gap-2 sm:gap-4" : "gap-4"}`}>
+      <nav aria-label="Você está em" className={`flex-wrap items-center gap-x-2 gap-y-1 text-xs text-conteudo-suave ${compacto ? "hidden sm:flex" : "flex"}`}>
         {trilha.map((item, indice) => {
           const atual = indice === trilha.length - 1;
           return (
@@ -37,12 +43,12 @@ export function CabecalhoDaPagina({
           );
         })}
       </nav>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
+      <div className={`flex sm:flex-row sm:items-center sm:justify-between sm:gap-5 ${compacto ? "flex-row items-center justify-between gap-3" : "flex-col gap-4"}`}>
         <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 className="fonte-display text-2xl font-bold leading-tight text-conteudo">{titulo}</h1>
-          {subtitulo && <p className="text-sm text-conteudo-suave">{subtitulo}</p>}
+          <h1 className={`fonte-display font-bold leading-tight text-conteudo ${"text-2xl"}`}>{titulo}</h1>
+          {subtitulo && <p className={`text-sm text-conteudo-suave ${compacto ? "hidden sm:block" : ""}`}>{subtitulo}</p>}
         </div>
-        {acoes && <div className="grid shrink-0 auto-cols-fr grid-flow-col gap-2.5 sm:flex sm:gap-2">{acoes}</div>}
+        {acoes && <div className={`shrink-0 sm:flex sm:gap-2 ${compacto ? "flex gap-2" : "grid auto-cols-fr grid-flow-col gap-2.5"}`}>{acoes}</div>}
       </div>
     </header>
   );

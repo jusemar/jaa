@@ -4,6 +4,7 @@ import { Cores } from "@/constants/theme";
 import { useSomMensagens } from "@/features/conversas/hooks/use-som-mensagens";
 import { useTotalNaoLidas } from "@/features/conversas/hooks/use-total-nao-lidas";
 import { rotuloTotalNaoLidas } from "@/features/conversas/lib/nao-lidas-globais";
+import { useAvisoNovaRota } from "@/features/entregas/hooks/use-aviso-nova-rota";
 import { useIdentidadeAtiva } from "@/features/identidades/components/provedor-identidade-ativa";
 
 /*
@@ -19,7 +20,10 @@ export default function LayoutAbas() {
   // Não lidas da identidade ATUANTE: indicador no item Conversas, visível em qualquer área.
   const naoLidas = useTotalNaoLidas(ativa?.identidadeId ?? null);
   // Som de mensagem recebida em qualquer área (este layout continua montado com a conversa aberta).
-  useSomMensagens(ativa?.identidadeId ?? null);
+  // Agindo como empresa, o card de um pedido novo toca o som de PEDIDO (não o de mensagem).
+  useSomMensagens(ativa?.identidadeId ?? null, ehEmpresa);
+  // Som de NOVA ROTA em qualquer área: só agindo como pessoa (é a identidade pessoal que entrega).
+  useAvisoNovaRota(ativa && !ehEmpresa ? ativa.identidadeId : null);
 
   return (
     <NativeTabs

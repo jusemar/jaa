@@ -7,6 +7,10 @@ import {
   enviarPosicaoEntradaSchema,
   posicaoEstaRecente,
   rotuloUltimaPosicao,
+  avisoNoLugarDoMapa,
+  formatarPrevisaoDoTrecho,
+  trechoAteODestino,
+  MAXIMO_DE_PONTOS_DO_TRECHO,
   type LeituraGps,
 } from "./rastreamento.ts";
 
@@ -95,5 +99,58 @@ describe("contrato do envio", () => {
     // O aparelho nunca informa empresa nem "estou entregando": isso é decisão do servidor.
     const comEmpresa = enviarPosicaoEntradaSchema.safeParse({ ...valida, empresaId: "qualquer" });
     assert.equal(comEmpresa.success && "empresaId" in comEmpresa.data, false);
+  });
+});
+
+describe("trecho da rota para o cliente da vez", () => {
+  // Uma rua de sul a norte (~111 m por 0,001° de latitude), com três entregas ao longo dela.
+  const rua = Array.from({ length: 11 }, (_, indice) => ({ latitude: -19.93 + indice * 0.001, longitude: -43.94 }));
+  const duracaoTotal = 600; // 10 min para ~1.113 m
+  const primeiroCliente = { latitude: -19.927, longitude: -43.94 };
+  const segundoCliente = { latitude: -19.922, longitude: -43.94 };
+
+  it("sai só o pedaço entre o entregador e o destino DESTE cliente — nada do que vem depois", () => {
+    const trecho = trechoAteODestino(rua, duracaoTotal, { latitude: -19.9295, longitude: -43.94 }, primeiroCliente);
+    assert.ok(trecho);
+    const latitudes = trecho.geometria.map((ponto) => ponto.latitude);
+    assert.equal(latitudes[0], -19.9295, "começa onde o entregador está");
+    assert.equal(latitudes.at(-1), -19.927, "termina no destino dele");
+    assert.ok(latitudes.every((latitude) => latitude <= -19.927), "nenhum ponto além do destino dele (rumo às outras entregas)");
+    assert.ok(Math.abs(trecho.distanciaMetros - 278) <= 3, `~278 m, veio ${trecho.distanciaMetros}`);
+    // Previsão: a mesma fração da duração calculada pelo provedor (278 m de 1.113 m → ~150 s).
+    assert.ok(Math.abs(trecho.duracaoSegundos - 150) <= 3, `~150 s, veio ${trecho.duracaoSegundos}`);
+  });
+
+  it("não revela por onde ele já passou: o trecho nunca começa antes da posição atual", () => {
+    // Já entregou ao primeiro e segue para o segundo: o pedaço não inclui o endereço do primeiro.
+    const trecho = trechoAteODestino(rua, duracaoTotal, { latitude: -19.925, longitude: -43.94 }, segundoCliente);
+    assert.ok(trecho);
+    assert.ok(trecho.geometria.every((ponto) => ponto.latitude >= -19.925 && ponto.latitude <= -19.922));
+    assert.equal(trecho.geometria.some((ponto) => ponto.latitude === primeiroCliente.latitude), false);
+  });
+
+  it("sem base real não há trecho: entregador ou destino fora do traçado, ou já depois do destino", () => {
+    assert.equal(trechoAteODestino(rua, duracaoTotal, { latitude: -19.9295, longitude: -43.93 }, primeiroCliente), null, "entregador a ~1 km do traçado");
+    assert.equal(trechoAteODestino(rua, duracaoTotal, { latitude: -19.9295, longitude: -43.94 }, { latitude: -19.927, longitude: -43.95 }), null, "destino fora do traçado");
+    assert.equal(trechoAteODestino(rua, duracaoTotal, { latitude: -19.9262, longitude: -43.94 }, { latitude: -19.9268, longitude: -43.94 }), null, "no mesmo quarteirão, já depois do destino");
+    assert.equal(trechoAteODestino([rua[0]!], duracaoTotal, rua[0]!, primeiroCliente), null);
+  });
+
+  it("trecho longo é reduzido ao teto de pontos, mantendo as pontas", () => {
+    const longa = Array.from({ length: 2000 }, (_, indice) => ({ latitude: -19.93 + indice * 0.00001, longitude: -43.94 }));
+    const trecho = trechoAteODestino(longa, 900, longa[0]!, longa.at(-1)!);
+    assert.ok(trecho && trecho.geometria.length <= MAXIMO_DE_PONTOS_DO_TRECHO);
+    assert.equal(trecho?.geometria[0]?.latitude, -19.93);
+    assert.equal(trecho?.geometria.at(-1)?.latitude, Number(longa.at(-1)!.latitude.toFixed(6)));
+  });
+
+  it("'Previsão' em minutos (nunca menos de 1) e a frase no lugar do mapa", () => {
+    assert.equal(formatarPrevisaoDoTrecho(20), "1 min");
+    assert.equal(formatarPrevisaoDoTrecho(1080), "18 min");
+    assert.equal(formatarPrevisaoDoTrecho(3900), "1 h 5 min");
+    const fila = (situacao: "na_fila" | "indo_ate_voce" | "sem_saida") => ({ pedidoId: "11111111-0000-4000-8000-000000000000", situacao, entregasAntes: 0 });
+    assert.equal(avisoNoLugarDoMapa({ fila: fila("sem_saida"), posicaoEntregador: null }), null);
+    assert.ok(avisoNoLugarDoMapa({ fila: fila("na_fila"), posicaoEntregador: null })?.includes("a caminho de você"));
+    assert.ok(avisoNoLugarDoMapa({ fila: fila("indo_ate_voce"), posicaoEntregador: null })?.includes("Aguardando a localização"));
   });
 });

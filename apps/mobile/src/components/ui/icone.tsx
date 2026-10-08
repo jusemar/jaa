@@ -42,7 +42,16 @@ const SIMBOLOS = {
   bloqueio: { ios: "nosign", android: "block", web: "block" },
   ferramenta: { ios: "wrench.and.screwdriver.fill", android: "build", web: "build" },
   anexo: { ios: "paperclip", android: "attach_file", web: "attach_file" },
+  olho: { ios: "eye", android: "visibility", web: "visibility" },
+  olhoFechado: { ios: "eye.slash", android: "visibility_off", web: "visibility_off" },
   sair: { ios: "rectangle.portrait.and.arrow.right", android: "logout", web: "logout" },
+  /*
+   * LOGÍSTICA — os três papéis de uma entrega, sempre com o MESMO desenho (mapa, rota, pedido):
+   * a BASE de onde a rota sai, o ENTREGADOR (moto) e o CLIENTE (destino).
+   */
+  base: { ios: "storefront.fill", android: "storefront", web: "storefront" },
+  entregador: { ios: "scooter", android: "two_wheeler", web: "two_wheeler" },
+  cliente: { ios: "person.fill", android: "person_pin_circle", web: "person_pin_circle" },
 } as const satisfies Record<string, SymbolViewProps["name"]>;
 
 export type NomeIcone = keyof typeof SIMBOLOS;

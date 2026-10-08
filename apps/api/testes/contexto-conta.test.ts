@@ -13,6 +13,7 @@ import { como, criarAmbienteIntegracao, type Pessoa } from "./apoio/integracao.j
 
 const PREFIXO = `ctx${randomUUID().slice(0, 4)}`;
 const ENTREGADOR_ATIVIDADE = "0199b000-0000-7000-8000-000000000011";
+const MOTO = "0199b000-0000-7000-8000-000000000031";
 const CABELEIREIRO_ATIVIDADE = "0199b000-0000-7000-8000-000000000013";
 
 const ctx = criarAmbienteIntegracao({
@@ -46,7 +47,8 @@ async function ativarPerfil(pessoa: Pessoa, atividadeId: string) {
   await ok(pessoa, "POST", "/profissional/perfil");
   await ok(pessoa, "PUT", "/profissional/perfil/base", { cep: "30130-010", logradouro: "Avenida Afonso Pena", numero: "1000", bairro: "Centro", cidade: "Belo Horizonte", uf: "MG" });
   await ok(pessoa, "PUT", "/profissional/perfil/base/ponto", { latitude: -19.9191, longitude: -43.9386 });
-  await ok(pessoa, "POST", "/profissional/perfil/atividades", { servicoId: atividadeId });
+  // O Entregador exige veículo (atributo obrigatório do catálogo); as demais atividades entram sem escolha.
+  await ok(pessoa, "POST", "/profissional/perfil/atividades", { servicoId: atividadeId, ...(atividadeId === ENTREGADOR_ATIVIDADE ? { opcaoIds: [MOTO] } : {}) });
   await ok(pessoa, "POST", "/profissional/perfil/areas", { modalidade: "raio", raioMetros: 5000 });
   const ativo = respostaPerfilProfissionalSchema.parse(await ok(pessoa, "POST", "/profissional/perfil/ativar")).perfil;
   assert.equal(ativo?.situacao, "ativo");

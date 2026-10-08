@@ -182,6 +182,15 @@ export function alternarOpcao(selecionadas: readonly string[], opcaoId: string, 
   return [...selecionadas.filter((id) => !doAtributo.has(id)), opcaoId];
 }
 
+/**
+ * Itens OBRIGATÓRIOS da atividade ainda sem nenhuma opção marcada (ex.: Veículo do Entregador). Quem
+ * diz o que é obrigatório é o catálogo; o servidor confere de novo ao adicionar e ao salvar.
+ */
+export function atributosSemEscolha(servico: ServicoCatalogo | undefined, opcaoIds: readonly string[]): ServicoCatalogo["atributos"] {
+  if (!servico) return [];
+  return servico.atributos.filter((atributo) => atributo.obrigatorio && atributo.opcoes.length > 0 && !atributo.opcoes.some((opcao) => opcaoIds.includes(opcao.id)));
+}
+
 /** Nomes do que a atividade marcou (especialidades e opções), na ordem do catálogo. */
 export function resumoEscolhas(atividade: Pick<AtividadeDoPerfil, "especialidadeIds" | "opcaoIds">, servico: ServicoCatalogo | undefined): string[] {
   if (!servico) return [];

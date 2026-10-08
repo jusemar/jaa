@@ -5,7 +5,7 @@ import type { BaseEmpresa, BaseProfissionalDoDono, EnderecoCliente, IntencaoProf
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BuscaProfissionais } from "./components/busca-profissionais.tsx";
-import { MAXIMO_SELECIONADOS, alternarSelecionado, locaisSalvosParaPesquisa, modoDaPesquisa, rotuloHorario } from "./lib/apresentacao-busca.ts";
+import { MAXIMO_SELECIONADOS, alternarSelecionado, alternarTodos, estadoSelecionarTodos, locaisSalvosParaPesquisa, modoDaPesquisa, rotuloHorario } from "./lib/apresentacao-busca.ts";
 import { enviarParaSelecionados, type DependenciasEnvio } from "./lib/enviar-para-selecionados.ts";
 import { carregarLocaisDaPesquisa, type FontesLocais } from "./lib/locais-da-pesquisa.ts";
 
@@ -42,7 +42,7 @@ const base: BaseProfissionalDoDono = {
   atualizadoEm: AGORA,
 };
 
-describe("modo do campo Pesquisar no Jaa", () => {
+describe("modo do campo Pesquisar no Jaaa", () => {
   it("@ = busca de pessoas; sem @ = também profissional", () => {
     assert.equal(modoDaPesquisa("@joao"), "usuario");
     assert.equal(modoDaPesquisa("  @joao"), "usuario");
@@ -234,6 +234,56 @@ describe("tela de busca dentro de Conversas", () => {
     const tela = readFileSync(new URL("./components/busca-profissionais.tsx", import.meta.url), "utf8");
     assert.match(tela, /abrirConversaDireta/);
     assert.match(tela, /enviarMensagem/);
-    assert.doesNotMatch(tela, /selecionar todos/i);
   });
 });
+
+describe("selecionar todos os profissionais exibidos", () => {
+  const ids = (quantos: number) => Array.from({ length: quantos }, (_, indice) => `id-${indice}`);
+
+  it("marca todos os exibidos e, marcado, desmarca todos", () => {
+    const exibidos = ids(4);
+    const todos = alternarTodos(exibidos, []);
+    assert.deepEqual(todos, exibidos);
+    assert.equal(estadoSelecionarTodos(exibidos, todos), "todos");
+    assert.deepEqual(alternarTodos(exibidos, todos), []);
+    assert.equal(estadoSelecionarTodos(exibidos, []), "nenhum");
+  });
+
+  it("desmarcar um à mão deixa de ser 'todos'; tocar de novo completa mantendo os já marcados", () => {
+    const exibidos = ids(4);
+    const semUm = alternarSelecionado(alternarTodos(exibidos, []), "id-2");
+    assert.equal(estadoSelecionarTodos(exibidos, semUm), "alguns");
+    const completos = alternarTodos(exibidos, semUm);
+    assert.deepEqual([...completos].sort(), [...exibidos].sort());
+    assert.equal(estadoSelecionarTodos(exibidos, completos), "todos");
+  });
+
+  it(`respeita o teto de ${MAXIMO_SELECIONADOS}: lista maior seleciona os primeiros, preservando quem já estava`, () => {
+    const exibidos = ids(MAXIMO_SELECIONADOS + 5);
+    const todos = alternarTodos(exibidos, []);
+    assert.deepEqual(todos, exibidos.slice(0, MAXIMO_SELECIONADOS));
+    assert.equal(estadoSelecionarTodos(exibidos, todos), "todos", "no teto, é o máximo possível");
+    // Quem a pessoa marcou à mão (lá no fim da lista) continua na seleção.
+    const comEscolha = alternarTodos(exibidos, [`id-${MAXIMO_SELECIONADOS + 4}`]);
+    assert.equal(comEscolha.length, MAXIMO_SELECIONADOS);
+    assert.ok(comEscolha.includes(`id-${MAXIMO_SELECIONADOS + 4}`));
+  });
+
+  it("na tela: a opção fica acima da lista e usa a mesma seleção do envio (nada novo no envio)", () => {
+    const tela = readFileSync(new URL("./components/busca-profissionais.tsx", import.meta.url), "utf8");
+    assert.ok(tela.indexOf("<SelecionarTodos") > 0 && tela.indexOf("<SelecionarTodos") < tela.indexOf("{resultados.map((item) => {"));
+    assert.ok(tela.includes("Selecionar todos") && tela.includes("caixa.indeterminate = estado === \"alguns\""));
+    assert.equal((tela.match(/enviarParaSelecionados\(/g) ?? []).length, 1);
+  });
+});
+
+describe("pagamento online no carrinho", () => {
+  it("é um accordion RECOLHIDO por padrão, com as duas formas como 'Em breve' e desabilitadas", () => {
+    const tela = readFileSync(new URL("../carrinho/components/painel-carrinho.tsx", import.meta.url), "utf8");
+    assert.match(tela, /<details data-pagamento-online-em-breve className/);
+    assert.doesNotMatch(tela, /<details data-pagamento-online-em-breve[^>]* open/);
+    assert.ok(tela.includes("Pagamento online — em breve") && tela.includes("<fieldset disabled aria-labelledby=\"pagamento-online-titulo\""));
+    assert.ok(tela.includes('rotulo: "Pix online"') && tela.includes('rotulo: "Cartão online"') && tela.includes("(Em breve)"));
+  });
+});
+

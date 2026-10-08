@@ -16,8 +16,8 @@ const identidade = IDENTIDADE_DA_VARIANTE[variante];
  */
 const PROJETO_EAS: string | null = "d4025512-7044-47fb-8a75-88ee162b8cb1";
 
-const USO_DO_MICROFONE = "O Jaa usa o microfone somente enquanto você grava uma mensagem de voz na conversa.";
-const USO_DA_LOCALIZACAO = "O Jaa usa sua localização durante uma entrega em andamento para a empresa acompanhar o pedido.";
+const USO_DO_MICROFONE = "O Jaaa usa o microfone somente enquanto você grava uma mensagem de voz na conversa.";
+const USO_DA_LOCALIZACAO = "O Jaaa usa sua localização durante uma entrega em andamento para a empresa acompanhar o pedido.";
 
 const config: ExpoConfig = {
   name: identidade.nome,
@@ -35,7 +35,8 @@ const config: ExpoConfig = {
     ...(PROJETO_EAS ? { url: `https://u.expo.dev/${PROJETO_EAS}` } : {}),
   },
   orientation: "portrait",
-  icon: "./assets/images/icon.png",
+  // Ícone oficial do Jaaa (derivado técnico de `jaaa-app-icon.png.png`: 1024 px, cantos transparentes).
+  icon: "./assets/images/jaaa-icone.png",
   scheme: identidade.scheme,
   userInterfaceStyle: "light",
   ios: {
@@ -50,11 +51,14 @@ const config: ExpoConfig = {
   android: {
     // Sem versionCode aqui: o número do binário é do EAS (`appVersionSource: remote` no eas.json).
     package: identidade.pacote,
+    /*
+     * Ícone adaptativo: a MESMA arte a 82% sobre o verde da própria borda, para o recorte do Android
+     * (círculo, squircle) não cortar o desenho. Sem versão monocromática: ela exigiria redesenhar a
+     * marca, então o ícone temático do Android usa o ícone normal.
+     */
     adaptiveIcon: {
-      backgroundColor: "#DDF7D3",
-      foregroundImage: "./assets/images/android-icon-foreground.png",
-      backgroundImage: "./assets/images/android-icon-background.png",
-      monochromeImage: "./assets/images/android-icon-monochrome.png",
+      backgroundColor: "#013C2F",
+      foregroundImage: "./assets/images/jaaa-icone-adaptativo.png",
     },
     predictiveBackGestureEnabled: false,
     permissions: [
@@ -63,6 +67,15 @@ const config: ExpoConfig = {
       "android.permission.ACCESS_BACKGROUND_LOCATION",
       "android.permission.FOREGROUND_SERVICE",
       "android.permission.FOREGROUND_SERVICE_LOCATION",
+      /*
+       * O rastreamento em segundo plano passa pelo expo-task-manager, que agenda um job PERSISTENTE
+       * (JobScheduler `setPersisted(true)`). O Android só aceita isso com esta permissão; sem ela o
+       * app FECHA ao ligar a localização ("Requested job cannot be persisted without holding
+       * RECEIVE_BOOT_COMPLETED"). A biblioteca não a declara sozinha.
+       */
+      "android.permission.RECEIVE_BOOT_COMPLETED",
+      // Android 13+: sem ela o aviso "Entrega em andamento" do serviço de localização não aparece.
+      "android.permission.POST_NOTIFICATIONS",
       "android.permission.RECORD_AUDIO",
     ],
     blockedPermissions: ["android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"],
@@ -73,18 +86,27 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
-    ["expo-splash-screen", { backgroundColor: "#009D72", image: "./assets/images/splash-icon.png", imageWidth: 76 }],
+    /*
+     * Splash NATIVO: o Android (12+) só aceita um ícone centralizado sobre uma cor — não uma arte em
+     * tela cheia. Então ele usa a cor de base da arte de carregamento (`COR_DE_FUNDO_DO_CARREGAMENTO`)
+     * e o símbolo do Jaaa; a arte inteira entra logo em seguida, no carregamento do app
+     * (`TelaDeCarregamento`). Uma identidade só, sem trocar de cor no caminho. Mudar isto = novo build.
+     */
+    ["expo-splash-screen", { backgroundColor: "#FDFEFD", image: "./assets/images/jaaa-icone.png", imageWidth: 120 }],
     ["expo-location", { locationAlwaysAndWhenInUsePermission: USO_DA_LOCALIZACAO, isAndroidBackgroundLocationEnabled: true, isAndroidForegroundServiceEnabled: true }],
     "expo-secure-store",
     [
       "expo-image-picker",
       {
-        cameraPermission: "O Jaa usa a câmera somente quando você escolhe tirar uma foto para o seu perfil.",
-        photosPermission: "O Jaa acessa suas fotos somente quando você escolhe uma imagem para o seu perfil.",
+        cameraPermission: "O Jaaa usa a câmera somente quando você escolhe tirar uma foto para o seu perfil.",
+        photosPermission: "O Jaaa acessa suas fotos somente quando você escolhe uma imagem para o seu perfil.",
         // Nunca `false`: removeria RECORD_AUDIO do manifesto e quebraria a mensagem de voz.
         microphonePermission: USO_DO_MICROFONE,
       },
     ],
+    // Mapa da ROTA do entregador (SDK nativo). O SDK é baixado sem token; em execução o app usa só o
+    // token PÚBLICO (`EXPO_PUBLIC_MAPBOX_TOKEN`). O token secreto de rotas fica na API.
+    "@rnmapbox/maps",
     ["expo-audio", { microphonePermission: USO_DO_MICROFONE, recordAudioAndroid: true, enableBackgroundRecording: false, enableBackgroundPlayback: false }],
   ],
   experiments: {

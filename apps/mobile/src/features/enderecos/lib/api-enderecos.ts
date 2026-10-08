@@ -1,4 +1,6 @@
 import {
+  enderecoDoCepSchema,
+  type EnderecoDoCep,
   enderecoClienteSchema,
   coberturaEntregaSchema,
   listaEnderecosSchema,
@@ -168,4 +170,9 @@ export function atualizarEnderecoParaEmpresa(
       body: JSON.stringify({ endereco, coordenadas }),
     },
   );
+}
+
+// CEP → texto do endereço. O servidor consulta o provedor; o app nunca fala com ele direto.
+export function consultarCepNaApi(digitos: string): Promise<RespostaApi<EnderecoDoCep>> {
+  return requisitarApi(`/enderecos/cep/${encodeURIComponent(digitos)}`, enderecoDoCepSchema, {});
 }

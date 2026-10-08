@@ -103,10 +103,10 @@ export function formatarDuracaoPercurso(duracaoSegundos: number): string {
  * ruas; sem ele, dizemos que é uma sugestão aproximada — nunca "melhor rota" ou "rota mais rápida".
  */
 export function rotuloRota(rota: RotaDaSaida | null, versaoSequenciaAtual: number): string {
-  if (!rota) return "Sequência sugerida pelo Jaa";
+  if (!rota) return "Sequência sugerida pelo Jaaa";
   if (!rotaCobreSequenciaAtual(rota, versaoSequenciaAtual)) return "Sequência alterada: percurso será recalculado";
   if (rota.estado !== "percurso_real" || rota.distanciaMetros === null || rota.duracaoSegundos === null) {
-    return "Sequência sugerida pelo Jaa (sem cálculo de percurso)";
+    return "Sequência sugerida pelo Jaaa (sem cálculo de percurso)";
   }
   return `Percurso calculado pelas ruas · ${formatarDistanciaRota(rota.distanciaMetros)} · ${formatarDuracaoPercurso(rota.duracaoSegundos)} de trajeto`;
 }

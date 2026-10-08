@@ -1,8 +1,13 @@
+import { pedidos } from "@jaa/banco/schema";
+import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { resolverFotosVisiveis, type MontarUrlPublica } from "../../perfil/lib/visibilidade-foto.js";
 import { buscarAtribuicaoAtual } from "../repositorios/repositorio-atribuicoes.js";
 import type { Banco } from "@jaa/banco";
 import {
   POLITICA_RASTREAMENTO,
   posicaoEstaRecente,
+  trechoAteODestino,
   type AcompanhamentoPedido,
   type EnviarPosicaoEntrada,
   type PosicaoEntregador,
@@ -38,6 +43,8 @@ export interface DependenciasRastreamento {
   banco: Banco;
   eventosEntregas: CanalEventosEntregas;
   agora?: (() => Date) | undefined;
+  // Monta a URL pública da foto a partir da chave gravada. Sem ela, o acompanhamento vai sem foto.
+  urlPublica?: MontarUrlPublica | undefined;
 }
 
 export type ResultadoPosicao =
@@ -140,18 +147,58 @@ export async function montarAcompanhamento(dependencias: DependenciasRastreament
   // Identidade PÚBLICA de quem está com a entrega agora. Não depende de bloqueio de mensagens: bloquear
   // corta a conversa, nunca a operação — o cliente continua sabendo quem vem.
   const atribuicao = await buscarAtribuicaoAtual(banco, pedidoId);
-  const entregador = atribuicao ? atribuicao.pessoa : null;
-  if (fila.situacao !== "indo_ate_voce") return { fila, entregador, posicaoEntregador: null };
+  const entregador = atribuicao ? { ...atribuicao.pessoa, fotoUrl: await fotoDoEntregador(dependencias, pedidoId, atribuicao.pessoa.identidadeId) } : null;
+  const semPosicao: AcompanhamentoPedido = { fila, entregador, posicaoEntregador: null, rota: null };
+  if (fila.situacao !== "indo_ate_voce") return semPosicao;
 
   const parada = await buscarSaidaAtivaDoPedido(banco, pedidoId);
-  if (!parada) return { fila, entregador, posicaoEntregador: null };
+  if (!parada) return semPosicao;
   const registro = await buscarPosicaoDaSaida(banco, parada.saidaId);
-  if (!registro) return { fila, entregador, posicaoEntregador: null };
+  if (!registro) return semPosicao;
 
   const posicao = serializarPosicao(registro);
-  if (!posicaoEstaRecente(posicao, agora)) return { fila, entregador, posicaoEntregador: null };
-  // Só o ponto e quando foi capturado: nem saída nem paradas.
-  return { fila, entregador, posicaoEntregador: { latitude: posicao.latitude, longitude: posicao.longitude, capturadaEm: posicao.capturadaEm } };
+  if (!posicaoEstaRecente(posicao, agora)) return semPosicao;
+  // Só o ponto e quando foi capturado — e, da rota, só o trecho que falta até ESTE cliente.
+  return {
+    fila,
+    entregador,
+    posicaoEntregador: { latitude: posicao.latitude, longitude: posicao.longitude, capturadaEm: posicao.capturadaEm },
+    rota: await trechoDoCliente(banco, parada.saidaId, pedidoId, posicao),
+  };
+}
+
+/**
+ * TRECHO da rota real para o cliente da vez. A geometria é a que o motor de rotas já guardou na saída
+ * (nenhuma chamada ao provedor aqui); só vale o percurso REAL calculado para a ordem atual. Dela sai
+ * apenas o pedaço entre o entregador e o destino DESTE pedido (`trechoAteODestino`).
+ */
+async function trechoDoCliente(banco: Banco, saidaId: string, pedidoId: string, posicao: { latitude: number; longitude: number }): Promise<AcompanhamentoPedido["rota"]> {
+  const registro = await buscarSaida(banco, saidaId);
+  if (!registro) return null;
+  const { saida } = registro;
+  // Percurso REAL e calculado para a ordem que está valendo (reordenar envelhece a rota).
+  if (saida.rotaEstado !== "percurso_real" || saida.rotaVersaoSequencia !== saida.versaoSequencia || saida.rotaDuracaoSegundos === null) return null;
+  const geometria = geometriaGuardadaSchema.safeParse(saida.rotaGeometria);
+  if (!geometria.success) return null;
+  const destino = registro.paradas.find((parada) => parada.pedidoId === pedidoId)?.destino;
+  if (!destino) return null;
+  return trechoAteODestino(geometria.data, saida.rotaDuracaoSegundos, posicao, { latitude: destino.latitude, longitude: destino.longitude });
+}
+
+// A geometria fica em jsonb: conferida antes de usar, como qualquer dado que não tem tipo garantido.
+const geometriaGuardadaSchema = z.array(z.object({ latitude: z.number(), longitude: z.number() })).min(2);
+
+/**
+ * FOTO de quem vem entregar, para o CLIENTE daquele pedido. Vale a MESMA regra de privacidade de foto
+ * do resto do Jaa (`resolverFotosVisiveis`: a escolha é do dono da foto); quem não pode ver recebe
+ * null e a tela mostra as iniciais. O observador é o cliente do pedido — nunca um id vindo de fora.
+ */
+async function fotoDoEntregador(dependencias: DependenciasRastreamento, pedidoId: string, entregadorIdentidadeId: string): Promise<string | null> {
+  const { banco, urlPublica } = dependencias;
+  if (!urlPublica) return null;
+  const [pedido] = await banco.select({ clienteIdentidadeId: pedidos.clienteIdentidadeId }).from(pedidos).where(eq(pedidos.id, pedidoId)).limit(1);
+  if (!pedido) return null;
+  return (await resolverFotosVisiveis(banco, pedido.clienteIdentidadeId, [entregadorIdentidadeId], urlPublica)).get(entregadorIdentidadeId) ?? null;
 }
 
 /** Reconexão do ENTREGADOR ou da EMPRESA: a última posição permitida, sem depender do último evento. */
