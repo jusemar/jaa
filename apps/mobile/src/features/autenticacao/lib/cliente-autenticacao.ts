@@ -1,6 +1,6 @@
 import { expoClient } from "@better-auth/expo/client";
 import { createAuthClient } from "better-auth/react";
-import { phoneNumberClient } from "better-auth/client/plugins";
+import { emailOTPClient, phoneNumberClient } from "better-auth/client/plugins";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { URL_API } from "@/lib/configuracao";
@@ -8,7 +8,8 @@ import { IDENTIDADE_DA_VARIANTE, varianteDeclarada } from "@/lib/variante";
 import { CAMINHO_ENTRAR_COM_SENHA, mensagemFalhaEntrar, montarEntradaComSenha } from "./entrar-com-senha";
 
 /**
- * MESMA autenticação do Web: Better Auth, conta por CELULAR + OTP, sem senha. O que muda é só onde a
+ * MESMA autenticação do Web: Better Auth, conta criada por código no CELULAR ou no E-MAIL (à escolha
+ * da pessoa) e senha opcional. O que muda é só onde a
  * sessão fica guardada — no navegador é cookie HttpOnly; aqui, o armazenamento seguro do aparelho.
  *
  * Não existe login paralelo no Mobile: a conta, a identidade pessoal e os vínculos com empresas são
@@ -19,6 +20,7 @@ export const clienteAutenticacao = createAuthClient({
   basePath: "/api/auth",
   plugins: [
     phoneNumberClient(),
+    emailOTPClient(),
     expoClient({
       // O scheme da variante em execução (`jaa-dev` ou `jaa`), o mesmo do app.config.ts; a API precisa
       // confiar nele (trustedOrigins).
@@ -30,7 +32,7 @@ export const clienteAutenticacao = createAuthClient({
 });
 
 /**
- * ENTRAR COM CELULAR OU @USUARIO + SENHA pela rota do Jaa (`POST /autenticacao/entrar`), que traduz o
+ * ENTRAR COM CELULAR, E-MAIL OU @USUARIO + SENHA pela rota do Jaa (`POST /autenticacao/entrar`), que traduz o
  * identificador e delega ao Better Auth. Vai pelo `$fetch` DESTE cliente de propósito: é o plugin do
  * Expo que manda `expo-origin`, lê o cookie da resposta e o guarda no SecureStore — a mesma sessão do
  * OTP, sem mecanismo paralelo. O limite de tempo evita a tela presa quando a API não é alcançável.

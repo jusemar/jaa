@@ -11,10 +11,13 @@ import { buscarSituacaoSenha, salvarSenha } from "../lib/api-perfil";
 import { podeEnviarSenha } from "../lib/senha";
 
 /**
- * SENHA da conta — o mesmo fluxo da Web, pelas mesmas rotas (Better Auth). O cadastro continua sendo
- * por código no celular; a senha é o atalho para entrar depois, sem esperar SMS.
+ * SENHA da conta — o mesmo fluxo da Web, pelas mesmas rotas (Better Auth). O cadastro é por código
+ * (SMS ou e-mail); a senha é o atalho para entrar depois, sem esperar o código.
  *
  * Trocar exige a senha atual: uma sessão esquecida aberta num aparelho não pode virar troca de senha.
+ *
+ * Fechado, o cartão mostra só "••••••••" (ou que ainda não há senha) e UMA ação; os campos aparecem
+ * quando a pessoa toca em "Alterar senha" / "Criar senha" — e somem de novo ao salvar ou cancelar.
  */
 export function FormularioSenha() {
   // null = ainda não se sabe se a conta já tem senha.
@@ -25,6 +28,7 @@ export function FormularioSenha() {
   const [erro, setErro] = useState<string | null>(null);
   const [salva, setSalva] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  const [aberto, setAberto] = useState(false);
 
   useEffect(() => {
     let ativo = true;
@@ -53,6 +57,7 @@ export function FormularioSenha() {
       setSalva(true);
       setSenha("");
       setSenhaAtual("");
+      setAberto(false);
     } finally {
       setSalvando(false);
     }
@@ -62,7 +67,24 @@ export function FormularioSenha() {
 
   return (
     <Cartao style={estilos.cartao}>
-      {definida && (
+      <View>
+        <Texto variante="pequeno" cor="conteudoSuave">
+          Senha
+        </Texto>
+        <Texto cor={definida ? "conteudo" : "conteudoSuave"}>{definida === null ? "Carregando…" : definida ? "••••••••" : "Nenhuma senha criada"}</Texto>
+      </View>
+      {!aberto && definida !== null && (
+        <Botao
+          aparencia="secundario"
+          rotulo={definida ? "Alterar senha" : "Criar senha"}
+          onPress={() => {
+            setErro(null);
+            setSalva(false);
+            setAberto(true);
+          }}
+        />
+      )}
+      {aberto && definida && (
         <CampoTexto
           rotulo="Senha atual"
           value={senhaAtual}
@@ -77,6 +99,7 @@ export function FormularioSenha() {
           acao={olho}
         />
       )}
+      {aberto && (
       <CampoTexto
         rotulo={definida ? "Nova senha" : "Criar senha"}
         value={senha}
@@ -89,20 +112,37 @@ export function FormularioSenha() {
           setSenha(texto);
         }}
         acao={olho}
-        dica={`Pelo menos ${SENHA_TAMANHO_MINIMO} caracteres. Esqueceu? Você sempre pode entrar com o código enviado para o seu celular.`}
+        dica={`Pelo menos ${SENHA_TAMANHO_MINIMO} caracteres. Esqueceu? Você pode entrar com código por SMS ou e-mail.`}
       />
-      <Botao
-        rotulo={definida ? "Alterar senha" : "Criar senha"}
-        carregando={salvando}
-        textoCarregando="Salvando…"
-        disabled={salvando || definida === null || !podeEnviarSenha({ definida, senha, senhaAtual })}
-        onPress={() => void enviar()}
-      />
+      )}
+      {aberto && (
+        <Botao
+          rotulo={definida ? "Salvar nova senha" : "Criar senha"}
+          carregando={salvando}
+          textoCarregando="Salvando…"
+          disabled={salvando || definida === null || !podeEnviarSenha({ definida, senha, senhaAtual })}
+          onPress={() => void enviar()}
+        />
+      )}
+      {aberto && (
+        <Botao
+          aparencia="discreto"
+          centralizado
+          rotulo="Cancelar"
+          disabled={salvando}
+          onPress={() => {
+            setErro(null);
+            setSenha("");
+            setSenhaAtual("");
+            setAberto(false);
+          }}
+        />
+      )}
       {salva && (
         <View accessibilityLiveRegion="polite" style={estilos.confirmacao}>
           <Icone nome="check" tamanho={16} cor="marca" />
           <Texto cor="marca" style={estilos.flex}>
-            Senha salva. Agora você pode entrar com seu celular ou @usuario e a senha.
+            Senha salva. Agora você pode entrar com seu @usuario, celular ou e-mail e a senha.
           </Texto>
         </View>
       )}

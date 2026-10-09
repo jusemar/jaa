@@ -18,14 +18,16 @@ const CABECALHOS_DO_CORPO_ORIGINAL = ["content-length", "transfer-encoding"];
  * corpo e deixar a AUTENTICAÇÃO com o Better Auth. Não há sistema paralelo de login: a sessão, o
  * cookie e o hash de senha continuam sendo os dele.
  */
-export async function encaminharParaBetterAuth(
+/**
+ * Chama um endpoint do Better Auth em nome desta requisição (mesmos cookies, mesma origem, mesmo IP
+ * para os limites) e devolve a resposta crua, para a rota do Jaa interpretar.
+ */
+export function chamarBetterAuth(
   { autenticacao, urlBase }: { autenticacao: Autenticacao; urlBase: string },
   requisicao: FastifyRequest,
-  resposta: FastifyReply,
   caminho: string,
   corpo: unknown,
-  erroDeAutenticacao?: ErroApi,
-) {
+): Promise<Response> {
   const url = new URL(`${CAMINHO_BASE_AUTENTICACAO}${caminho}`, urlBase);
   const cabecalhos = fromNodeHeaders(requisicao.headers);
   for (const nome of CABECALHOS_DO_CORPO_ORIGINAL) cabecalhos.delete(nome);
@@ -33,13 +35,24 @@ export async function encaminharParaBetterAuth(
   // O IP do rate limit é o que o Fastify resolveu, nunca o que o cliente mandou.
   cabecalhos.set(CABECALHO_IP_CLIENTE, requisicao.ip);
 
-  const respostaAutenticacao = await autenticacao.handler(
+  return autenticacao.handler(
     new Request(url, {
       method: "POST",
       headers: cabecalhos,
       body: JSON.stringify(corpo),
     }),
   );
+}
+
+export async function encaminharParaBetterAuth(
+  dependencias: { autenticacao: Autenticacao; urlBase: string },
+  requisicao: FastifyRequest,
+  resposta: FastifyReply,
+  caminho: string,
+  corpo: unknown,
+  erroDeAutenticacao?: ErroApi,
+) {
+  const respostaAutenticacao = await chamarBetterAuth(dependencias, requisicao, caminho, corpo);
 
   if (erroDeAutenticacao && respostaAutenticacao.status === 401) {
     return resposta.code(401).send(erroDeAutenticacao);

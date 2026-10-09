@@ -3,7 +3,10 @@ import {
   listaExcecoesPrivacidadeSchema,
   meuPerfilSchema,
   perfilPublicoSchema,
+  codigoTelefoneEnviadoSchema,
+  situacaoEmailContaSchema,
   situacaoSenhaSchema,
+  situacaoTelefoneContaSchema,
   type ArquivoEnviado,
   type AtualizarPerfilEntrada,
   type AtualizarPrivacidadeEntrada,
@@ -12,7 +15,9 @@ import {
   type ListaExcecoesPrivacidade,
   type MeuPerfil,
   type PerfilPublico,
+  type SituacaoEmailConta,
   type SituacaoSenha,
+  type SituacaoTelefoneConta,
 } from "@jaa/contratos";
 import * as z from "zod";
 import { enviarArquivo, requisitarApi, type ResultadoApi } from "@/lib/api";
@@ -69,6 +74,31 @@ export function removerFoto(): Promise<ResultadoApi<{ removida: boolean }>> {
 // Foto da identidade ATUANTE (avatar ou logo). O multipart compartilhado vive em `@/lib/api`.
 export function enviarFotoPerfil(arquivo: File): Promise<ResultadoApi<ArquivoEnviado>> {
   return enviarArquivo("/perfil/foto", arquivo, cabecalhosIdentidadeAtuante());
+}
+
+/*
+ * TELEFONE da conta: o número como a pessoa o lê (ou null). Cadastrar/alterar é em dois passos — pedir
+ * o código (SMS no número NOVO; o servidor recusa antes do envio se o número já é de outra conta) e
+ * confirmar.
+ */
+export function buscarSituacaoTelefone(): Promise<ResultadoApi<SituacaoTelefoneConta>> {
+  return requisitarApi("/conta/telefone", situacaoTelefoneContaSchema, comIdentidade());
+}
+
+export function pedirCodigoTelefone(telefone: string): Promise<ResultadoApi<unknown>> {
+  return requisitarApi("/conta/telefone/codigo", codigoTelefoneEnviadoSchema, { method: "POST", body: JSON.stringify({ telefone }), ...comIdentidade() });
+}
+
+export function confirmarTelefone(telefone: string, codigo: string): Promise<ResultadoApi<SituacaoTelefoneConta>> {
+  return requisitarApi("/conta/telefone", situacaoTelefoneContaSchema, { method: "POST", body: JSON.stringify({ telefone, codigo }), ...comIdentidade() });
+}
+
+/*
+ * E-MAIL da conta: o endereço REAL e verificado (ou null) e se o código por e-mail está ligado no
+ * servidor. Cadastrar/alterar é do Better Auth (pedido de código + confirmação), em `formulario-email`.
+ */
+export function buscarSituacaoEmail(): Promise<ResultadoApi<SituacaoEmailConta>> {
+  return requisitarApi("/conta/email", situacaoEmailContaSchema, comIdentidade());
 }
 
 export function buscarSituacaoSenha(): Promise<ResultadoApi<SituacaoSenha>> {

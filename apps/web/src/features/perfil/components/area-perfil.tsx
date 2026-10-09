@@ -11,7 +11,7 @@ import {
   type StatusEscolhido,
   type VisibilidadePerfil,
 } from "@jaa/contratos";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
 import { avisar } from "@/components/ui/avisos";
 import { Aviso, Botao, CampoSelecao, CampoTexto, CampoTextoLongo, Cartao, Carregando, Secao } from "@/components/ui/primitivos";
@@ -20,17 +20,50 @@ import { buscarMeuPerfil, enviarFotoPerfil, removerFoto, salvarPerfil, salvarPri
 import { AreaPerfilProfissional } from "@/features/profissional/components/area-perfil-profissional";
 import { EntradaPerfilProfissional } from "@/features/profissional/components/entrada-perfil-profissional";
 import { LinkDoJaa } from "@/features/link/components/link-do-jaa";
-import { FormularioSenha } from "./formulario-senha";
+import { ContaESeguranca } from "./conta-e-seguranca";
 
 /*
  * PERFIL da identidade ATUANTE — pessoa ou empresa, a mesma tela.
  *
- * Três blocos, na ordem em que as pessoas pensam: quem eu sou (foto, nome, frase), como estou
- * (status escolhido) e quem vê o quê (privacidade). A conta (senha) fica por último porque é
- * configuração, não identidade.
+ * ORGANIZADO POR ÁREAS (abas): só UMA aparece por vez, então a página deixa de ser uma coluna longa
+ * com tudo aberto. Cada aba responde a uma pergunta:
+ *   Perfil              → quem eu sou (foto, nome, frase, link) e como estou (status);
+ *   Privacidade         → quem vê o quê;
+ *   Conta e segurança   → como eu entro (telefone, e-mail, senha, PIN) — só da pessoa;
+ *   Perfil profissional → o que eu ofereço — só da pessoa;
+ *   Minhas empresas     → as empresas desta conta — só da pessoa;
+ *   Horários            → quando a empresa recebe pedidos — só da empresa.
+ * Nenhuma funcionalidade saiu: mudou só onde cada uma fica.
  */
 
-export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
+type AbaPerfil = "perfil" | "privacidade" | "conta" | "profissional" | "empresas" | "horarios";
+
+const ROTULO_DA_ABA: Record<AbaPerfil, string> = {
+  perfil: "Perfil",
+  privacidade: "Privacidade",
+  conta: "Conta e segurança",
+  profissional: "Perfil profissional",
+  empresas: "Minhas empresas",
+  horarios: "Horários",
+};
+
+/** As abas de cada identidade, na ordem em que aparecem. */
+export function abasDoPerfil(ehEmpresa: boolean, tem: { empresas: boolean; horarios: boolean }): AbaPerfil[] {
+  if (ehEmpresa) return ["perfil", "privacidade", ...(tem.horarios ? (["horarios"] as const) : [])];
+  return ["perfil", "privacidade", "conta", "profissional", ...(tem.empresas ? (["empresas"] as const) : [])];
+}
+
+export function AreaPerfil({
+  ehEmpresa,
+  empresas,
+  horarios,
+}: {
+  ehEmpresa: boolean;
+  /** "Minhas empresas" da conta (pessoa) e "Horários de funcionamento" (empresa): montados por quem conhece a conta/empresa. */
+  empresas?: ReactNode;
+  horarios?: ReactNode;
+}) {
+  const [aba, setAba] = useState<AbaPerfil>("perfil");
   const [perfil, setPerfil] = useState<MeuPerfil | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -99,13 +132,42 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
   if (!perfil || !campos) return erro ? <Aviso tom="erro">{erro}</Aviso> : <Carregando />;
   const alterado = perfilFoiAlterado(perfil, campos);
 
+  const abas = abasDoPerfil(ehEmpresa, { empresas: Boolean(empresas), horarios: Boolean(horarios) });
+
+  function trocarDeAba(proxima: AbaPerfil) {
+    // Mensagens de uma área não acompanham a pessoa para a outra.
+    setAviso(null);
+    setErro(null);
+    setAba(proxima);
+  }
+
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
+      <div role="tablist" aria-label="Áreas do perfil" className="flex overflow-x-auto border-b border-borda">
+        {abas.map((item) => (
+          <button
+            key={item}
+            type="button"
+            role="tab"
+            id={`aba-perfil-${item}`}
+            aria-selected={aba === item}
+            aria-controls={`painel-perfil-${item}`}
+            onClick={() => trocarDeAba(item)}
+            className={`shrink-0 border-b-2 px-4 py-2 text-sm font-medium ${aba === item ? "border-marca text-marca" : "border-transparent text-conteudo-suave"}`}
+          >
+            {ROTULO_DA_ABA[item]}
+          </button>
+        ))}
+      </div>
+
+      <div role="tabpanel" id={`painel-perfil-${aba}`} aria-labelledby={`aba-perfil-${aba}`} className="flex flex-col gap-8">
+      {aba === "perfil" && (
+      <>
       <Secao titulo={ehEmpresa ? "Perfil da empresa" : "Meu perfil"} descricao={ehEmpresa ? "É isto que seus clientes veem na conversa." : "É isto que as outras pessoas veem de você."}>
         <Cartao className="flex flex-col gap-4 p-4">
           <FotoDoPerfil perfil={perfil} aoTrocar={(atualizado) => setPerfil(atualizado)} aoErrar={setErro} />
 
-          <form onSubmit={enviarDados} className="flex flex-col gap-4">
+          <form onSubmit={enviarDados} className="grid gap-4 sm:grid-cols-2 [&>*]:min-w-0">
             <CampoTexto id="perfil-nome" rotulo="Nome" name="nomeExibicao" value={campos.nome} onChange={editar("nome")} maxLength={50} required autoComplete="name" />
             <CampoTexto id="perfil-usuario" rotulo="@usuario" value={`@${perfil.nomeUsuario}`} readOnly disabled dica="O @usuario é seu endereço no Jaaa e não muda por aqui." />
             <CampoTexto
@@ -119,10 +181,14 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
               dica="Texto curto que aparece junto do seu nome. Opcional."
             />
             <CampoTexto id="perfil-cidade" rotulo="Cidade" name="cidade" value={campos.cidade} onChange={editar("cidade")} maxLength={80} placeholder="Belo Horizonte" dica="Opcional." />
-            <CampoTextoLongo id="perfil-sobre" rotulo={ehEmpresa ? "Sobre a empresa" : "Sobre você"} name="sobre" value={campos.sobre} onChange={editar("sobre")} maxLength={500} dica="Opcional, até 500 caracteres." />
-            <Botao type="submit" data-salvar-perfil disabled={salvandoPerfil || !alterado || campos.nome.trim() === ""}>
-              {salvandoPerfil ? "Salvando…" : "Salvar perfil"}
-            </Botao>
+            <div className="sm:col-span-2">
+              <CampoTextoLongo id="perfil-sobre" rotulo={ehEmpresa ? "Sobre a empresa" : "Sobre você"} name="sobre" value={campos.sobre} onChange={editar("sobre")} maxLength={500} dica="Opcional, até 500 caracteres." />
+            </div>
+            <div className="sm:col-span-2">
+              <Botao type="submit" data-salvar-perfil disabled={salvandoPerfil || !alterado || campos.nome.trim() === ""}>
+                {salvandoPerfil ? "Salvando…" : "Salvar perfil"}
+              </Botao>
+            </div>
           </form>
         </Cartao>
       </Secao>
@@ -164,7 +230,10 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
           )}
         </Cartao>
       </Secao>
+      </>
+      )}
 
+      {aba === "privacidade" && (
       <Secao titulo="Privacidade" descricao="Quem pode ver cada coisa. Nada aqui muda quem pode falar com você.">
         <Cartao className="flex flex-col gap-4 p-4">
           <SeletorVisibilidade id="visibilidadeFoto" rotulo="Quem vê minha foto" valor={perfil.privacidade.visibilidadeFoto} aoMudar={mudarPrivacidade} />
@@ -189,17 +258,19 @@ export function AreaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
           </label>
         </Cartao>
       </Secao>
-
-      {!ehEmpresa && <EntradaPerfilProfissional aoAbrir={() => setProfissionalAberto(true)} />}
-
-      {!ehEmpresa && (
-        <Secao titulo="Conta" descricao="Sua senha para entrar sem esperar código.">
-          <FormularioSenha />
-        </Secao>
       )}
+
+      {aba === "conta" && !ehEmpresa && <ContaESeguranca />}
+
+      {aba === "profissional" && !ehEmpresa && <EntradaPerfilProfissional aoAbrir={() => setProfissionalAberto(true)} />}
+
+      {aba === "empresas" && !ehEmpresa && empresas}
+
+      {aba === "horarios" && ehEmpresa && horarios}
 
       {aviso && <p role="status" className="text-sm text-marca">{aviso}</p>}
       {erro && <Aviso tom="erro">{erro}</Aviso>}
+      </div>
     </div>
   );
 }

@@ -344,6 +344,20 @@
       "when": 1791490031866,
       "tag": "0048_atributo_obrigatorio",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791558177621,
+      "tag": "0049_dispositivos_autorizados",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791560068787,
+      "tag": "0050_biometria_do_dispositivo",
+      "breakpoints": true
     }
   ]
 }

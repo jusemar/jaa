@@ -28,6 +28,12 @@ export function ehCelularBrasileiroNormalizado(valor: string): boolean {
   return normalizarCelularBrasileiro(valor) === valor;
 }
 
+/** O número como a pessoa o lê, para ELA MESMA (Perfil): "(31) 98765-4321", sem +55. */
+export function formatarTelefoneNacional(telefoneE164: string): string | null {
+  const numero = parsePhoneNumberFromString(telefoneE164);
+  return numero ? numero.formatNational() : null;
+}
+
 // Telefone é dado privado: exibir somente DDD e 4 últimos dígitos, no formato nacional e sem +55.
 export function mascararTelefone(telefoneE164: string): string {
   const numero = parsePhoneNumberFromString(telefoneE164);

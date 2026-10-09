@@ -1,4 +1,4 @@
-import { meuPerfilSchema, perfilPublicoSchema, situacaoSenhaSchema, type SituacaoSenha, type ArquivoEnviado, type PerfilPublico, type AtualizarPerfilEntrada, type AtualizarPrivacidadeEntrada, type MeuPerfil } from "@jaa/contratos";
+import { meuPerfilSchema, perfilPublicoSchema, situacaoEmailContaSchema, situacaoSenhaSchema, type SituacaoEmailConta, type SituacaoSenha, type ArquivoEnviado, type PerfilPublico, type AtualizarPerfilEntrada, type AtualizarPrivacidadeEntrada, type MeuPerfil } from "@jaa/contratos";
 import * as z from "zod";
 import { enviarArquivo, requisitarApi, type RespostaApi } from "@/lib/api";
 import type { ArquivoLocal } from "@/lib/envio-arquivo";
@@ -43,6 +43,14 @@ export function buscarPerfilPublico(identidadeId: string): Promise<RespostaApi<P
  * SENHA da conta (Better Auth, as mesmas rotas da Web): saber se já existe, criar a primeira ou trocar
  * informando a atual. É da CONTA, não da identidade — por isso sem cabeçalho de identidade atuante.
  */
+/*
+ * E-MAIL da conta: o endereço REAL e verificado (ou null) e se o código por e-mail está ligado no
+ * servidor. Cadastrar/alterar é do Better Auth (pedido de código + confirmação), em `formulario-email`.
+ */
+export function buscarSituacaoEmail(): Promise<RespostaApi<SituacaoEmailConta>> {
+  return requisitarApi("/conta/email", situacaoEmailContaSchema);
+}
+
 export function buscarSituacaoSenha(): Promise<RespostaApi<SituacaoSenha>> {
   return requisitarApi("/conta/senha", situacaoSenhaSchema);
 }

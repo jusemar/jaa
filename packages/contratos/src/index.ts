@@ -1,5 +1,6 @@
 export * from "./erros.ts";
 export * from "./autenticacao/credenciais.ts";
+export * from "./autenticacao/pin.ts";
 export * from "./identidades/identidade-pessoal.ts";
 export * from "./identidades/identidade-operavel.ts";
 export * from "./identidades/perfil.ts";

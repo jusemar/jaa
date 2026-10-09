@@ -2,6 +2,7 @@ import { criarConexaoBanco } from "@jaa/banco";
 import { criarAplicacao } from "./aplicacao.js";
 import { criarAutenticacao } from "./features/autenticacao/autenticacao.js";
 import { criarEntregadorOtp } from "./features/autenticacao/entrega-otp/entregador-otp.js";
+import { criarEntregadorOtpEmail } from "./features/autenticacao/entrega-otp/entregador-otp-email.js";
 import { criarAvisoSessoesEncerradas } from "./features/autenticacao/lib/sessoes-encerradas.js";
 import { criarCanalEventosMensagens } from "./features/mensagens/lib/eventos-mensagens.js";
 import { criarGeocodificadorMapbox } from "./features/enderecos/lib/geocodificador-mapbox.js";
@@ -38,6 +39,7 @@ const autenticacao = criarAutenticacao({
   banco: conexao.banco,
   ambiente,
   entregadorOtp: criarEntregadorOtp(ambiente),
+  entregadorOtpEmail: criarEntregadorOtpEmail(ambiente),
   sessoesEncerradas,
 });
 

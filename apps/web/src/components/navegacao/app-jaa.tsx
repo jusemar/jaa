@@ -223,21 +223,23 @@ export function AppJaa({
               {areaAtiva === "entregas" && <AreaMinhasEntregas aoAbrirConversa={abrirConversaCom} />}
 
               {areaAtiva === "perfil" && (
-                <div className="flex flex-col gap-8">
-                  <AreaPerfil key={ativa.identidadeId} ehEmpresa={ehEmpresa} />
-                  {/* Da EMPRESA: quando ela recebe pedidos. Fica no perfil dela, junto dos dados públicos. */}
-                  {ativa.tipo === "empresarial" && <HorariosDeFuncionamento key={ativa.empresa.id} empresaId={ativa.empresa.id} />}
-                  {!ehEmpresa && (
-                    <Secao
-                      titulo="Minhas empresas"
-                      descricao="Crie uma empresa para vender pelo Jaaa. Para administrá-la, toque no seu nome (no topo) e escolha a empresa."
-                    >
-                      <AreaEmpresas
-                        aoEmpresaCriada={() => void identidades.recarregar()}
-                      />
-                    </Secao>
-                  )}
-                </div>
+                /* O Perfil é organizado por abas; "Horários" (da empresa) e "Minhas empresas" (da conta) são abas dele. */
+                <AreaPerfil
+                  key={ativa.identidadeId}
+                  ehEmpresa={ehEmpresa}
+                  {...(ativa.tipo === "empresarial"
+                    ? { horarios: <HorariosDeFuncionamento key={ativa.empresa.id} empresaId={ativa.empresa.id} /> }
+                    : {
+                        empresas: (
+                          <Secao
+                            titulo="Minhas empresas"
+                            descricao="Crie uma empresa para vender pelo Jaaa. Para administrá-la, toque no seu nome (no topo) e escolha a empresa."
+                          >
+                            <AreaEmpresas aoEmpresaCriada={() => void identidades.recarregar()} />
+                          </Secao>
+                        ),
+                      })}
+                />
               )}
 
               {ativa.tipo === "empresarial" && areaAtiva === "pedidos" && (

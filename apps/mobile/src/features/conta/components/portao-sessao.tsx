@@ -6,7 +6,6 @@ import { Texto } from "@/components/ui/texto";
 import { Cores, Espaco } from "@/constants/theme";
 import { TelaEntrar } from "@/features/autenticacao/components/tela-entrar";
 import { ProvedorIdentidadeAtiva } from "@/features/identidades/components/provedor-identidade-ativa";
-import { URL_API } from "@/lib/configuracao";
 import { conectarRealtime, desconectarRealtime } from "@/lib/realtime/cliente-realtime";
 import { useContextoConta } from "./provedor-contexto-conta";
 
@@ -36,11 +35,6 @@ export function PortaoSessao({ children }: { children: ReactNode }) {
             {erro} Confira sua conexão e tente de novo.
           </Texto>
           <Botao rotulo="Tentar de novo" centralizado onPress={() => void recarregar()} />
-          {__DEV__ && (
-            <Texto variante="pequeno" cor="conteudoSuave" style={estilos.centro}>
-              Servidor: {URL_API}
-            </Texto>
-          )}
         </View>
       ) : (
         <ActivityIndicator color={Cores.marca} accessibilityLabel="Carregando" />

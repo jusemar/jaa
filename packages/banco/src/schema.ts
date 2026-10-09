@@ -5,6 +5,8 @@
 // Regenerar após mudar opções que afetam tabelas: npm run autenticacao:gerar-schema -w @jaa/api
 // Nomes de tabelas/campos seguem a biblioteca (exceção prevista no CLAUDE.md).
 export * from "./tabelas/autenticacao/better-auth.js";
+// Tabela própria do Jaa (segue as convenções do projeto): dispositivos autorizados a entrar com PIN.
+export * from "./tabelas/autenticacao/dispositivos-autorizados.js";
 
 export * from "./tabelas/empresas/empresas.js";
 export * from "./tabelas/empresas/membros-empresa.js";

@@ -31,8 +31,27 @@ const ambienteSchema = z
     BETTER_AUTH_SECRET: z.string().min(32, "BETTER_AUTH_SECRET deve ter pelo menos 32 caracteres."),
     BETTER_AUTH_URL: z.url(),
     ORIGENS_WEB_PERMITIDAS: listaDeOrigens,
-    // Único mecanismo disponível hoje. Um provedor de SMS real entrará como nova opção.
-    OTP_ENTREGA: z.enum(["desenvolvimento"]),
+    /*
+     * Quem ENTREGA o código (o Better Auth continua gerando e validando):
+     * - "desenvolvimento": exibe o código no terminal; proibido em produção;
+     * - "comtele": SMS real pela Comtele; exige COMTELE_API_KEY e COMTELE_ROTA.
+     */
+    OTP_ENTREGA: z.enum(["desenvolvimento", "comtele"]),
+    // Chave da API da Comtele (Painel Novo). SEGREDO DE SERVIDOR: nunca vai ao Web, ao Mobile nem a log.
+    COMTELE_API_KEY: opcional(z.string().min(1)),
+    // Id da rota de envio contratada na conta Comtele (consultável em GET /routes da API deles).
+    COMTELE_ROTA: opcional(z.coerce.number().int().positive()),
+    /*
+     * OTP por E-MAIL (o Better Auth gera e valida; aqui só se escolhe quem ENTREGA). OPCIONAL:
+     * - ausente ou "desativado": as rotas de e-mail nem existem;
+     * - "desenvolvimento": exibe o código no terminal; proibido em produção;
+     * - "resend": e-mail real pelo Resend; exige RESEND_API_KEY e RESEND_REMETENTE.
+     */
+    OTP_EMAIL_ENTREGA: opcional(z.enum(["desativado", "desenvolvimento", "resend"])),
+    // Chave da API do Resend. SEGREDO DE SERVIDOR: nunca vai ao Web, ao Mobile nem a log.
+    RESEND_API_KEY: opcional(z.string().min(1)),
+    // Remetente de um domínio VERIFICADO no Resend: `Nome <endereco@dominio>` ou só o endereço.
+    RESEND_REMETENTE: opcional(z.string().trim().regex(/^(?:[^<>@]+\s)?<[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>$|^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/, "use `Nome <endereco@dominio>` ou só o endereço.")),
     /*
      * Roteamento real (sequência sugerida + percurso pelas ruas). OPCIONAL: sem o token, o Jaa não
      * chama serviço nenhum e a operação segue com a aproximação local determinística.
@@ -86,6 +105,22 @@ const ambienteSchema = z
         path: ["OTP_ENTREGA"],
         message: "OTP_ENTREGA=desenvolvimento é proibido com NODE_ENV=production.",
       });
+    }
+
+    if (ambiente.OTP_EMAIL_ENTREGA === "desenvolvimento" && ambiente.NODE_ENV === "production") {
+      contexto.addIssue({ code: "custom", path: ["OTP_EMAIL_ENTREGA"], message: "OTP_EMAIL_ENTREGA=desenvolvimento é proibido com NODE_ENV=production." });
+    }
+    if (ambiente.OTP_EMAIL_ENTREGA === "resend") {
+      for (const nome of ["RESEND_API_KEY", "RESEND_REMETENTE"] as const) {
+        if (!ambiente[nome]) contexto.addIssue({ code: "custom", path: [nome], message: `${nome} é obrigatória com OTP_EMAIL_ENTREGA=resend.` });
+      }
+    }
+
+    // Escolher a Comtele sem a configuração dela faria todo pedido de código falhar: a API nem sobe.
+    if (ambiente.OTP_ENTREGA === "comtele") {
+      for (const nome of ["COMTELE_API_KEY", "COMTELE_ROTA"] as const) {
+        if (!ambiente[nome]) contexto.addIssue({ code: "custom", path: [nome], message: `${nome} é obrigatória com OTP_ENTREGA=comtele.` });
+      }
     }
   });
 

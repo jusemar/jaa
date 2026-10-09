@@ -1,4 +1,4 @@
-import type { ContaAtual, CriarIdentidadePessoalEntrada } from "@jaa/contratos";
+import { metodosDeEntradaSchema, type ContaAtual, type CriarIdentidadePessoalEntrada, type MetodosDeEntrada } from "@jaa/contratos";
 import { cabecalhoSessao, clienteAutenticacao } from "./cliente-autenticacao";
 import { URL_API } from "@/lib/configuracao";
 
@@ -25,6 +25,16 @@ async function requisitar<T>(caminho: string, opcoes: RequestInit = {}): Promise
   } catch {
     return { ok: false, mensagem: "Sem conexão com o Jaaa." };
   }
+}
+
+/**
+ * Por onde o código pode chegar neste servidor (consulta pública, a mesma da Web). Qualquer falha
+ * vale como "só telefone": o e-mail nunca é oferecido sem o servidor confirmar que o canal existe.
+ */
+export async function buscarMetodosDeEntrada(): Promise<MetodosDeEntrada> {
+  const resultado = await requisitar<unknown>("/autenticacao/metodos");
+  const lido = resultado.ok ? metodosDeEntradaSchema.safeParse(resultado.dados) : null;
+  return lido?.success ? lido.data : { telefone: true, email: false };
 }
 
 export const concluirCadastro = {

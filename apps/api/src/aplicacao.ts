@@ -130,6 +130,7 @@ export async function criarAplicacao({
     banco,
     autenticacao,
     urlBase: ambiente.BETTER_AUTH_URL,
+    otpPorEmailDisponivel: ambiente.OTP_EMAIL_ENTREGA === "desenvolvimento" || ambiente.OTP_EMAIL_ENTREGA === "resend",
   });
   registrarRotaTesteProtegido(servidor, autenticacao);
   registrarRotasUsuarios(servidor, { banco, autenticacao, armazenamento });

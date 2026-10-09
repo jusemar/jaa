@@ -14,7 +14,7 @@ import { testUtils } from "better-auth/plugins";
 import { and, count, eq, inArray, like, sql } from "drizzle-orm";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { criarAplicacao } from "../src/aplicacao.js";
-import { criarOpcoesAutenticacao } from "../src/features/autenticacao/autenticacao.js";
+import { OTP_EXPIRA_EM_SEGUNDOS, criarOpcoesAutenticacao } from "../src/features/autenticacao/autenticacao.js";
 import {
   derivarEmailTecnico,
   NOME_TECNICO_CONTA,
@@ -479,9 +479,24 @@ describe("OTP incorreto e tentativas", () => {
 describe("OTP expirado", () => {
   const ip = `${PREFIXO_IP_TESTE}3`;
 
-  it("código expirado é recusado", async () => {
+  it("a validade do código é de exatamente 5 minutos (300 s), definida no Better Auth", () => {
+    assert.equal(OTP_EXPIRA_EM_SEGUNDOS, 300);
+    const pluginTelefone = opcoes.plugins.find((plugin) => plugin.id === "phone-number");
+    assert.ok(pluginTelefone && "options" in pluginTelefone, "plugin de telefone não encontrado");
+    assert.equal(pluginTelefone.options?.expiresIn, 300);
+  });
+
+  it("o código nasce válido por 5 minutos; expirado é recusado", async () => {
+    const antes = Date.now();
     assert.equal((await solicitarOtp(TEL_OTP_EXPIRADO, ip)).statusCode, 200);
+    const depois = Date.now();
     const codigo = await obterOtp(TEL_OTP_EXPIRADO);
+
+    // O que vale é o que foi GRAVADO: a expiração do registro fica 300 s depois do pedido.
+    const [verificacao] = await banco.select({ expiraEm: verifications.expiresAt }).from(verifications).where(eq(verifications.identifier, TEL_OTP_EXPIRADO));
+    assert.ok(verificacao, "verificação não gravada");
+    const expiraEm = verificacao.expiraEm.getTime();
+    assert.ok(expiraEm >= antes + 300_000 && expiraEm <= depois + 300_000, `expiração fora de 300 s: ${expiraEm - antes} ms`);
 
     // Simula a passagem do tempo apenas no registro de verificação deste telefone de teste.
     await banco

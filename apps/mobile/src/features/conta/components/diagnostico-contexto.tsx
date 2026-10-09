@@ -5,6 +5,7 @@ import { Botao } from "@/components/ui/botao";
 import { Cartao } from "@/components/ui/superficies";
 import { Texto } from "@/components/ui/texto";
 import { Cores, Espaco } from "@/constants/theme";
+import { URL_API } from "@/lib/configuracao";
 import { useContextoConta } from "./provedor-contexto-conta";
 
 /*
@@ -32,6 +33,8 @@ export function DiagnosticoContexto() {
       <View style={estilos.aviso}>
         <Texto variante="corpoForte">Diagnóstico do contexto</Texto>
         <Texto variante="pequeno">Tela temporária de desenvolvimento — não é a interface do Jaaa.</Texto>
+        {/* O endereço da API só aparece aqui: nunca na entrada nem nas telas comuns. */}
+        <Texto variante="pequeno">Servidor: {URL_API}</Texto>
       </View>
 
       <Linha rotulo="Situação" valor={situacao} />

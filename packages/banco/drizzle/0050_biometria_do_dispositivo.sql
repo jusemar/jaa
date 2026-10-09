@@ -1,0 +1,2 @@
+ALTER TABLE "dispositivos_autorizados" ADD COLUMN "biometria_hash" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "dispositivos_autorizados_biometria_unica" ON "dispositivos_autorizados" USING btree ("biometria_hash") WHERE "dispositivos_autorizados"."biometria_hash" is not null;

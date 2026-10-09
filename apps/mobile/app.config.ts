@@ -87,6 +87,13 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     /*
+     * Botão flutuante de ferramentas (a "engrenagem") do Development Client: desligado por padrão, para
+     * não ficar por cima das telas do app. É recurso SÓ do build de desenvolvimento (não existe em
+     * produção) e o menu continua acessível como sempre: sacudir o aparelho ou `m` no terminal do
+     * Metro — lá dentro, "Tools button" liga/desliga o botão. Mudar isto = novo Development Build.
+     */
+    ["expo-dev-client", { toolsButton: false }],
+    /*
      * Splash NATIVO: o Android (12+) só aceita um ícone centralizado sobre uma cor — não uma arte em
      * tela cheia. Então ele usa a cor de base da arte de carregamento (`COR_DE_FUNDO_DO_CARREGAMENTO`)
      * e o símbolo do Jaaa; a arte inteira entra logo em seguida, no carregamento do app

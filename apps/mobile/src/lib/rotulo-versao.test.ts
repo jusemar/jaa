@@ -84,14 +84,16 @@ describe("marca, ícone e logos do Jaaa", () => {
     const sobre = ler("../components/ui/sobre-app.tsx");
     assert.ok(sobre.includes('require("../../../assets/images/jaaa-logo-versao.png")') && sobre.includes("{AUTORIA_DO_APP}") && sobre.includes("{rotulo.principal}"));
     const entrada = ler("../features/autenticacao/components/tela-entrar.tsx");
-    assert.ok(entrada.includes('require("../../../../assets/images/jaaa-logo-login.png")') && entrada.includes("<SobreApp comLogo={false} />") && entrada.includes("aspectRatio: PROPORCAO_DA_LOGO"));
+    assert.ok(entrada.includes('require("../../../../assets/images/jaaa-logo-login.png")') && entrada.includes("aspectRatio: PROPORCAO_DA_LOGO"));
+    // Versão e build ficam só no Perfil: a tela de entrada não mostra nada técnico.
+    assert.ok(!entrada.includes("SobreApp"));
     assert.ok(!entrada.includes("jaaa-logo-versao"));
     assert.ok(ler("../features/perfil/components/tela-perfil.tsx").includes("<SobreApp />"));
   });
 
   it("login redesenhado sem perder nada: senha com olho, código, criação de conta, cadastro, erro e carregando", () => {
     const login = ler("../features/autenticacao/components/fluxo-login.tsx");
-    for (const parte of ['rotulo="Usuário"', 'rotulo="Senha"', "secureTextEntry={!mostrarSenha}", 'rotulo="Entrar" larguraTotal carregando={ocupado}', "Entrar com código por SMS", "Criar conta com o celular", 'rotulo="Celular com DDD"', 'autoComplete="sms-otp"', 'rotulo="Concluir cadastro"', "Entrar com usuário e senha", "Trocar número", '<Aviso tom="erro">']) assert.ok(login.includes(parte), parte);
+    for (const parte of ['rotulo="Usuário"', 'rotulo="Senha"', "secureTextEntry={!mostrarSenha}", 'rotulo="Entrar" larguraTotal carregando={ocupado}', 'rotulo="Entrar com código"', 'rotulo="Criar conta"', 'rotulo="Celular com DDD"', 'autoComplete="sms-otp"', 'rotulo="Concluir cadastro"', "Trocar número", '<Aviso tom="erro">']) assert.ok(login.includes(parte), parte);
     assert.ok(!login.includes(" style={{"), "sem estilo inline solto");
   });
 });

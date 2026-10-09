@@ -18,7 +18,9 @@ import { TelaPerfilProfissional } from "@/features/profissional/components/tela-
 import { buscarMeuPerfil, enviarFotoPerfil, removerFotoPerfil, salvarPerfil, salvarPrivacidade } from "../lib/api-perfil";
 import { opcoesDaFoto, removerFotoDoPerfil, trocarFotoDoPerfil, type OrigemFoto, type ResultadoFoto } from "../lib/foto-perfil";
 import { obterFoto, prepararFoto } from "../lib/seletor-foto";
+import { FormularioEmail } from "./formulario-email";
 import { FormularioSenha } from "./formulario-senha";
+import { FormularioTelefone } from "./formulario-telefone";
 import { LinkPublico } from "./link-publico";
 
 /*
@@ -316,7 +318,9 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
       )}
 
       {!ehEmpresa && (
-        <Secao titulo="Conta" descricao="Sua senha para entrar sem esperar código.">
+        <Secao titulo="Conta e segurança" descricao="Como você entra no Jaaa.">
+          <FormularioTelefone />
+          <FormularioEmail />
           <FormularioSenha />
         </Secao>
       )}
