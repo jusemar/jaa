@@ -12,6 +12,7 @@ import type {
   StatusPedido,
 } from "@jaa/contratos";
 import { useNarrativa } from "./use-narrativa";
+import { useConversaCardapioDemo } from "./use-conversa-cardapio-demo";
 import { CabecalhoConversa } from "@/features/conversas/components/cabecalho-conversa";
 import { ListaConversas } from "@/features/conversas/components/lista-conversas";
 import { BalaoMensagem } from "@/features/conversas/components/balao-mensagem";
@@ -34,19 +35,20 @@ const empresa: EmpresaPublica = {
   nomeUsuario: "pizzaria_exemplo",
   slug: "pizzaria-exemplo",
 };
-const pizza: ProdutoPublico = {
-  id: "pizza",
-  nome: "Monte sua pizza",
-  descricao: "Escolha o tamanho e o sabor.",
+const prato: ProdutoPublico = {
+  id: "prato",
+  nome: "Monte seu prato",
+  descricao: "Escolha o tamanho e a proteína.",
   precoCentavos: 3990,
   disponibilidade: "disponivel",
-  categoriaId: "pizzas",
-  imagemUrl: null,
+  categoriaId: "pratos",
+  imagemUrl: "/landing/prato-demo.svg",
   personalizavel: true,
 };
 const bebida: ProdutoPublico = {
-  ...pizza,
+  ...prato,
   id: "bebida",
+  imagemUrl: "/landing/bebida-demo.svg",
   nome: "Refrigerante 2 L",
   descricao: "Para acompanhar seu pedido.",
   precoCentavos: 1200,
@@ -61,28 +63,28 @@ const grupos: GrupoOpcoesPublico[] = [
     minimoEscolhas: 1,
     maximoEscolhas: 1,
     opcoes: [
-      { id: "media", nome: "Média", precoAdicionalCentavos: 0 },
+      { id: "media", nome: "Médio", precoAdicionalCentavos: 0 },
       { id: "grande", nome: "Grande", precoAdicionalCentavos: 1000 },
     ],
   },
   {
     id: "sabor",
-    nome: "Sabor",
+    nome: "Proteína",
     instrucao: null,
     minimoEscolhas: 1,
     maximoEscolhas: 1,
     opcoes: [
-      { id: "calabresa", nome: "Calabresa", precoAdicionalCentavos: 0 },
-      { id: "margherita", nome: "Margherita", precoAdicionalCentavos: 0 },
+      { id: "frango", nome: "Frango grelhado", precoAdicionalCentavos: 0 },
+      { id: "carne", nome: "Carne grelhada", precoAdicionalCentavos: 0 },
     ],
   },
 ];
 const secoes = [
   {
-    id: "pizzas",
-    categoriaId: "pizzas",
-    nome: "Pizzas",
-    produtos: [pizza],
+    id: "pratos",
+    categoriaId: "pratos",
+    nome: "Pratos",
+    produtos: [prato],
     montagem: false,
   },
   {
@@ -119,7 +121,7 @@ const conversas: ItemListaConversas[] = [
       tipo: "empresarial",
       nomeExibicao: "Pizzaria · exemplo",
       nomeUsuario: "pizzaria_exemplo",
-      fotoUrl: null,
+      fotoUrl: "/landing/pizzaria-demo.svg",
     },
     ultimaMensagem: mensagem(
       "Nosso cardápio está aqui na conversa.",
@@ -157,9 +159,11 @@ const noServidor = () => false;
 export function ConversaDemo({
   compacta = false,
   cabecalho = true,
+  respostaEmpresa = "Pode sim! Nosso cardápio está aqui na conversa.",
 }: {
   compacta?: boolean;
   cabecalho?: boolean;
+  respostaEmpresa?: string;
 }) {
   const [pessoal, setPessoal] = useState(false);
   // Horários dos componentes reais usam o fuso do navegador; não são pré-renderizados em outro fuso.
@@ -217,7 +221,7 @@ export function ConversaDemo({
           mensagem={mensagem(
             pessoal
               ? "Vamos sim! Me conta."
-              : "Pode sim! Nosso cardápio está aqui na conversa.",
+              : respostaEmpresa,
             false,
             "2",
           )}
@@ -241,9 +245,16 @@ export function ConversaDemo({
     </div>
   );
 }
-export function CardapioDemo({ embutido = false }: { embutido?: boolean }) {
+export function CardapioDemo({
+  embutido = false,
+  produto,
+  aoSelecionarProduto: setProduto,
+}: {
+  embutido?: boolean;
+  produto: ProdutoPublico | null;
+  aoSelecionarProduto: (produto: ProdutoPublico | null) => void;
+}) {
   const [secao, setSecao] = useState<string | null>(null);
-  const [produto, setProduto] = useState<ProdutoPublico | null>(null);
   const [itens, setItens] = useState<string[]>([]);
   function adicionar(
     escolhido: ProdutoPublico,
@@ -316,29 +327,63 @@ export function CardapioDemo({ embutido = false }: { embutido?: boolean }) {
   );
 }
 export function ConversaPedidoDemo() {
-  const [cardapio, setCardapio] = useState(true);
+  const { ref, cardapio, cursor, clique, automatico, montagem, interromper, alternar } = useConversaCardapioDemo();
+  const [produtoManual, setProdutoManual] = useState<ProdutoPublico | null>(null);
+  const produto = automatico ? (montagem ? prato : null) : produtoManual;
+  function assumirControle() {
+    if (automatico) setProdutoManual(produto);
+    interromper();
+  }
   return (
-    <div className="lp-tela lp-conversa-pedido-demo" data-revelar>
+    <div
+      ref={ref}
+      className="lp-tela lp-conversa-pedido-demo"
+      data-revelar
+      data-cursor={cursor}
+      data-clique={clique}
+      onPointerDownCapture={assumirControle}
+      onFocusCapture={assumirControle}
+      onKeyDownCapture={assumirControle}
+      onWheelCapture={assumirControle}
+    >
       <CabecalhoConversa
         outraIdentidade={conversas[0].outraIdentidade}
         presenca={null}
         digitando={false}
         acoes={
-          <button
-            type="button"
-            className="lp-abrir-cardapio"
-            aria-pressed={cardapio}
-            onClick={() => setCardapio((estado) => !estado)}
-          >
-            <IconeCesta className="h-4 w-4" />
-            {cardapio ? "Conversa" : "Cardápio"}
-          </button>
+          <div className="lp-controle-cardapio-demo">
+            <button
+              type="button"
+              className="lp-abrir-cardapio"
+              aria-pressed={cardapio}
+              onClick={alternar}
+              aria-expanded={cardapio}
+            >
+              <IconeCesta className="h-4 w-4" />
+              {cardapio ? "Conversa" : "Cardápio"}
+            </button>
+          </div>
         }
       />
       <div className="chat-wallpaper lp-conversa-pedido-corpo">
-        <ConversaDemo compacta cabecalho={false} />
-        {cardapio && <CardapioDemo embutido />}
+        <ConversaDemo
+          compacta
+          cabecalho={false}
+          respostaEmpresa="Pode sim! Clique no cardápio."
+        />
+        {/* Reserva a altura e preserva produto/carrinho ao alternar a demonstração. */}
+        <div className="lp-cardapio-demo-painel" data-aberto={cardapio} inert={!cardapio} aria-hidden={!cardapio}>
+          <CardapioDemo embutido produto={produto} aoSelecionarProduto={setProdutoManual} />
+        </div>
       </div>
+      {cursor && (
+        <span className="lp-cursor-demo" aria-hidden="true">
+          <span className="lp-cursor-clique" />
+          <svg viewBox="0 0 28 32" fill="none">
+            <path d="M3 2L24 19L14 20L9 29L3 2Z" />
+          </svg>
+        </span>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { IDENTIDADE_DA_VARIANTE, lerVariante, validarUrlApi, varianteDeclarada, varianteDoPacote, VARIANTES } from "./variante.ts";
+import { conferirVarianteDoBinario, IDENTIDADE_DA_VARIANTE, lerVariante, validarUrlApi, varianteDeclarada, varianteDoPacote, VARIANTES } from "./variante.ts";
 
 describe("variante do app", () => {
   it("existem somente dois ambientes", () => {
@@ -40,6 +40,34 @@ describe("variante do app", () => {
     assert.equal(varianteDeclarada("production"), "production");
     assert.equal(varianteDeclarada("preview"), null);
     assert.equal(varianteDeclarada(undefined), null);
+  });
+});
+
+describe("guarda Development × Production", () => {
+  it("cada pacote aceita somente o JavaScript do seu ambiente", () => {
+    assert.deepEqual(conferirVarianteDoBinario("com.jaa.app", "production"), { ok: true });
+    assert.deepEqual(conferirVarianteDoBinario("com.jaa.app.dev", "development"), { ok: true });
+  });
+
+  it("update de development nunca roda no app de produção, nem o contrário", () => {
+    assert.equal(conferirVarianteDoBinario("com.jaa.app", "development").ok, false);
+    assert.equal(conferirVarianteDoBinario("com.jaa.app.dev", "production").ok, false);
+  });
+
+  it("variante ausente ou inventada é recusada em binário conhecido", () => {
+    for (const declarada of [undefined, null, "", "preview", "staging"]) {
+      assert.equal(conferirVarianteDoBinario("com.jaa.app", declarada).ok, false, String(declarada));
+      assert.equal(conferirVarianteDoBinario("com.jaa.app.dev", declarada).ok, false, String(declarada));
+    }
+  });
+
+  it("pacote que não é do Jaaa é recusado", () => {
+    assert.equal(conferirVarianteDoBinario("com.anonymous.mobile", "production").ok, false);
+  });
+
+  it("sem pacote conhecido (binário sem o módulo nativo) não há o que conferir", () => {
+    assert.deepEqual(conferirVarianteDoBinario(null, "development"), { ok: true });
+    assert.deepEqual(conferirVarianteDoBinario(undefined, "production"), { ok: true });
   });
 });
 

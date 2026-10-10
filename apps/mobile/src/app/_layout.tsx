@@ -1,3 +1,7 @@
+// PRIMEIRO import, de propósito: confere que o JavaScript é do mesmo ambiente do app instalado antes
+// de qualquer outro módulo do Jaaa (API, sessão, tarefas) ser carregado.
+import "@/lib/guarda-variante";
+
 import { DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";

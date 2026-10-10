@@ -76,7 +76,10 @@ existe `app.json`).
 | Ambiente | API e banco |
 | --- | --- |
 | `development` | API e PostgreSQL **locais no PC**; celular pela rede Wi-Fi (seção "Rodar") |
-| `production` | futuramente: API pública + Neon. Ainda não existe |
+| `production` | API pública `https://api.jaaa.com.br` + Neon; Web em `https://jaaa.com.br` |
+
+Não existe terceiro ambiente (nada de preview, staging ou homologação), e os dois nunca compartilham
+banco, API, sessão nem canal de update.
 
 O **Jaa Dev** é o Development Client: gerado na nossa máquina (prebuild + Gradle), aberto pelo Metro.
 Não usa o `eas.json`. O APK pode ir para o celular por qualquer meio (arquivo, Drive, adb).
@@ -88,19 +91,41 @@ build — builds não alteram o código-fonte. Cada aparelho mostra o seu no fim
 ("Jaa 0.6.0 · Build 3" e, no Jaa Dev, "Development").
 
 **Builds e updates pelo EAS** (`scripts/distribuicao.ts`, `eas.json`) existem para o app
-DISTRIBUÍDO, que abre sem Metro e por isso exige uma API HTTPS pública — hoje só prevista para
-Production. **Não há APK Development distribuído**: Development não tem API pública, e os scripts
-recusam publicar com localhost, IP interno ou túnel temporário.
+DISTRIBUÍDO, que abre sem Metro e por isso exige uma API HTTPS pública — a de Production.
+**Não há APK Development distribuído**: Development não tem API pública, e os scripts recusam
+publicar com localhost, IP interno ou túnel temporário.
+
+**Production no Android é um APK** (perfil `production` do `eas.json`, `buildType: "apk"`),
+distribuído **diretamente pelo site** `jaaa.com.br` — sem Play Store por enquanto. Quem instalou
+recebe as mudanças compatíveis por update OTA; mudança nativa exige um APK novo (abaixo). O APK novo
+só instala por cima do anterior se for assinado com a MESMA chave: a keystore do EAS não pode ser
+trocada nem perdida.
 
 ```bash
 npm run mobile:versao                              # versão, pacotes, canais, projeto EAS
-npm run mobile:build:production                    # futuro: AAB da Play (pede "PRODUCTION")
-npm run mobile:update:production -- "o que mudou"  # futuro (pede "PRODUCTION")
+npm run mobile:build:production                    # APK de produção (pede "PRODUCTION")
+npm run mobile:update:production -- "o que mudou"  # update OTA de produção (pede "PRODUCTION")
 ```
 
-A URL da API do app distribuído (`EXPO_PUBLIC_JAA_API_URL`, pública) fica nas variáveis de ambiente
-do EAS e é embutida no JavaScript; o app distribuído não tem fallback para localhost. Nenhum segredo
-vai para o EAS: banco, R2 e Better Auth ficam só na API.
+**Variáveis públicas do app distribuído** ficam no ambiente do EAS (nunca no código nem na máquina
+local) e são embutidas no JavaScript em cada build e em cada update. Em `production` as três são
+obrigatórias — o script recusa build e update sem elas:
+
+| Variável | Para quê |
+| --- | --- |
+| `EXPO_PUBLIC_JAA_API_URL` | API (`https://api.jaaa.com.br`); HTTPS pública e estável, sem fallback para localhost |
+| `EXPO_PUBLIC_JAA_SITE_URL` | site (`https://jaaa.com.br`), de onde sai o Link do Jaaa |
+| `EXPO_PUBLIC_MAPBOX_TOKEN` | token PÚBLICO (`pk.`) dos mapas da rota e do pedido; nunca um token secreto |
+
+Todas com visibilidade `plaintext` (o script lê o valor para validar). O `.env.local` do app vale só
+para o desenvolvimento local e não vai para o EAS. Nenhum segredo vai para o EAS: banco, R2 e Better
+Auth ficam só na API.
+
+**Guarda Development × Production** (`src/lib/guarda-variante.ts`, primeiro import do layout raiz):
+na abertura, o pacote realmente instalado é comparado com a variante do JavaScript em execução —
+`com.jaa.app` só aceita `production` e `com.jaa.app.dev` só aceita `development`. Se não baterem o app
+para antes de operar; num update OTA publicado no canal errado, esse erro faz o expo-updates descartar
+o update e voltar ao JavaScript anterior.
 
 **Update OTA serve para**: JS/TS, telas, componentes, estilos, textos, regras e imagens/fontes
 importadas pelo código. A publicação é sempre explícita (nada sai a cada salvamento). O app verifica ao

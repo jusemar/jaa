@@ -29,7 +29,7 @@
         "APP_VARIANT": "production"
       },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "apk"
       }
     }
   }

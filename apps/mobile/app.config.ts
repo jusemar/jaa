@@ -78,7 +78,13 @@ const config: ExpoConfig = {
       "android.permission.POST_NOTIFICATIONS",
       "android.permission.RECORD_AUDIO",
     ],
-    blockedPermissions: ["android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"],
+    blockedPermissions: [
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+      // O modelo do Expo declara "sobrepor a outros apps", que nenhuma função do Jaaa usa. Sai só do
+      // binário de produção: o Development Build fica exatamente como era.
+      ...(variante === "production" ? ["android.permission.SYSTEM_ALERT_WINDOW"] : []),
+    ],
   },
   web: {
     output: "static",

@@ -17,6 +17,8 @@ import { IDENTIDADE_DA_VARIANTE, VARIANTES, validarUrlApi, type Variante } from 
 
 const MOBILE = join(dirname(fileURLToPath(import.meta.url)), "..");
 const VARIAVEL_API = "EXPO_PUBLIC_JAA_API_URL";
+const VARIAVEL_SITE = "EXPO_PUBLIC_JAA_SITE_URL";
+const VARIAVEL_MAPBOX = "EXPO_PUBLIC_MAPBOX_TOKEN";
 const EAS = ["--yes", "eas-cli@latest"];
 
 const CONFIRMACAO: Record<Variante, { pergunta: string; aceita: (resposta: string) => boolean }> = {
@@ -98,23 +100,51 @@ function exigirLogin(variante: Variante): string {
   }
 }
 
-function exigirUrlDaApi(variante: Variante): string {
+type VariaveisPublicas = { api: string; site: string | null; mapbox: boolean };
+
+function comoDefinir(variante: Variante, nome: string, valor: string): string {
+  return `  cd ~/jaa/apps/mobile\n  npx eas-cli@latest env:set ${variante} --name ${nome} --value ${valor} --visibility plaintext`;
+}
+
+/**
+ * Variáveis PÚBLICAS que o JavaScript distribuído embute, lidas do ambiente do EAS (nunca da máquina
+ * local, nunca gravadas aqui). A URL da API é exigida nos dois ambientes; em PRODUCTION também o
+ * endereço do site (Link do Jaaa) e o token público do Mapbox (mapas da rota e do pedido). O token
+ * nunca é impresso.
+ */
+function exigirVariaveisPublicas(variante: Variante): VariaveisPublicas {
   let saida: string;
   try {
     saida = easCapturando(["env:list", variante, "--format", "short"], variante);
   } catch (erro) {
     return falhar(`Não foi possível ler as variáveis do ambiente "${variante}" no EAS.\n${erro instanceof Error ? erro.message : ""}`);
   }
-  const valor = saida.match(new RegExp(`${VARIAVEL_API}=(\\S+)`))?.[1];
-  const resultado = validarUrlApi(valor, { variante, local: false });
-  if (!resultado.ok) {
-    falhar(`BLOQUEIO: falta URL pública estável da API de ${variante}. ${resultado.motivo}
+  const ler = (nome: string): string | undefined => saida.match(new RegExp(`^\\s*${nome}=(\\S+)`, "m"))?.[1];
+
+  const api = validarUrlApi(ler(VARIAVEL_API), { variante, local: false });
+  if (!api.ok) {
+    falhar(`BLOQUEIO: falta URL pública estável da API de ${variante}. ${api.motivo}
 Ela precisa ser HTTPS, pública e estável (nada de localhost, IP interno ou túnel temporário).
-Quando a API estiver publicada:
-  cd ~/jaa/apps/mobile
-  npx eas-cli@latest env:set ${variante} --name ${VARIAVEL_API} --value https://<api> --visibility plaintext`);
+${comoDefinir(variante, VARIAVEL_API, "https://<api>")}`);
   }
-  return resultado.url;
+  if (variante !== "production") return { api: api.url, site: null, mapbox: false };
+
+  // Mesma exigência da API: HTTPS, público e estável.
+  const valorDoSite = ler(VARIAVEL_SITE);
+  const site = valorDoSite ? validarUrlApi(valorDoSite, { variante, local: false }) : null;
+  if (!site?.ok) {
+    falhar(`BLOQUEIO: falta o endereço público do site em ${VARIAVEL_SITE} (production). ${site ? site.motivo : "A variável não foi definida."}
+Sem ele o app não monta o Link do Jaaa.
+${comoDefinir(variante, VARIAVEL_SITE, "https://<site>")}`);
+  }
+
+  // Só o token PÚBLICO (pk.) pode ir para o app; o de rotas é segredo da API.
+  if (!ler(VARIAVEL_MAPBOX)?.startsWith("pk.")) {
+    falhar(`BLOQUEIO: falta o token PÚBLICO do Mapbox em ${VARIAVEL_MAPBOX} (production), ou ele não é um token "pk." em texto simples.
+Sem ele os mapas da rota e do pedido não aparecem. Nunca use aqui um token secreto ("sk.").
+${comoDefinir(variante, VARIAVEL_MAPBOX, "<token pk.>")}`);
+  }
+  return { api: api.url, site: site.url, mapbox: true };
 }
 
 function avisarSobreGit(): void {
@@ -138,7 +168,7 @@ function lerVarianteExplicita(acao: string, valor: string | undefined): Variante
 function preparar(acao: "build" | "update", variante: Variante): ConfigExpo {
   const config = exigirConfiguracao(variante);
   const conta = exigirLogin(variante);
-  const api = exigirUrlDaApi(variante);
+  const publicas = exigirVariaveisPublicas(variante);
   const titulo = `${acao === "build" ? "GERANDO BUILD" : "PUBLICANDO UPDATE"} ${variante.toUpperCase()}`;
   const linha = "=".repeat(titulo.length + 8);
   console.log(`\n${linha}\n=== ${titulo} ===\n${linha}\n`);
@@ -146,13 +176,15 @@ function preparar(acao: "build" | "update", variante: Variante): ConfigExpo {
   console.log(`  conta Expo: ${conta}`);
   console.log(`  versão:     ${config.version} (runtime ${config.version})`);
   console.log(`  canal:      ${IDENTIDADE_DA_VARIANTE[variante].canal}`);
-  console.log(`  API:        ${api}`);
+  console.log(`  API:        ${publicas.api}`);
+  if (publicas.site) console.log(`  site:       ${publicas.site}`);
+  if (publicas.mapbox) console.log("  Mapbox:     token público configurado");
   return config;
 }
 
 async function gerarBuild(variante: Variante): Promise<void> {
   preparar("build", variante);
-  console.log(`  formato:    ${variante === "development" ? "APK instalável por link/QR (abre direto, sem Metro)" : "AAB para a Google Play"}`);
+  console.log(`  formato:    ${variante === "development" ? "APK instalável por link/QR (abre direto, sem Metro)" : "APK de produção, distribuído diretamente pelo site (sem Play Store)"}`);
   console.log("  build nº:   o EAS soma 1 ao último deste pacote (nada muda no código-fonte)\n");
   avisarSobreGit();
   await confirmar(variante);

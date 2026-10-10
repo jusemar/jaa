@@ -40,6 +40,25 @@ export function varianteDeclarada(valor: unknown): Variante | null {
   return ehVariante(valor) ? valor : null;
 }
 
+export type ResultadoGuardaDeVariante = { ok: true } | { ok: false; motivo: string };
+
+/**
+ * O JavaScript em execução é o do MESMO ambiente do binário instalado? `com.jaa.app` só aceita
+ * `production` e `com.jaa.app.dev` só aceita `development`. É a última barreira contra um update
+ * publicado no canal errado: o pacote é do binário, a variante declarada vem do JavaScript.
+ *
+ * Pacote desconhecido (null) só acontece onde não há o que conferir — binário sem o módulo nativo que
+ * informa o pacote, ou fora do Android — e por isso passa.
+ */
+export function conferirVarianteDoBinario(pacote: string | null | undefined, declarada: unknown): ResultadoGuardaDeVariante {
+  if (pacote === null || pacote === undefined || pacote === "") return { ok: true };
+  const doBinario = varianteDoPacote(pacote);
+  if (!doBinario) return { ok: false, motivo: `O pacote instalado (${pacote}) não é de nenhum ambiente do Jaaa.` };
+  const doJavaScript = varianteDeclarada(declarada);
+  if (doJavaScript === doBinario) return { ok: true };
+  return { ok: false, motivo: `O aplicativo instalado é de ${doBinario} (${pacote}), mas o JavaScript é de ${doJavaScript ?? "ambiente não declarado"}.` };
+}
+
 // Endereços que só existem na máquina de quem desenvolve, ou que mudam a cada sessão.
 const HOST_LOCAL = /^(localhost|127\.|10\.|192\.168\.|172\.|0\.0\.0\.0$|\[?::1\]?$)|\.local$/;
 const TUNEL_TEMPORARIO = /(^|\.)(loca\.lt|localtunnel\.me|ngrok\.io|ngrok\.app|ngrok-free\.app|ngrok-free\.dev|trycloudflare\.com|serveo\.net|localhost\.run|lhr\.life|tunnelmole\.net|pinggy\.link)$/;

@@ -1299,3 +1299,76 @@
     font-size: 25px;
   }
 }
+
+/* O cursor usa coordenadas locais dos controles, inclusive no mobile. */
+.lp-conversa-pedido-demo {
+  position: relative;
+}
+.lp-controle-cardapio-demo {
+  position: relative;
+}
+.lp-cursor-demo {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: 26px;
+  height: 30px;
+  pointer-events: none;
+  transform: translate(var(--lp-cursor-repouso-x), var(--lp-cursor-repouso-y));
+  transition: transform 1400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.lp-cursor-demo svg {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  fill: var(--cor-conteudo);
+  stroke: var(--cor-superficie);
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 18%));
+}
+.lp-conversa-pedido-demo[data-cursor="controle"] .lp-cursor-demo {
+  transform: translate(var(--lp-cursor-controle-x), var(--lp-cursor-controle-y));
+}
+.lp-conversa-pedido-demo[data-cursor="prato"] .lp-cursor-demo {
+  transform: translate(var(--lp-cursor-prato-x), var(--lp-cursor-prato-y));
+}
+.lp-cursor-clique {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  left: -12px;
+  top: -12px;
+  border: 2px solid var(--cor-marca);
+  border-radius: 50%;
+  opacity: 0;
+}
+.lp-conversa-pedido-demo[data-clique="true"] .lp-cursor-clique {
+  animation: lp-cursor-clicar 350ms ease-out;
+}
+.lp-conversa-pedido-demo[data-clique="true"] .lp-cursor-demo svg {
+  transform-origin: 3px 2px;
+  animation: lp-cursor-pressionar 350ms ease-in-out;
+}
+@keyframes lp-cursor-pressionar {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(0.84); }
+}
+.lp-cardapio-demo-painel {
+  height: var(--lp-altura-cardapio);
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: opacity 250ms ease;
+}
+.lp-cardapio-demo-painel[data-aberto="false"] {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+@keyframes lp-cursor-clicar {
+  from { opacity: 1; transform: scale(0.5); }
+  to { opacity: 0; transform: scale(1.4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-cursor-demo { display: none; }
+}
