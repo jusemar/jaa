@@ -8,10 +8,12 @@ import { Aviso, Carregando, Cartao, Secao } from "@/components/ui/superficies";
 import { Texto } from "@/components/ui/texto";
 import { Cores, Espaco, Raio } from "@/constants/theme";
 import { MapaPonto } from "@/features/enderecos/components/mapa-ponto";
+import { MapaPontoMapbox, useMapboxDoMapaDePonto } from "@/features/enderecos/components/mapa-ponto-mapbox";
 import { consultarCepNaApi } from "@/features/enderecos/lib/api-enderecos";
 import { MENSAGEM_CEP, criarConsultorCep, type SituacaoCep } from "@/features/enderecos/lib/consulta-cep";
 import { mascararCep, normalizarUf } from "@/features/enderecos/lib/formulario-endereco";
 import { CENTRO_PADRAO } from "@/features/enderecos/lib/mapa-ponto";
+import { orientacaoDoMapaDePonto } from "@/features/enderecos/lib/mapa-ponto-mapbox";
 import { confirmarPontoBase, salvarBase, sugerirPontoBase } from "../lib/api-perfil-profissional";
 import { enderecoDoFormularioMudou } from "../lib/apresentacao-perfil-profissional";
 import { Divisoria, type PropsEtapa } from "./pecas";
@@ -216,9 +218,13 @@ function Passo({ numero, rotulo, feito }: { numero: number; rotulo: string; feit
 }
 
 /**
- * Mapa para marcar a base — o MESMO mapa do endereço de entrega (marcador fixo no centro, a pessoa
- * arrasta o mapa). Abre no ponto já confirmado ou, sem ele, no palpite do servidor para o endereço:
- * o marcador mostra onde o endereço está. O ponto só vale depois de "Confirmar local".
+ * Mapa para marcar a base — Mapbox, como na Web: abre no ponto já confirmado ou, sem ele, no palpite do
+ * servidor para o endereço, com o marcador nesse lugar; tocar no mapa ou arrastar o marcador ajusta.
+ * Sem palpite não há marcador até a pessoa tocar (o ponto nunca nasce do centro padrão). O ponto só
+ * vale depois de "Confirmar local".
+ *
+ * Quando o Mapbox não pode desenhar (binário sem o SDK, sem token), fica o mapa de blocos de antes:
+ * marcador fixo no centro e a pessoa arrasta o mapa.
  */
 function ConfirmarNoMapa({ pontoAtual, confirmando, bloqueado, aoConfirmar, aoCancelar }: { pontoAtual: Coordenadas | null; confirmando: boolean; bloqueado: boolean; aoConfirmar: (ponto: Coordenadas) => void; aoCancelar: () => void }) {
   // undefined = ainda buscando o palpite do endereço.
@@ -226,6 +232,7 @@ function ConfirmarNoMapa({ pontoAtual, confirmando, bloqueado, aoConfirmar, aoCa
   // null = sem ponto: sem palpite, a pessoa precisa levar o mapa até o lugar antes de confirmar.
   const [ponto, setPonto] = useState<Coordenadas | null>(pontoAtual);
   const [semSugestao, setSemSugestao] = useState(false);
+  const mapbox = useMapboxDoMapaDePonto();
 
   useEffect(() => {
     if (pontoAtual) return;
@@ -251,9 +258,9 @@ function ConfirmarNoMapa({ pontoAtual, confirmando, bloqueado, aoConfirmar, aoCa
   return (
     <Cartao style={estilos.cartao}>
       <Texto cor="conteudoSuave">
-        {semSugestao ? "Não achamos o endereço no mapa. Arraste o mapa até o marcador ficar no local exato." : pontoAtual ? "O marcador está no local confirmado. Arraste o mapa para ajustar." : "O marcador está onde achamos seu endereço. Confira e arraste o mapa para ajustar."}
+        {mapbox ? orientacaoDoMapaDePonto({ semSugestao }) : semSugestao ? "Não achamos o endereço no mapa. Arraste o mapa até o marcador ficar no local exato." : pontoAtual ? "O marcador está no local confirmado. Arraste o mapa para ajustar." : "O marcador está onde achamos seu endereço. Confira e arraste o mapa para ajustar."}
       </Texto>
-      {centro ? <MapaPonto centro={centro} aoMover={mover} /> : <Carregando texto="Procurando o endereço no mapa…" />}
+      {!centro ? <Carregando texto="Procurando o endereço no mapa…" /> : mapbox ? <MapaPontoMapbox mapbox={mapbox} centro={centro} ponto={ponto} aoMoverPonto={setPonto} /> : <MapaPonto centro={centro} aoMover={mover} />}
       <View style={estilos.acoes}>
         <Botao rotulo="Confirmar local" carregando={confirmando} textoCarregando="Confirmando…" disabled={bloqueado || !ponto} onPress={() => ponto && aoConfirmar(ponto)} />
         <Botao rotulo="Cancelar" aparencia="discreto" disabled={bloqueado} onPress={aoCancelar} />
