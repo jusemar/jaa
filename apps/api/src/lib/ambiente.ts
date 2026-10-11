@@ -96,6 +96,22 @@ const ambienteSchema = z
       if (situacaoArmazenamentoPrivado(ambiente) === "parcial") {
         contexto.addIssue({ code: "custom", path: ["R2_BUCKET_PRIVADO"], message: `Armazenamento privado incompleto: configure ${VARIAVEIS_PRIVADO.join(", ")} juntas (ou nenhuma).` });
       }
+
+      /*
+       * Chaves S3 do R2 têm forma fixa: ID de 32 e segredo de 64 caracteres hexadecimais. Valor trocado
+       * de campo (o segredo colado no ID) ou o token de API da Cloudflare no lugar delas passava pela
+       * validação e só falhava no primeiro upload ("Credential access key has length 64, should be 32"),
+       * com as imagens sumindo em produção. Aqui a API nem sobe e a publicação anterior continua no ar.
+       * Só vale para o R2 de verdade: com R2_ENDPOINT (outro serviço compatível) o formato é do provedor.
+       */
+      if (!ambiente.R2_ENDPOINT) {
+        for (const [nome, tamanho] of FORMATO_DAS_CHAVES_R2) {
+          const valor = ambiente[nome];
+          if (valor && !new RegExp(`^[0-9a-f]{${tamanho}}$`).test(valor)) {
+            contexto.addIssue({ code: "custom", path: [nome], message: `formato inesperado: a chave S3 do R2 tem ${tamanho} caracteres hexadecimais (confira se ID e segredo não estão trocados).` });
+          }
+        }
+      }
     }
 
     // Segurança: a entrega de desenvolvimento exibe o código no terminal e nunca pode ir para produção.
@@ -137,6 +153,14 @@ export type SituacaoArmazenamento = "ausente" | "parcial" | "completo";
 
 const VARIAVEIS_PUBLICO = ["R2_CONTA_ID", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_URL_PUBLICA"] as const;
 const VARIAVEIS_PRIVADO = ["R2_CONTA_ID", "R2_BUCKET_PRIVADO", "R2_ACCESS_KEY_ID_PRIVADO", "R2_SECRET_ACCESS_KEY_PRIVADO"] as const;
+
+// Forma das credenciais S3 do R2 (nome da variável → quantidade de caracteres hexadecimais).
+const FORMATO_DAS_CHAVES_R2 = [
+  ["R2_ACCESS_KEY_ID", 32],
+  ["R2_SECRET_ACCESS_KEY", 64],
+  ["R2_ACCESS_KEY_ID_PRIVADO", 32],
+  ["R2_SECRET_ACCESS_KEY_PRIVADO", 64],
+] as const;
 
 type VariaveisR2 = Partial<Pick<Ambiente, (typeof VARIAVEIS_PUBLICO)[number] | (typeof VARIAVEIS_PRIVADO)[number]>>;
 

@@ -269,6 +269,27 @@ describe("configuração público × privado", () => {
     for (const valor of ["conta-teste", "jaa-privado", "id-privado-teste"]) assert.ok(!erros.includes(`=${valor}`) && !erros.includes(`: ${valor}`), valor);
   });
 
+  it("produção recusa chave do R2 fora do formato (ex.: o segredo colado no campo do ID)", () => {
+    const id = "a".repeat(32);
+    const segredo = "b".repeat(64);
+    const validas = { ...CONTA, ...PUBLICO, ...PRIVADO, R2_ACCESS_KEY_ID: id, R2_SECRET_ACCESS_KEY: segredo, R2_ACCESS_KEY_ID_PRIVADO: id, R2_SECRET_ACCESS_KEY_PRIVADO: segredo };
+    const producao = { ...BASE_AMBIENTE, NODE_ENV: "production", OTP_ENTREGA: "comtele", COMTELE_API_KEY: "chave", COMTELE_ROTA: "1" };
+    assert.doesNotThrow(() => carregarAmbiente({ ...producao, ...validas }));
+
+    for (const nome of ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ACCESS_KEY_ID_PRIVADO", "R2_SECRET_ACCESS_KEY_PRIVADO"] as const) {
+      const trocada = nome.includes("SECRET") ? id : segredo;
+      assert.throws(
+        () => carregarAmbiente({ ...producao, ...validas, [nome]: trocada }),
+        (erro: unknown) => String(erro).includes(`- ${nome}: formato inesperado`) && !String(erro).includes(trocada),
+        nome,
+      );
+    }
+
+    // Fora de produção nada muda, e com R2_ENDPOINT (outro serviço compatível) o formato é do provedor.
+    assert.doesNotThrow(() => ambiente({ ...validas, R2_ACCESS_KEY_ID: segredo }));
+    assert.doesNotThrow(() => carregarAmbiente({ ...producao, ...validas, R2_ACCESS_KEY_ID: "chave-de-outro-provedor", R2_ENDPOINT: "https://s3.exemplo.com" }));
+  });
+
   it("linha vazia no .env vale como ausente para as variáveis privadas", () => {
     const amb = ambiente({ ...CONTA, ...PUBLICO, R2_BUCKET_PRIVADO: "", R2_ACCESS_KEY_ID_PRIVADO: "", R2_SECRET_ACCESS_KEY_PRIVADO: "" });
     assert.equal(situacaoArmazenamentoPrivado(amb), "ausente");
