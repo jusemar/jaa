@@ -5,5 +5,5 @@ export default function PerfilScreen() {
   const { ativa } = useIdentidadeAtiva();
   if (!ativa) return null;
   // `key`: agindo como a empresa, "meu perfil" é o perfil DA EMPRESA.
-  return <TelaPerfil key={ativa.identidadeId} ehEmpresa={ativa.tipo === "empresarial"} />;
+  return <TelaPerfil key={ativa.identidadeId} ehEmpresa={ativa.tipo === "empresarial"} empresaId={ativa.tipo === "empresarial" ? ativa.empresa.id : undefined} />;
 }

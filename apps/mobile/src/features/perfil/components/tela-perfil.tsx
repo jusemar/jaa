@@ -13,7 +13,9 @@ import { Tela } from "@/components/ui/tela";
 import { Texto } from "@/components/ui/texto";
 import { Cores, Espaco, Raio } from "@/constants/theme";
 import { useContextoConta } from "@/features/conta/components/provedor-contexto-conta";
+import { HorariosDeFuncionamento } from "@/features/empresas/components/horarios-de-funcionamento";
 import { MinhasEmpresas } from "@/features/empresas/components/minhas-empresas";
+import { ROTULO_DA_ABA_DA_EMPRESA, abasDoPerfilDaEmpresa, type AbaPerfilEmpresa } from "@/features/empresas/lib/rascunho-funcionamento";
 import { TelaPerfilProfissional } from "@/features/profissional/components/tela-perfil-profissional";
 import { buscarMeuPerfil, enviarFotoPerfil, removerFotoPerfil, salvarPerfil, salvarPrivacidade } from "../lib/api-perfil";
 import { opcoesDaFoto, removerFotoDoPerfil, trocarFotoDoPerfil, type OrigemFoto, type ResultadoFoto } from "../lib/foto-perfil";
@@ -29,9 +31,13 @@ import { LinkPublico } from "./link-publico";
  * Três blocos, na ordem em que as pessoas pensam: quem eu sou (foto, nome, frase), como estou (status
  * escolhido) e quem vê o quê (privacidade). Depois, o que é da CONTA e só existe para a pessoa: link
  * público, Perfil profissional (abre DENTRO de Perfil, como na Web), senha e Minhas empresas.
+ *
+ * Agindo como a EMPRESA, a tela é organizada pelas mesmas áreas da Web, uma por vez: Perfil ·
+ * Privacidade · Horários (`empresaId` vem da identidade operável que o servidor devolveu).
  */
-export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
+export function TelaPerfil({ ehEmpresa, empresaId }: { ehEmpresa: boolean; empresaId?: string | undefined }) {
   const router = useRouter();
+  const [aba, setAba] = useState<AbaPerfilEmpresa>("perfil");
   const [perfil, setPerfil] = useState<MeuPerfil | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -189,8 +195,38 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
         : { rotulo: `Remover ${rotuloFoto}`, executar: removerFoto, perigosa: true },
   );
 
+  // A pessoa vê tudo numa coluna, como sempre; a empresa vê uma área por vez.
+  const mostra = (area: AbaPerfilEmpresa) => !ehEmpresa || aba === area;
+
   return (
     <Tela>
+      {ehEmpresa && (
+        <View accessibilityRole="tablist" accessibilityLabel="Áreas do perfil" style={estilos.abas}>
+          {abasDoPerfilDaEmpresa(Boolean(empresaId)).map((item) => {
+            const atual = aba === item;
+            return (
+              <Pressable
+                key={item}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: atual }}
+                onPress={() => {
+                  // Mensagens de uma área não acompanham a pessoa para a outra.
+                  setAviso(null);
+                  setErro(null);
+                  setAba(item);
+                }}
+                style={[estilos.aba, atual && estilos.abaAtual]}>
+                <Texto variante="corpoMedio" cor={atual ? "marca" : "conteudoSuave"}>
+                  {ROTULO_DA_ABA_DA_EMPRESA[item]}
+                </Texto>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
+      {mostra("perfil") && (
+      <>
       <Secao titulo={ehEmpresa ? "Perfil da empresa" : "Meu perfil"} descricao={ehEmpresa ? "É isto que seus clientes veem na conversa." : "É isto que as outras pessoas veem de você."}>
         <Cartao style={estilos.cartao}>
           <View style={estilos.foto}>
@@ -282,7 +318,10 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
           {perfil.statusEscolhido === "invisivel" && <Aviso tom="atencao">Invisível: ninguém vê seu status nem se você está conectado. Você continua conversando normalmente.</Aviso>}
         </Cartao>
       </Secao>
+      </>
+      )}
 
+      {mostra("privacidade") && (
       <Secao titulo="Privacidade" descricao="Quem pode ver cada coisa. Nada aqui muda quem pode falar com você.">
         <Cartao style={estilos.cartao}>
           <SeletorVisibilidade rotulo="Quem vê minha foto" valor={perfil.privacidade.visibilidadeFoto} aoMudar={(valor) => mudarPrivacidade({ visibilidadeFoto: valor })} />
@@ -303,6 +342,9 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
           </View>
         </Cartao>
       </Secao>
+      )}
+
+      {ehEmpresa && aba === "horarios" && empresaId && <HorariosDeFuncionamento empresaId={empresaId} />}
 
       {aviso && (
         <Texto cor="marca" accessibilityLiveRegion="polite">
@@ -331,7 +373,7 @@ export function TelaPerfil({ ehEmpresa }: { ehEmpresa: boolean }) {
         </Secao>
       )}
 
-      {ehEmpresa && <Aviso>Pedidos, produtos, logística e horários de funcionamento da empresa são administrados no Jaaa Web.</Aviso>}
+      {ehEmpresa && aba === "perfil" && <Aviso>Pedidos, produtos e logística da empresa são administrados no Jaaa Web.</Aviso>}
 
       {__DEV__ && <Botao aparencia="secundario" rotulo="Diagnóstico do contexto (desenvolvimento)" onPress={() => router.push("/diagnostico")} />}
 
@@ -362,6 +404,9 @@ function SeletorVisibilidade({ rotulo, valor, aoMudar }: { rotulo: string; valor
 const estilos = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   cartao: { gap: Espaco.quatro, padding: Espaco.quatro },
+  abas: { borderBottomColor: Cores.borda, borderBottomWidth: 1, flexDirection: "row" },
+  aba: { alignItems: "center", borderBottomColor: "transparent", borderBottomWidth: 2, flex: 1, justifyContent: "center", marginBottom: -1, minHeight: 44, paddingHorizontal: Espaco.dois },
+  abaAtual: { borderBottomColor: Cores.marca },
   foto: { alignItems: "center", flexDirection: "row", gap: Espaco.quatro },
   avatarTocavel: { borderRadius: 999 },
   pressionado: { opacity: 0.7 },
