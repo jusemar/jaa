@@ -10,6 +10,7 @@
     "test": "tsx ../../packages/banco/scripts/com-banco-teste.ts tsx --env-file-if-exists=.env --import ./testes/apoio/exigir-banco-de-teste.ts --test \"testes/**/*.test.ts\"",
     "test:isolado": "npm test",
     "test:malha-oficial": "tsx ../../packages/banco/scripts/com-banco-teste.ts tsx --env-file-if-exists=.env --import ./testes/apoio/exigir-banco-de-teste.ts --test \"testes/malha-oficial/*.malha.ts\"",
+    "app:publicar-apk": "tsx --env-file-if-exists=.env scripts/publicar-apk.ts",
     "autenticacao:gerar-schema": "npx --yes auth@1.7.4 generate --config ./scripts/better-auth-schema.ts --output ../../packages/banco/src/tabelas/autenticacao/better-auth.ts --yes"
   },
   "dependencies": {

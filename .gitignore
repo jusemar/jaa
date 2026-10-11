@@ -24,3 +24,6 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Binários do aplicativo Android: o APK oficial fica no armazenamento de arquivos, nunca no Git
+*.[aA][pP][kK]

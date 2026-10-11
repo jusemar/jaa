@@ -8,6 +8,7 @@ import {
   MapaDemo,
   RotaEntregadorDemo,
 } from "./demonstracoes";
+import { urlOficialDoApk } from "../lib/download-do-app";
 import { MovimentoLanding } from "./movimento-landing";
 import "../landing.css";
 
@@ -20,18 +21,9 @@ function CriarConta({ texto = "Criar conta grátis" }: { texto?: string }) {
   );
 }
 export function LandingPage() {
-  const downloadConfigurado = process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL;
-  // Somente endereços HTTPS completos; nunca há link para um APK inexistente.
-  let download: string | null = null;
-  try {
-    if (
-      downloadConfigurado &&
-      new URL(downloadConfigurado).protocol === "https:"
-    )
-      download = downloadConfigurado;
-  } catch {
-    /* Configuração ausente ou inválida: estado indisponível. */
-  }
+  // Download DIRETO do armazenamento de arquivos; sem endereço oficial, nunca há link para um APK
+  // inexistente.
+  const download = urlOficialDoApk(process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL);
   return (
     <div className="lp">
       <MovimentoLanding />

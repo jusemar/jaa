@@ -12,7 +12,11 @@ Logo: `/jaaa-logo-login.png`, já disponível na Web. Símbolo: `/landing/jaaa-s
 
 ## Download
 
-Configure `NEXT_PUBLIC_APP_DOWNLOAD_URL` no ambiente local com a URL HTTPS oficial e reinicie/recompile a Web. Sem URL válida, a página informa "Download em breve", sem link. Nenhum APK ou badge de loja foi criado.
+O botão "Baixar aplicativo" usa `NEXT_PUBLIC_APP_DOWNLOAD_URL` e o navegador baixa o APK DIRETO desse endereço — o armazenamento público de arquivos (Cloudflare R2). Nenhum byte passa pela Web: não existe rota, função nem arquivo em `public` para o APK. Sem URL HTTPS válida, a página informa "Download em breve", sem link.
+
+O arquivo salvo se chama `jaaa.apk` porque o próprio armazenamento o entrega assim (`Content-Disposition`, gravado junto com o objeto) e o endereço termina em `jaaa.apk`. Um link para outro domínio ignora o atributo `download`, então não é a página que decide o nome.
+
+Publicar ou trocar o APK: `npm run app:publicar-apk -w @jaa/api -- <arquivo.apk>` (script do servidor, com as credenciais dele). O endereço é fixo e o objeto é gravado com `Cache-Control: no-cache`: trocar o arquivo não exige mudar a variável nem publicar a Web de novo.
 
 ## Movimento e acessibilidade
 
