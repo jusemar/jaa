@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import sharp from "sharp";
 import { assinarRequisicaoS3, codificarCaminho } from "../src/lib/armazenamento/assinatura-s3.js";
-import { criarArmazenamentoR2 } from "../src/lib/armazenamento/armazenamento-r2.js";
+import { criarArmazenamentoR2, ErroDoArmazenamentoR2 } from "../src/lib/armazenamento/armazenamento-r2.js";
 import { ImagemInvalidaErro, montarChave, processarImagem } from "../src/lib/armazenamento/pipeline-imagem.js";
 
 /*
@@ -100,6 +100,34 @@ describe("armazenamento R2 (fetch falso, sem rede)", () => {
     // Remover é idempotente: 404 não é erro para quem só quer garantir que o arquivo sumiu.
     await comStatus(404).remover("x");
     await assert.rejects(() => comStatus(500).remover("x"));
+  });
+
+  it("recusa do provedor registra Code, Message e RequestId, sem credencial e sem mudar a mensagem pública", async () => {
+    const xml = `<?xml version="1.0"?><Error><Code>InvalidArgument</Code><Message>Chave ${configuracao.accessKeyId} com ${configuracao.secretAccessKey} recusada</Message><RequestId>req-123</RequestId></Error>`;
+    const armazenamento = criarArmazenamentoR2({ ...configuracao, buscar: async () => new Response(xml, { status: 400 }) });
+
+    const erro = await armazenamento.salvar({ chave: "x", conteudo: Buffer.from("a"), tipoConteudo: "image/webp" }).then(
+      () => null,
+      (falha: unknown) => falha,
+    );
+    assert.ok(erro instanceof ErroDoArmazenamentoR2);
+    // A mensagem é a que a resposta 500 carrega: continua genérica.
+    assert.equal(erro.message, "Armazenamento respondeu 400 ao gravar o arquivo.");
+    assert.deepEqual(erro.provedor, { status: 400, codigo: "InvalidArgument", mensagem: "Chave [oculto] com [oculto] recusada", requestId: "req-123", formatoDasCredenciais: "inesperado" });
+    const registrado = JSON.stringify({ ...erro, pilha: erro.stack });
+    assert.equal(registrado.includes(configuracao.secretAccessKey), false);
+    assert.equal(registrado.includes(configuracao.accessKeyId), false);
+    assert.equal(/authorization|signature/i.test(registrado), false);
+  });
+
+  it("resposta de erro sem XML usa o identificador da Cloudflare e não quebra", async () => {
+    const armazenamento = criarArmazenamentoR2({ ...configuracao, buscar: async () => new Response("erro", { status: 400, headers: { "cf-ray": "abc-GRU" } }) });
+    const erro = await armazenamento.remover("x").then(
+      () => null,
+      (falha: unknown) => falha,
+    );
+    assert.ok(erro instanceof ErroDoArmazenamentoR2);
+    assert.deepEqual(erro.provedor, { status: 400, codigo: null, mensagem: null, requestId: "abc-GRU", formatoDasCredenciais: "inesperado" });
   });
 
   it("sem domínio público não inventa URL", () => {

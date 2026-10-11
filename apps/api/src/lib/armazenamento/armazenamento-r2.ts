@@ -33,6 +33,58 @@ const REGIAO_R2 = "auto";
 
 type ConfiguracaoBucketR2 = Omit<ConfiguracaoR2, "urlPublica">;
 
+/** O que o R2 disse ao recusar, já sem nada sensível. Vai para o LOG do servidor, nunca para o cliente. */
+export interface DiagnosticoR2 {
+  status: number;
+  codigo: string | null;
+  mensagem: string | null;
+  requestId: string | null;
+  /** Só a FORMA das credenciais (o valor nunca): chave de acesso do R2 tem 32 caracteres hexadecimais e a secreta, 64. */
+  formatoDasCredenciais: "esperado" | "inesperado";
+}
+
+/**
+ * A mensagem do erro continua genérica (é ela que a resposta HTTP 500 carrega); o detalhe do provedor
+ * fica em `provedor`, que o log estruturado do servidor registra junto do erro.
+ */
+export class ErroDoArmazenamentoR2 extends Error {
+  readonly provedor: DiagnosticoR2;
+
+  constructor(operacao: "gravar" | "remover", provedor: DiagnosticoR2) {
+    super(`Armazenamento respondeu ${provedor.status} ao ${operacao} o arquivo.`);
+    this.name = "ErroDoArmazenamentoR2";
+    this.provedor = provedor;
+  }
+}
+
+const TAMANHO_MAXIMO_DO_DIAGNOSTICO = 300;
+
+function campoDoXml(xml: string, nome: string): string | null {
+  const valor = new RegExp(`<${nome}>([^<]*)</${nome}>`).exec(xml)?.[1]?.trim();
+  return valor ? valor : null;
+}
+
+/*
+ * Lê o XML de erro do R2 (<Error><Code>…</Code><Message>…</Message></Error>) e guarda só Code, Message
+ * e RequestId. Nada da requisição entra aqui (URL, cabeçalhos, Authorization, assinatura), e as
+ * credenciais são apagadas do texto caso o provedor as repita na mensagem.
+ */
+async function lerDiagnosticoR2(resposta: Response, configuracao: ConfiguracaoBucketR2): Promise<DiagnosticoR2> {
+  const xml = (await resposta.text().catch(() => "")).slice(0, 4000);
+  const limpar = (texto: string | null) =>
+    texto === null
+      ? null
+      : texto.split(configuracao.secretAccessKey).join("[oculto]").split(configuracao.accessKeyId).join("[oculto]").slice(0, TAMANHO_MAXIMO_DO_DIAGNOSTICO);
+
+  return {
+    status: resposta.status,
+    codigo: limpar(campoDoXml(xml, "Code")),
+    mensagem: limpar(campoDoXml(xml, "Message")),
+    requestId: limpar(campoDoXml(xml, "RequestId") ?? resposta.headers.get("cf-ray")),
+    formatoDasCredenciais: /^[0-9a-f]{32}$/.test(configuracao.accessKeyId) && /^[0-9a-f]{64}$/.test(configuracao.secretAccessKey) ? "esperado" : "inesperado",
+  };
+}
+
 /** Gravar e remover (PUT/DELETE assinados) — comum aos buckets público e privado. */
 function criarOperacoesR2(configuracao: ConfiguracaoBucketR2): OperacoesDeArmazenamento & { urlDoObjeto: (chave: string) => URL } {
   const buscar = configuracao.buscar ?? fetch;
@@ -56,8 +108,7 @@ function criarOperacoesR2(configuracao: ConfiguracaoBucketR2): OperacoesDeArmaze
     const resposta = await buscar(assinada.url, { method: metodo, headers: assinada.cabecalhos, body: metodo === "PUT" ? new Uint8Array(conteudo) : undefined });
 
     if (!resposta.ok && !(metodo === "DELETE" && resposta.status === 404)) {
-      // O corpo do erro do R2 é XML sem segredo, mas o status já basta e evita vazar detalhe interno.
-      throw new Error(`Armazenamento respondeu ${resposta.status} ao ${metodo === "PUT" ? "gravar" : "remover"} o arquivo.`);
+      throw new ErroDoArmazenamentoR2(metodo === "PUT" ? "gravar" : "remover", await lerDiagnosticoR2(resposta, configuracao));
     }
   }
 
