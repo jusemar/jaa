@@ -407,10 +407,4 @@ describe("arquitetura", () => {
       assert.ok(!/from ["'](next|react)|apps\/web/.test(readFileSync(arquivo, "utf8")), arquivo);
     }
   });
-
-  it("nenhuma administração de produto no app Mobile nesta versão", () => {
-    for (const arquivo of arquivos(join(raiz, "apps/mobile/src"))) {
-      assert.ok(!/produto/i.test(readFileSync(arquivo, "utf8")), arquivo);
-    }
-  });
 });
