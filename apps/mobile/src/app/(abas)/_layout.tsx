@@ -6,11 +6,12 @@ import { useTotalNaoLidas } from "@/features/conversas/hooks/use-total-nao-lidas
 import { rotuloTotalNaoLidas } from "@/features/conversas/lib/nao-lidas-globais";
 import { useAvisoNovaRota } from "@/features/entregas/hooks/use-aviso-nova-rota";
 import { useIdentidadeAtiva } from "@/features/identidades/components/provedor-identidade-ativa";
+import { usePedidosAguardando } from "@/features/pedidos/hooks/use-pedidos-aguardando";
 
 /*
  * NAVEGAÇÃO INFERIOR — as áreas da Web para a identidade atuante (`components/navegacao/areas.ts`):
  * agindo como PESSOA, o Jaa é um mensageiro (Conversas, Contatos, Entregas, Perfil); agindo como EMPRESA
- * ficam Conversas e Perfil — Pedidos, Produtos e Logística da empresa continuam na Web.
+ * ficam Conversas, Pedidos e Perfil — Produtos e Logística da empresa ainda estão só na Web.
  *
  * Não é filtro de permissão: a API autoriza cada chamada de qualquer forma.
  */
@@ -24,6 +25,8 @@ export default function LayoutAbas() {
   useSomMensagens(ativa?.identidadeId ?? null, ehEmpresa);
   // Som de NOVA ROTA em qualquer área: só agindo como pessoa (é a identidade pessoal que entrega).
   useAvisoNovaRota(ativa && !ehEmpresa ? ativa.identidadeId : null);
+  // Pedido não é conversa: o que espera a empresa aparece no item Pedidos, nunca em Conversas.
+  const pedidosAguardando = usePedidosAguardando(ativa?.tipo === "empresarial" ? ativa.empresa.id : null);
 
   return (
     <NativeTabs
@@ -39,6 +42,13 @@ export default function LayoutAbas() {
         <NativeTabs.Trigger.Label>Conversas</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="bubble.left.fill" md="chat" />
         {naoLidas > 0 && <NativeTabs.Trigger.Badge>{rotuloTotalNaoLidas(naoLidas)}</NativeTabs.Trigger.Badge>}
+      </NativeTabs.Trigger>
+
+      {/* Operação da empresa: pedidos recebidos e a próxima ação de cada um. */}
+      <NativeTabs.Trigger name="pedidos" hidden={!ehEmpresa}>
+        <NativeTabs.Trigger.Label>Pedidos</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="bag.fill" md="receipt_long" />
+        {pedidosAguardando > 0 && <NativeTabs.Trigger.Badge>{pedidosAguardando > 99 ? "99+" : String(pedidosAguardando)}</NativeTabs.Trigger.Badge>}
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="contatos" hidden={ehEmpresa}>

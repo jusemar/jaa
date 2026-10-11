@@ -26,8 +26,8 @@ export function obterPedido(pedidoId: string): Promise<RespostaApi<Pedido>> {
 
 const caminhoEmpresa = (empresaId: string, sufixo = "") => `/empresas/${encodeURIComponent(empresaId)}/pedidos${sufixo}`;
 
-export function listarPedidosDaEmpresa(empresaId: string, opcoes: { filtro: FiltroPedidosEmpresa; antesDe?: string }): Promise<RespostaApi<ListaPedidosEmpresa>> {
-  const consulta = new URLSearchParams({ filtro: opcoes.filtro, ...(opcoes.antesDe ? { antesDe: opcoes.antesDe } : {}) });
+export function listarPedidosDaEmpresa(empresaId: string, opcoes: { filtro: FiltroPedidosEmpresa; antesDe?: string | undefined; limite?: number }): Promise<RespostaApi<ListaPedidosEmpresa>> {
+  const consulta = new URLSearchParams({ filtro: opcoes.filtro, ...(opcoes.antesDe ? { antesDe: opcoes.antesDe } : {}), ...(opcoes.limite ? { limite: String(opcoes.limite) } : {}) });
   return requisitarApi(`${caminhoEmpresa(empresaId)}?${consulta.toString()}`, listaPedidosEmpresaSchema, {});
 }
 
