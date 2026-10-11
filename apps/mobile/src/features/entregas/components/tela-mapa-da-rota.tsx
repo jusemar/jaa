@@ -1,4 +1,4 @@
-import { formatarEnderecoResumido, proximaParada, type SaidaEntrega } from "@jaa/contratos";
+import { formatarEnderecoResumido, posicaoEstaRecente, proximaParada, rotuloUltimaPosicao, type PosicaoEntregador, type SaidaEntrega } from "@jaa/contratos";
 import * as Location from "expo-location";
 import { useEffect, useMemo, useState } from "react";
 import { Linking, Modal, Pressable, StyleSheet, View } from "react-native";
@@ -19,8 +19,12 @@ import { quantidadeDeEntregas, tituloDaRota, trajetoCurto, urlDeNavegacao } from
  * Mapbox, como na Web. O que aparece é o que a API guardou para ESTA ordem: a base, as paradas
  * numeradas (a próxima em destaque) e o traçado REAL pelas ruas — quando não há percurso real,
  * nenhuma linha é desenhada. A posição do entregador é a do próprio aparelho, só para ele se situar.
+ *
+ * `empresa`: a MESMA tela vista por quem opera a empresa (Logística → Operação). Aí ninguém navega e o
+ * aparelho não entra no mapa: aparece a última posição que o ENTREGADOR enviou durante a rota em
+ * andamento — só quando é recente — e há quanto tempo ela foi lida.
  */
-export function TelaMapaDaRota({ saida, aoFechar }: { saida: SaidaEntrega; aoFechar: () => void }) {
+export function TelaMapaDaRota({ saida, aoFechar, empresa }: { saida: SaidaEntrega; aoFechar: () => void; empresa?: { posicao: PosicaoEntregador | null } }) {
   const margens = useSafeAreaInsets();
   const desenho = useMemo(() => desenhoDaRota(saida), [saida]);
   const [mostrarOndeEstou, setMostrarOndeEstou] = useState(false);
@@ -30,8 +34,13 @@ export function TelaMapaDaRota({ saida, aoFechar }: { saida: SaidaEntrega; aoFec
   const proxima = proximaParada(saida);
   const trajeto = trajetoCurto(saida);
 
+  const daEmpresa = empresa !== undefined;
+  const posicaoDoEntregador = empresa?.posicao && posicaoEstaRecente(empresa.posicao) ? empresa.posicao : null;
+
   // O ponto azul só aparece se a pessoa já permitiu a localização: abrir o mapa não pede nada.
   useEffect(() => {
+    // Vendo como empresa, o aparelho de quem olha não tem nada a ver com a rota.
+    if (daEmpresa) return;
     let ativo = true;
     void Location.getForegroundPermissionsAsync()
       .then((permissao) => ativo && setMostrarOndeEstou(permissao.granted))
@@ -39,7 +48,7 @@ export function TelaMapaDaRota({ saida, aoFechar }: { saida: SaidaEntrega; aoFec
     return () => {
       ativo = false;
     };
-  }, []);
+  }, [daEmpresa]);
 
   // Token com restrição por URL deixaria o mapa em branco: a tela diz o motivo em vez disso.
   useEffect(() => {
@@ -55,12 +64,12 @@ export function TelaMapaDaRota({ saida, aoFechar }: { saida: SaidaEntrega; aoFec
     <Modal animationType="slide" presentationStyle="fullScreen" statusBarTranslucent onRequestClose={aoFechar}>
       <View style={estilos.tela}>
         <View style={[estilos.topo, { paddingTop: margens.top + Espaco.dois }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Voltar para minhas entregas" hitSlop={8} onPress={aoFechar} style={({ pressed }) => [estilos.voltar, pressed && estilos.apagado]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={daEmpresa ? "Voltar para a operação" : "Voltar para minhas entregas"} hitSlop={8} onPress={aoFechar} style={({ pressed }) => [estilos.voltar, pressed && estilos.apagado]}>
             <Icone nome="voltar" tamanho={22} cor="conteudo" />
           </Pressable>
           <View style={estilos.tituloDoTopo}>
             <Texto variante="corpoForte" numberOfLines={1}>
-              {tituloDaRota(saida)} · {saida.empresa.nome}
+              {tituloDaRota(saida)} · {daEmpresa ? (saida.entregador?.nomeExibicao ?? "Aguardando entregador") : saida.empresa.nome}
             </Texto>
             <Texto variante="pequeno" cor="conteudoSuave" numberOfLines={1}>
               {quantidadeDeEntregas(saida)}
@@ -75,7 +84,7 @@ export function TelaMapaDaRota({ saida, aoFechar }: { saida: SaidaEntrega; aoFec
               <Aviso tom="erro">{MENSAGEM_TOKEN_RECUSADO}</Aviso>
             </View>
           ) : mapbox && desenho.limites ? (
-            <MapaMapbox mapbox={mapbox} desenho={desenho} mostrarOndeEstou={mostrarOndeEstou} />
+            <MapaMapbox mapbox={mapbox} desenho={desenho} mostrarOndeEstou={mostrarOndeEstou} posicaoDoEntregador={posicaoDoEntregador} />
           ) : (
             <View style={estilos.aviso}>
               <Aviso tom="atencao">{situacao === "pronto" ? "Esta rota não tem paradas ativas para mostrar." : MENSAGEM_MAPA_INDISPONIVEL[situacao]}</Aviso>
@@ -89,12 +98,19 @@ export function TelaMapaDaRota({ saida, aoFechar }: { saida: SaidaEntrega; aoFec
             <View accessibilityLabel="Legenda do mapa" style={estilos.legenda}>
               {desenho.base && <ItemDaLegenda icone="base" rotulo="Base" />}
               {mostrarOndeEstou && <ItemDaLegenda icone="entregador" rotulo="Você" />}
+              {posicaoDoEntregador && <ItemDaLegenda icone="entregador" rotulo="Entregador" />}
               <ItemDaLegenda icone="cliente" rotulo="Cliente" />
             </View>
           )}
           {mapbox && !tokenRecusado && !desenho.tracado && (
             <Texto variante="mini" cor="conteudoSuave">
               Sem trajeto calculado pelas ruas para esta ordem: o mapa mostra só os pontos.
+            </Texto>
+          )}
+          {/* A idade da leitura, dita como ela é: posição não é certeza de onde o entregador está agora. */}
+          {daEmpresa && saida.status === "em_andamento" && (
+            <Texto variante="mini" cor="conteudoSuave">
+              {rotuloUltimaPosicao(empresa?.posicao ?? null)}
             </Texto>
           )}
           {proxima ? (
@@ -110,7 +126,7 @@ export function TelaMapaDaRota({ saida, aoFechar }: { saida: SaidaEntrega; aoFec
                   {formatarEnderecoResumido(proxima.destino)} · {proxima.destino.bairro}
                 </Texto>
               </View>
-              <Botao rotulo="Navegar" onPress={() => void Linking.openURL(urlDeNavegacao(proxima.destino, `Pedido ${proxima.numeroPedido}`)).catch(() => undefined)} />
+              {!daEmpresa && <Botao rotulo="Navegar" onPress={() => void Linking.openURL(urlDeNavegacao(proxima.destino, `Pedido ${proxima.numeroPedido}`)).catch(() => undefined)} />}
             </View>
           ) : (
             <Texto variante="pequeno" cor="conteudoSuave">
@@ -134,7 +150,7 @@ function ItemDaLegenda({ icone, rotulo }: { icone: "base" | "entregador" | "clie
   );
 }
 
-function MapaMapbox({ mapbox, desenho, mostrarOndeEstou }: { mapbox: NonNullable<ReturnType<typeof obterMapbox>>; desenho: ReturnType<typeof desenhoDaRota>; mostrarOndeEstou: boolean }) {
+function MapaMapbox({ mapbox, desenho, mostrarOndeEstou, posicaoDoEntregador }: { mapbox: NonNullable<ReturnType<typeof obterMapbox>>; desenho: ReturnType<typeof desenhoDaRota>; mostrarOndeEstou: boolean; posicaoDoEntregador: PosicaoEntregador | null }) {
   const { MapView, Camera, ShapeSource, LineLayer, MarkerView, LocationPuck, StyleURL } = mapbox;
   const { limites } = desenho;
   if (!limites) return null;
@@ -176,6 +192,15 @@ function MapaMapbox({ mapbox, desenho, mostrarOndeEstou }: { mapbox: NonNullable
       ))}
 
       {mostrarOndeEstou && <LocationPuck puckBearingEnabled visible />}
+
+      {/* Visão da EMPRESA: a última posição que o entregador enviou (nunca a do aparelho de quem olha). */}
+      {posicaoDoEntregador && (
+        <MarkerView coordinate={[posicaoDoEntregador.longitude, posicaoDoEntregador.latitude]} allowOverlap>
+          <View accessibilityLabel="Entregador, última posição recebida" style={[estilos.marcador, estilos.marcadorEntregador]}>
+            <Icone nome="entregador" tamanho={18} cor="conteudo" />
+          </View>
+        </MarkerView>
+      )}
     </MapView>
   );
 }
@@ -199,5 +224,6 @@ const estilos = StyleSheet.create({
   itemDaLegenda: { alignItems: "center", flexDirection: "row", gap: 4 },
   marcadorProxima: { backgroundColor: Cores.marca, borderColor: Cores.superficie, borderRadius: 18, borderWidth: 3, height: 36, paddingHorizontal: 8 },
   marcadorBase: { borderColor: Cores.conteudoSuave },
+  marcadorEntregador: { backgroundColor: Cores.ouro, borderColor: Cores.superficie },
   apagado: { opacity: 0.5 },
 });

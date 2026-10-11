@@ -11,7 +11,7 @@ import { usePedidosAguardando } from "@/features/pedidos/hooks/use-pedidos-aguar
 /*
  * NAVEGAÇÃO INFERIOR — as áreas da Web para a identidade atuante (`components/navegacao/areas.ts`):
  * agindo como PESSOA, o Jaa é um mensageiro (Conversas, Contatos, Entregas, Perfil); agindo como EMPRESA
- * ficam Conversas, Pedidos, Produtos e Perfil — a Logística da empresa ainda está só na Web.
+ * ficam Conversas, Pedidos, Produtos, Logística e Perfil — as mesmas cinco áreas da Web.
  *
  * Não é filtro de permissão: a API autoriza cada chamada de qualquer forma.
  */
@@ -55,6 +55,12 @@ export default function LayoutAbas() {
       <NativeTabs.Trigger name="produtos" hidden={!ehEmpresa}>
         <NativeTabs.Trigger.Label>Produtos</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="shippingbox.fill" md="inventory_2" />
+      </NativeTabs.Trigger>
+
+      {/* Rotas, entregadores/base/fila e zonas com automação: uma área só, com as subáreas dentro. */}
+      <NativeTabs.Trigger name="logistica" hidden={!ehEmpresa}>
+        <NativeTabs.Trigger.Label>Logística</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="map.fill" md="map" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="contatos" hidden={ehEmpresa}>
