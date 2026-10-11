@@ -184,7 +184,7 @@ export function MinhasEmpresas() {
                     {/* Só oferece o que o servidor disse que esta conta pode operar. */}
                     {operavel && <Botao rotulo="Agir como esta empresa" aparencia="realce" onPress={() => void selecionar(detalhe.identidadeId)} />}
                     <Texto variante="pequeno" cor="conteudoSuave">
-                      Agindo como a empresa você conversa com os clientes, conduz os pedidos e edita o perfil e os horários dela. Produtos e logística ainda são administrados no Jaaa Web.
+                      Agindo como a empresa você conversa com os clientes, conduz os pedidos, administra os produtos e edita o perfil e os horários dela. A logística ainda é administrada no Jaaa Web.
                     </Texto>
                   </View>
                 )}

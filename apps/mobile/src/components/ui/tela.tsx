@@ -8,7 +8,7 @@ import { Cores, Espaco } from "@/constants/theme";
  * (marca + "Agindo como" + Sair) e uma coluna de conteúdo com respiro, rolável. O espaço no fim deixa o
  * último bloco livre da barra de navegação inferior.
  */
-export function Tela({ atualizando = false, aoAtualizar, children }: { atualizando?: boolean; aoAtualizar?: () => void; children: ReactNode }) {
+export function Tela({ atualizando = false, aoAtualizar, rodape, children }: { atualizando?: boolean; aoAtualizar?: () => void; /** Barra de ações presa embaixo, fora da rolagem (ex.: "Salvar produto"). */ rodape?: ReactNode; children: ReactNode }) {
   return (
     <View style={estilos.tela}>
       <BarraTopo />
@@ -19,6 +19,7 @@ export function Tela({ atualizando = false, aoAtualizar, children }: { atualizan
           refreshControl={aoAtualizar ? <RefreshControl refreshing={atualizando} onRefresh={aoAtualizar} tintColor={Cores.marca} colors={[Cores.marca]} /> : undefined}>
           {children}
         </ScrollView>
+        {rodape}
       </KeyboardAvoidingView>
     </View>
   );

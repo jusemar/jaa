@@ -373,7 +373,7 @@ export function TelaPerfil({ ehEmpresa, empresaId }: { ehEmpresa: boolean; empre
         </Secao>
       )}
 
-      {ehEmpresa && aba === "perfil" && <Aviso>Produtos e logística da empresa ainda são administrados no Jaaa Web.</Aviso>}
+      {ehEmpresa && aba === "perfil" && <Aviso>A logística da empresa ainda é administrada no Jaaa Web.</Aviso>}
 
       {__DEV__ && <Botao aparencia="secundario" rotulo="Diagnóstico do contexto (desenvolvimento)" onPress={() => router.push("/diagnostico")} />}
 

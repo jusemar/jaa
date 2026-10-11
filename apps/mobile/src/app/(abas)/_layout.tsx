@@ -11,7 +11,7 @@ import { usePedidosAguardando } from "@/features/pedidos/hooks/use-pedidos-aguar
 /*
  * NAVEGAÇÃO INFERIOR — as áreas da Web para a identidade atuante (`components/navegacao/areas.ts`):
  * agindo como PESSOA, o Jaa é um mensageiro (Conversas, Contatos, Entregas, Perfil); agindo como EMPRESA
- * ficam Conversas, Pedidos e Perfil — Produtos e Logística da empresa ainda estão só na Web.
+ * ficam Conversas, Pedidos, Produtos e Perfil — a Logística da empresa ainda está só na Web.
  *
  * Não é filtro de permissão: a API autoriza cada chamada de qualquer forma.
  */
@@ -49,6 +49,12 @@ export default function LayoutAbas() {
         <NativeTabs.Trigger.Label>Pedidos</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="bag.fill" md="receipt_long" />
         {pedidosAguardando > 0 && <NativeTabs.Trigger.Badge>{pedidosAguardando > 99 ? "99+" : String(pedidosAguardando)}</NativeTabs.Trigger.Badge>}
+      </NativeTabs.Trigger>
+
+      {/* Catálogo da empresa: produtos, categorias, grupos de opções e programação semanal. */}
+      <NativeTabs.Trigger name="produtos" hidden={!ehEmpresa}>
+        <NativeTabs.Trigger.Label>Produtos</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="shippingbox.fill" md="inventory_2" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="contatos" hidden={ehEmpresa}>

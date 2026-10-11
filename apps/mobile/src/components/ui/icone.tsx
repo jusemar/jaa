@@ -44,6 +44,12 @@ const SIMBOLOS = {
   anexo: { ios: "paperclip", android: "attach_file", web: "attach_file" },
   olho: { ios: "eye", android: "visibility", web: "visibility" },
   olhoFechado: { ios: "eye.slash", android: "visibility_off", web: "visibility_off" },
+  etiqueta: { ios: "tag", android: "sell", web: "sell" },
+  calendario: { ios: "calendar", android: "calendar_month", web: "calendar_month" },
+  copiar: { ios: "doc.on.doc", android: "content_copy", web: "content_copy" },
+  grade: { ios: "square.grid.2x2", android: "grid_view", web: "grid_view" },
+  camadas: { ios: "square.stack.3d.up", android: "layers", web: "layers" },
+  informacao: { ios: "info.circle", android: "info", web: "info" },
   sair: { ios: "rectangle.portrait.and.arrow.right", android: "logout", web: "logout" },
   /*
    * LOGÍSTICA — os três papéis de uma entrega, sempre com o MESMO desenho (mapa, rota, pedido):
