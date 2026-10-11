@@ -26,6 +26,7 @@ import { OPCOES_ANEXO, type OrigemImagem } from "@/features/conversas/lib/imagem
 import { listarGruposOpcoes, removerGrupoOpcoes } from "../lib/api-personalizacao";
 import { resumoDoGrupo } from "../lib/edicao-semana";
 import { centavosParaCampo, formatarPrecoCentavos, interpretarPrecoDigitado } from "../lib/precos";
+import { descricaoDoRascunho, produtoAlterado } from "../lib/rascunho-do-produto";
 import { regraEmPalavras } from "../lib/regra-do-grupo";
 import { EditorDeGrupo } from "./editor-de-grupo";
 import { BarraDeAcoes, CampoDeEscolha, FolhaDeEscolha, TopoComVoltar, mensagemDe } from "./pecas";
@@ -129,20 +130,14 @@ export function FormularioProduto({
   }, [coberto, aoCancelar]);
 
   const precoCentavos = interpretarPrecoDigitado(preco);
-  const alterado =
-    produto === null ||
-    nome !== produto.nome ||
-    (descricao.trim() === "" ? null : descricao) !== produto.descricao ||
-    precoCentavos !== produto.precoCentavos ||
-    disponibilidade !== produto.disponibilidade ||
-    (categoriaId || null) !== produto.categoriaId;
+  const alterado = produtoAlterado(produto, { nome, descricao, preco, disponibilidade, categoriaId });
 
   function enviar() {
     const semNome = nome.trim() === "";
     setErroNome(semNome ? "Informe o nome do produto." : null);
     setErroPreco(precoCentavos === null ? "Informe um preço válido maior que zero, ex.: 39,90." : null);
     if (semNome || precoCentavos === null) return;
-    aoSalvar({ nome, descricao: descricao.trim() === "" ? null : descricao, precoCentavos, disponibilidade, categoriaId: categoriaId || null });
+    aoSalvar({ nome: nome.trim(), descricao: descricaoDoRascunho(descricao), precoCentavos, disponibilidade, categoriaId: categoriaId || null });
   }
 
   function pedirParaExcluir(grupo: GrupoOpcoesProduto) {
@@ -189,7 +184,7 @@ export function FormularioProduto({
           rodape={
             <BarraDeAcoes erro={erro} estado={estado} tom={produto !== null && alterado ? "pendente" : produto !== null ? "sucesso" : "neutro"}>
               <Botao rotulo="Cancelar" aparencia="secundario" onPress={aoCancelar} />
-              <Botao rotulo={produto ? "Salvar produto" : "Criar produto"} carregando={enviando} textoCarregando="Salvando…" onPress={enviar} />
+              <Botao rotulo={produto ? "Salvar produto" : "Criar produto"} carregando={enviando} textoCarregando="Salvando…" disabled={!alterado} onPress={enviar} />
             </BarraDeAcoes>
           }>
           <TopoComVoltar rotulo="Voltar para produtos" aoVoltar={aoCancelar} acao={produto ? <Botao rotulo="Prévia" aparencia="secundario" compacto onPress={() => setPrevia(true)} /> : undefined} />
