@@ -134,20 +134,23 @@ export async function alterarStatusEntregador(
     { status, ...(status === "ativo" ? {} : { disponivel: false }) },
     status === "inativo" ? "Vínculo desativado" : "Convite reaberto",
   );
-  await banco
-    .update(entregadoresEmpresa)
-    .set({ respondidoEm: status === "convidado" ? null : new Date() })
-    .where(eq(entregadoresEmpresa.id, entregadorId));
+  // `respondido_em` NÃO muda aqui: ele é o aceite da PESSOA, nunca um ato da empresa.
 
   const [vinculo] = await banco.select().from(entregadoresEmpresa).where(eq(entregadoresEmpresa.id, entregadorId)).limit(1);
   return vinculo ?? null;
 }
 
-// Resposta da PESSOA ao convite: só ela pode aceitar/recusar (o vínculo é dela com a empresa).
-export async function responderConvite(banco: Banco, { entregadorId, usuarioId, aceitar }: { entregadorId: string; usuarioId: string; aceitar: boolean }): Promise<EntregadorRegistro | null> {
+/*
+ * ACEITE do convite pela PESSOA: só ela aceita (o vínculo é dela com a empresa) e só um convite
+ * PENDENTE. Entra na base com a disponibilidade DESLIGADA — aceitar não é estar disponível agora.
+ * `respondido_em` passa a marcar "esta pessoa aceitou este convite": é o que permite à empresa
+ * reativá-la depois, e o que falta a quem nunca aceitou. Não existe recusa: convite não aceito
+ * fica pendente.
+ */
+export async function aceitarConvite(banco: Banco, { entregadorId, usuarioId }: { entregadorId: string; usuarioId: string }): Promise<EntregadorRegistro | null> {
   const [vinculo] = await banco
     .update(entregadoresEmpresa)
-    .set({ status: aceitar ? "ativo" : "inativo", disponivel: false, respondidoEm: new Date() })
+    .set({ status: "ativo", disponivel: false, respondidoEm: new Date() })
     .where(and(eq(entregadoresEmpresa.id, entregadorId), eq(entregadoresEmpresa.usuarioId, usuarioId), eq(entregadoresEmpresa.status, "convidado")))
     .returning();
   return vinculo ?? null;

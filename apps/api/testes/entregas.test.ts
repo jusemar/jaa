@@ -187,9 +187,11 @@ describe("quadro de entregadores", () => {
     // Quem opera a empresa não vira entregador dela.
     assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/entregadores`, { nomeUsuario: `${PREFIXO}_a` })).statusCode, 409);
 
-    assert.equal((await ctx.api(R, "POST", `/entregas/convites/${conviteId}`, { resposta: "recusar" })).statusCode, 200);
+    // Não existe recusa: a única resposta é aceitar, e quem não quer deixa o convite pendente.
+    assert.equal((await ctx.api(R, "POST", `/entregas/convites/${conviteId}`, { resposta: "recusar" })).statusCode, 400);
     const lista: ListaEntregadores = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/entregadores`)).json();
-    assert.equal(lista.entregadores.find((item) => item.id === conviteId)?.status, "inativo");
+    assert.equal(lista.entregadores.find((item) => item.id === conviteId)?.status, "convidado");
+    assert.equal(((await ctx.api(R, "GET", "/entregas/convites")).json() as ListaConvitesEntregador).convites.some((item) => item.id === conviteId), true);
   });
 
   it("entregador não é administrador: nenhuma rota da empresa responde para ele", async () => {
@@ -570,5 +572,114 @@ describe("realtime das entregas", () => {
     await aguardarAte(() => deCarlos.length === 2);
     assert.equal(deCarlos[1]?.entrega, null);
     assert.equal(doCliente.length, 0);
+  });
+});
+
+/*
+ * O CICLO COMPLETO, com a Rita: a empresa conversa normalmente → convida → (pendente não é base) →
+ * ela aceita → entrega → a empresa desativa → o histórico fica. Quatro coisas que não se confundem:
+ * convite pendente, vínculo ativo, disponibilidade e entregador desativado pelo gestor.
+ */
+describe("convite, aceite e desativação pelo gestor", () => {
+  let rita = "";
+  const quadro = async (): Promise<EntregadorDaEmpresa[]> => ((await ctx.api(A, "GET", `/empresas/${pizzaria.id}/entregadores`)).json() as ListaEntregadores).entregadores;
+  const naRita = async () => (await quadro()).find((item) => item.id === rita);
+  const alterarStatus = (status: "ativo" | "inativo", empresa = pizzaria, pessoa = A) => ctx.api(pessoa, "PATCH", `/empresas/${empresa.id}/entregadores/${rita}`, { status });
+
+  it("procurar entregador é conversa normal: mensagem de TEXTO comum, com não lida, sem nada de convite", async () => {
+    const comoPizzaria = como(A, pizzaria.identidadeId);
+    const conversaId = await ctx.abrirConversa(comoPizzaria, `${PREFIXO}_r`);
+    const mensagem = await ctx.enviar(comoPizzaria, conversaId, "Precisamos de entregador das 18h às 23h. Se tiver interesse, me chama.");
+    assert.equal(mensagem.tipo, "texto");
+    assert.equal(mensagem.pedido, null);
+    assert.deepEqual(Object.keys(mensagem).sort(), ["anexo", "conteudo", "conversaId", "criadoEm", "editadaEm", "estado", "excluidaEm", "id", "mensagemRespondida", "pedido", "remetenteIdentidadeId", "tipo"]);
+    const daRita = (await ctx.lista(R)).conversas.find((item) => item.id === conversaId);
+    assert.equal(daRita?.naoLidas, 1);
+    assert.equal(daRita?.ultimaMensagem?.tipo, "texto");
+    assert.equal((await ctx.enviar(R, conversaId, "Tenho interesse!")).tipo, "texto");
+  });
+
+  it("convite PENDENTE não põe a pessoa na base: sem disponibilidade, sem atribuição, fora da operação", async () => {
+    rita = (await quadro()).find((item) => item.pessoa.identidadeId === R.identidadeId)?.id ?? "";
+    assert.equal((await naRita())?.status, "convidado");
+    assert.equal((await ficarDisponivel(R, rita)).statusCode, 404);
+    const pedido = await pedidoPronto();
+    assert.equal((await atribuir(A, pizzaria, pedido.id, { entregadorId: rita })).statusCode, 409);
+    const operacao = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/operacao`)).json() as { fila: { id: string }[]; foraDaBase: { id: string }[] };
+    assert.equal([...operacao.fila, ...operacao.foraDaBase].some((item) => item.id === rita), false);
+    const vinculoDela = ((await ctx.api(R, "GET", "/entregas/vinculos")).json() as ListaVinculosEntregador).vinculos.find((item) => item.id === rita);
+    assert.deepEqual([vinculoDela?.status, vinculoDela?.disponivel], ["convidado", false]);
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${pedido.id}/cancelar`, { statusAtual: "pronto", motivo: "Teste encerrado" })).statusCode, 200);
+  });
+
+  it("a empresa nunca ativa quem não aceitou — nem o convite pendente, nem o que ela mesma desativou antes do aceite", async () => {
+    assert.equal((await alterarStatus("ativo")).statusCode, 404);
+    assert.equal((await alterarStatus("inativo")).statusCode, 200, "a empresa pode desistir do convite");
+    assert.equal(((await ctx.api(R, "GET", "/entregas/convites")).json() as ListaConvitesEntregador).convites.some((item) => item.id === rita), false);
+    assert.equal((await alterarStatus("ativo")).statusCode, 404, "sem aceite, só um novo convite");
+    assert.equal((await naRita())?.status, "inativo");
+    assert.equal((await naRita())?.respondidoEm, null);
+  });
+
+  it("reconvite reabre o MESMO vínculo; o aceite ativa a base SEM ligar a disponibilidade", async () => {
+    const novo = await ctx.api(A, "POST", `/empresas/${pizzaria.id}/entregadores`, { nomeUsuario: `${PREFIXO}_r` });
+    assert.equal(novo.statusCode, 201, novo.body);
+    assert.deepEqual([novo.json().id, novo.json().status], [rita, "convidado"]);
+
+    assert.equal((await ctx.api(C, "POST", `/entregas/convites/${rita}`, { resposta: "aceitar" })).statusCode, 404, "só a convidada aceita");
+    assert.equal((await ctx.api(R, "POST", `/entregas/convites/${rita}`, { resposta: "aceitar" })).statusCode, 200);
+    assert.equal((await ctx.api(R, "POST", `/entregas/convites/${rita}`, { resposta: "aceitar" })).statusCode, 404, "aceitar de novo não encontra convite");
+
+    const aceita = await naRita();
+    assert.deepEqual([aceita?.status, aceita?.disponivel], ["ativo", false]);
+    assert.ok(aceita?.respondidoEm);
+    // Na base, mas ainda não recebe entrega: disponibilidade é escolha dela.
+    const pedido = await pedidoPronto();
+    const semDisponibilidade = await atribuir(A, pizzaria, pedido.id, { entregadorId: rita });
+    assert.equal(semDisponibilidade.statusCode, 409);
+    assert.equal(semDisponibilidade.json().codigo, "ENTREGADOR_INDISPONIVEL");
+    assert.equal((await ficarDisponivel(R, rita)).statusCode, 200);
+    assert.equal((await atribuir(A, pizzaria, pedido.id, { entregadorId: rita })).statusCode, 200);
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${pedido.id}/cancelar`, { statusAtual: "pronto", motivo: "Teste encerrado" })).statusCode, 200);
+  });
+
+  it("o gestor desativa: sai da disponibilidade, não recebe entrega nova e o histórico do que entregou fica intacto", async () => {
+    const entregue = await pedidoPronto();
+    await sairParaEntrega(entregue, rita, R);
+    const [saida] = ((await ctx.api(R, "GET", "/entregas/saidas")).json() as { saidas: { id: string }[] }).saidas;
+    assert.ok(saida);
+    assert.equal((await ctx.api(R, "POST", `/entregas/saidas/${saida.id}/paradas/${entregue.id}/concluir`)).statusCode, 200);
+    const atribuicoesAntes = await ctx.banco.select().from(atribuicoesEntrega).where(eq(atribuicoesEntrega.entregadorId, rita));
+    assert.ok(atribuicoesAntes.length >= 2);
+
+    // Só quem opera ESTA empresa desativa: outra empresa e um estranho não alcançam o vínculo.
+    assert.equal((await alterarStatus("inativo", farmacia)).statusCode, 404);
+    assert.equal((await alterarStatus("inativo", pizzaria, C)).statusCode, 404);
+    assert.equal((await alterarStatus("inativo")).statusCode, 200);
+
+    const desativada = await naRita();
+    assert.deepEqual([desativada?.status, desativada?.disponivel], ["inativo", false]);
+    assert.equal((await ficarDisponivel(R, rita)).statusCode, 404, "desativada não escolhe disponibilidade");
+    const novoPedido = await pedidoPronto();
+    const recusada = await atribuir(A, pizzaria, novoPedido.id, { entregadorId: rita });
+    assert.equal(recusada.statusCode, 409);
+    assert.equal(recusada.json().codigo, "ENTREGADOR_INATIVO");
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/saidas`, { entregadorId: rita, pedidoIds: [novoPedido.id] })).statusCode, 409);
+    assert.equal((await ctx.api(A, "POST", `/empresas/${pizzaria.id}/pedidos/${novoPedido.id}/cancelar`, { statusAtual: "pronto", motivo: "Teste encerrado" })).statusCode, 200);
+
+    // Nada do que ela entregou foi apagado: pedido, auditoria da entrega e a rota continuam lá.
+    const pedido: Pedido = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${entregue.id}`)).json();
+    assert.equal(pedido.status, "entregue");
+    const historico: EntregaDoPedido = (await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${entregue.id}/entrega`)).json();
+    assert.equal(historico.historico.at(-1)?.entregador.nomeExibicao, "Rita Estranha");
+    const atribuicoesDepois = await ctx.banco.select().from(atribuicoesEntrega).where(eq(atribuicoesEntrega.entregadorId, rita));
+    assert.equal(atribuicoesDepois.length, atribuicoesAntes.length);
+    assert.equal((await ctx.api(A, "GET", `/empresas/${pizzaria.id}/saidas/${saida.id}`)).statusCode, 200);
+  });
+
+  it("quem já aceitou pode ser reativado pela empresa — e volta com a disponibilidade desligada", async () => {
+    assert.equal((await alterarStatus("ativo")).statusCode, 200);
+    const reativada = await naRita();
+    assert.deepEqual([reativada?.status, reativada?.disponivel], ["ativo", false]);
   });
 });

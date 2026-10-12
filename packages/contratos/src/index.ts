@@ -20,6 +20,7 @@ export * from "./pedidos/gestao-pedidos.ts";
 export * from "./entregas/entregador.ts";
 export * from "./entregas/saida.ts";
 export * from "./entregas/base-e-fila.ts";
+export * from "./entregas/quadro-entregadores.ts";
 export * from "./entregas/zonas.ts";
 export * from "./entregas/rota.ts";
 export * from "./entregas/rastreamento.ts";

@@ -58,7 +58,7 @@ import {
   listarConvitesPendentes,
   listarEntregadoresAutorizado,
   listarMeusVinculos,
-  responderConviteDaPessoa,
+  aceitarConviteDaPessoa,
 } from "../casos-de-uso/gerir-entregadores.js";
 import {
   criarSaidaAutorizada,
@@ -1642,16 +1642,15 @@ export function registrarRotasEntregas(
           mensagem: "Resposta inválida.",
         });
 
-      const resultado = await responderConviteDaPessoa(
+      const resultado = await aceitarConviteDaPessoa(
         banco,
         usuarioId,
         parametros.data.entregadorId,
-        entrada.data.resposta === "aceitar",
       );
-      if (resultado.tipo !== "respondido")
+      if (resultado.tipo !== "aceito")
         return responder(resposta, 404, ENTREGADOR_NAO_ENCONTRADO);
 
-      // Respondeu: o convite sai da lista dele e o vínculo entra (nas outras abas/dispositivos também).
+      // Aceitou: o convite sai da lista dele e o vínculo entra (nas outras abas/dispositivos também).
       const atualizado = await buscarEntregadorDaEmpresa(
         banco,
         resultado.empresaId,

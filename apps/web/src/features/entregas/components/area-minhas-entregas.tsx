@@ -40,7 +40,7 @@ import {
   recusarMinhaSaida,
   reordenarSequencia,
   recalcularRota,
-  responderConvite,
+  aceitarConvite,
 } from "../lib/api-entregas";
 import { MapaPercursoMapbox } from "./mapa-percurso-mapbox";
 import {
@@ -364,11 +364,8 @@ export function AreaMinhasEntregas({ aoAbrirConversa }: { aoAbrirConversa?: (nom
     };
   }, [aplicarSituacao]);
 
-  async function responder(
-    convite: ConviteEntregador,
-    resposta: "aceitar" | "recusar",
-  ) {
-    const resultado = await responderConvite(convite.id, resposta);
+  async function aceitar(convite: ConviteEntregador) {
+    const resultado = await aceitarConvite(convite.id);
     if (!resultado.ok) {
       setErro(resultado.mensagem);
       return;
@@ -391,7 +388,7 @@ export function AreaMinhasEntregas({ aoAbrirConversa }: { aoAbrirConversa?: (nom
       {/* CONVITES PARA ENTREGAR: proposta de vínculo — não é trabalho atribuído. */}
       <ConvitesParaEntregar
         convites={convites}
-        aoResponder={(convite, resposta) => void responder(convite, resposta)}
+        aoAceitar={(convite) => void aceitar(convite)}
       />
 
       <section
@@ -566,16 +563,14 @@ export function AcaoIniciarSaida({
 /**
  * CONVITES PARA ENTREGAR: área própria, separada do trabalho. Aceitar aqui cria o vínculo — e NÃO
  * deixa a pessoa disponível: quem decide aceitar entregas agora é ela, em "Empresas em que trabalho".
+ * A única ação é aceitar: quem não quer deixa o convite pendente.
  */
 export function ConvitesParaEntregar({
   convites,
-  aoResponder,
+  aoAceitar,
 }: {
   convites: ConviteEntregador[];
-  aoResponder: (
-    convite: ConviteEntregador,
-    resposta: "aceitar" | "recusar",
-  ) => void;
+  aoAceitar: (convite: ConviteEntregador) => void;
 }) {
   if (convites.length === 0) return null;
 
@@ -604,24 +599,14 @@ export function ConvitesParaEntregar({
                 status Disponível e na base local.
               </span>
             </span>
-            <span className="flex gap-2">
-              <button
-                type="button"
-                data-aceitar-convite
-                onClick={() => aoResponder(convite, "aceitar")}
-                className="rounded bg-marca px-3 py-1.5 text-xs text-white"
-              >
-                Aceitar convite
-              </button>
-              <button
-                type="button"
-                data-recusar-convite
-                onClick={() => aoResponder(convite, "recusar")}
-                className="rounded-jaa border px-3 py-1.5 text-xs"
-              >
-                Recusar
-              </button>
-            </span>
+            <button
+              type="button"
+              data-aceitar-convite
+              onClick={() => aoAceitar(convite)}
+              className="rounded bg-marca px-3 py-1.5 text-xs text-white"
+            >
+              Aceitar convite
+            </button>
           </li>
         ))}
       </ol>

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   ROTULO_STATUS_ENTREGADOR,
+  empresaPodeAlternarVinculo,
+  responderConviteEntradaSchema,
   atribuirEntregaEntradaSchema,
   convidarEntregadorEntradaSchema,
   entregaAtribuidaSchema,
@@ -125,5 +127,22 @@ describe("entrega vista pelo entregador", () => {
   it("entregas ativas são as que ainda estão em operação", () => {
     for (const status of ["pronto", "saiu_para_entrega", "em_rota"] as const) assert.equal(entregaEstaAtiva(status), true, status);
     for (const status of ["recebido", "confirmado", "em_preparacao", "entregue", "cancelado"] as const) assert.equal(entregaEstaAtiva(status), false, status);
+  });
+});
+
+describe("convite: só existe aceite, e a empresa só reativa quem aceitou", () => {
+  it("a única resposta ao convite é aceitar (não existe recusa)", () => {
+    assert.equal(responderConviteEntradaSchema.safeParse({ resposta: "aceitar" }).success, true);
+    assert.equal(responderConviteEntradaSchema.safeParse({ resposta: "recusar" }).success, false);
+    assert.equal(responderConviteEntradaSchema.safeParse({}).success, false);
+  });
+
+  it("ativo sempre pode ser desativado; inativo só é reativado se já aceitou; convite pendente depende da pessoa", () => {
+    const aceitou = "2026-10-12T12:00:00.000Z";
+    assert.equal(empresaPodeAlternarVinculo({ status: "ativo", respondidoEm: aceitou }), true);
+    assert.equal(empresaPodeAlternarVinculo({ status: "ativo", respondidoEm: null }), true);
+    assert.equal(empresaPodeAlternarVinculo({ status: "inativo", respondidoEm: aceitou }), true);
+    assert.equal(empresaPodeAlternarVinculo({ status: "inativo", respondidoEm: null }), false);
+    assert.equal(empresaPodeAlternarVinculo({ status: "convidado", respondidoEm: null }), false);
   });
 });

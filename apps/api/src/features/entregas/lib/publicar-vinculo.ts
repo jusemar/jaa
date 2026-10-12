@@ -21,7 +21,7 @@ export async function publicarVinculoEntregador(
   if (!empresa) return;
   const empresaPublica = serializarEmpresaPublica(empresa);
 
-  // Convite só existe enquanto está pendente; depois de aceitar/recusar ele sai da lista dela.
+  // Convite só existe enquanto está pendente; depois do aceite ele sai da lista dela.
   const convite: ConviteEntregador | null =
     entregador.status === "convidado"
       ? { id: entregador.id, empresa: empresaPublica, status: entregador.status, convidadoEm: entregador.convidadoEm.toISOString() }

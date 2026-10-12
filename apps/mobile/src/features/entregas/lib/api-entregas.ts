@@ -49,8 +49,9 @@ export const listarMeusVinculos = () => requisitarApi("/entregas/vinculos", list
 export const listarMeusConvites = () => requisitarApi("/entregas/convites", listaConvitesEntregadorSchema);
 export const listarMinhasSituacoes = () => requisitarApi("/entregas/situacao", listaSituacoesOperacionaisSchema);
 
-export function responderConvite(entregadorId: string, resposta: "aceitar" | "recusar") {
-  return requisitarApi(`/entregas/convites/${encodeURIComponent(entregadorId)}`, z.object({ status: z.string() }), { method: "POST", body: JSON.stringify({ resposta }) });
+// A única resposta a um convite é aceitar; quem não quer deixa o convite pendente.
+export function aceitarConvite(entregadorId: string) {
+  return requisitarApi(`/entregas/convites/${encodeURIComponent(entregadorId)}`, z.object({ status: z.string() }), { method: "POST", body: JSON.stringify({ resposta: "aceitar" }) });
 }
 
 // Disponibilidade é decisão do entregador, por empresa; não mexe no que já está atribuído.

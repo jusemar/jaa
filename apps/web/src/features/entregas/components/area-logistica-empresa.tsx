@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { AreaSaidasEmpresa } from "./area-saidas-empresa";
 import { AreaZonasEmpresa } from "./area-zonas-empresa";
-import { PainelOperacionalEmpresa } from "./painel-operacional";
 import { QuadroEntregadores } from "./quadro-entregadores";
 
 const ABAS = [
@@ -38,12 +37,8 @@ export function AreaLogisticaEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }
 
       <div role="tabpanel" id={`painel-logistica-${aba}`} aria-labelledby={`aba-logistica-${aba}`}>
         {aba === "operacao" && <AreaSaidasEmpresa empresaId={empresaId} nomeEmpresa={nomeEmpresa} {...(aoAbrirConversa ? { aoAbrirConversa } : {})} />}
-        {aba === "entregadores" && (
-          <div className="flex flex-col gap-6">
-            <QuadroEntregadores empresaId={empresaId} nomeEmpresa={nomeEmpresa} />
-            <PainelOperacionalEmpresa empresaId={empresaId} nomeEmpresa={nomeEmpresa} />
-          </div>
-        )}
+        {/* A base e a fila são uma opção DENTRO do quadro ("Operação da base"): não ficam mais à vista o tempo todo. */}
+        {aba === "entregadores" && <QuadroEntregadores empresaId={empresaId} nomeEmpresa={nomeEmpresa} />}
         {aba === "zonas" && <AreaZonasEmpresa empresaId={empresaId} nomeEmpresa={nomeEmpresa} />}
       </div>
     </section>

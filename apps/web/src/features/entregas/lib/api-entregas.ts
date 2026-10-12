@@ -144,14 +144,14 @@ export function listarMeusConvites(): Promise<
   return requisitarApi("/entregas/convites", listaConvitesEntregadorSchema, {});
 }
 
-export function responderConvite(
+// A única resposta a um convite é aceitar; quem não quer deixa o convite pendente.
+export function aceitarConvite(
   entregadorId: string,
-  resposta: "aceitar" | "recusar",
 ): Promise<ResultadoApi<{ status: string }>> {
   return requisitarApi(
     `/entregas/convites/${encodeURIComponent(entregadorId)}`,
     z.object({ status: z.string() }),
-    { method: "POST", body: JSON.stringify({ resposta }) },
+    { method: "POST", body: JSON.stringify({ resposta: "aceitar" }) },
   );
 }
 

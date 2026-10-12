@@ -26,7 +26,7 @@ import { useAbrirConversa } from "@/features/conversas/hooks/use-abrir-conversa"
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { useMinhasEntregas } from "../hooks/use-minhas-entregas";
 import { usePresencaNaBase } from "../hooks/use-presenca-na-base";
-import { alterarMinhaDisponibilidade, concluirMinhaProximaParada, iniciarMinhaSaida, recalcularRota, recusarMinhaSaida, reordenarSequencia, responderConvite, saidaEmAndamento } from "../lib/api-entregas";
+import { alterarMinhaDisponibilidade, concluirMinhaProximaParada, iniciarMinhaSaida, recalcularRota, recusarMinhaSaida, reordenarSequencia, aceitarConvite, saidaEmAndamento } from "../lib/api-entregas";
 import { entregasForaDasSaidas, estadoEmUmaLinha, ordenarSaidas, urlDeNavegacao } from "../lib/minhas-entregas";
 import { iniciarRastreamento, observarEmPrimeiroPlano, pararRastreamento } from "../lib/rastreamento";
 import { CartaoSaida } from "./cartao-saida";
@@ -172,7 +172,7 @@ export function TelaEntrega() {
       },
     );
 
-  const responder = (convite: ConviteEntregador, resposta: "aceitar" | "recusar") => void executar(() => responderConvite(convite.id, resposta), recarregar);
+  const aceitar = (convite: ConviteEntregador) => void executar(() => aceitarConvite(convite.id), recarregar);
 
   const semSaida = entregasForaDasSaidas(entregas, saidas);
   const nome = contexto?.identidadePessoal?.nomeExibicao;
@@ -192,8 +192,7 @@ export function TelaEntrega() {
               Ao aceitar, você só poderá receber entregas quando estiver com status Disponível e na base local.
             </Texto>
             <View style={estilos.linhaDeBotoes}>
-              <Botao rotulo="Aceitar convite" compacto disabled={ocupado} onPress={() => responder(convite, "aceitar")} />
-              <Botao rotulo="Recusar" aparencia="secundario" compacto disabled={ocupado} onPress={() => responder(convite, "recusar")} />
+              <Botao rotulo="Aceitar convite" compacto disabled={ocupado} onPress={() => aceitar(convite)} />
             </View>
           </Cartao>
         ))}

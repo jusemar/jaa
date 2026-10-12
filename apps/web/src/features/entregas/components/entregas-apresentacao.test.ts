@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import type {
   EntregaAtribuida,
@@ -10,6 +11,7 @@ import type {
   StatusPedido,
   VinculoEntregador,
 } from "@jaa/contratos";
+import { GRUPOS_DO_QUADRO_DE_ENTREGADORES, classificarQuadroDeEntregadores, type GrupoDoQuadroDeEntregadores } from "@jaa/contratos";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -20,7 +22,7 @@ import {
   entregasForaDasSaidas,
 } from "./area-minhas-entregas.tsx";
 import { EntregaDoPedidoEmpresa } from "./entrega-do-pedido.tsx";
-import { ListaEntregadores } from "./quadro-entregadores.tsx";
+import { AbasDoQuadro, ConvitesPendentes, ListaDoGrupo } from "./quadro-entregadores.tsx";
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/ /g, " ");
 const uuid = (n: number) =>
@@ -84,60 +86,82 @@ describe("quadro de entregadores da empresa", () => {
         estado === "indisponivel" || estado === "em_entrega" ? [item] : [],
     };
   };
-  const lista = (
+  const vazio: PainelOperacional = { baseConfigurada: true, fila: [], foraDaBase: [], indisponiveis: [] };
+  // O grupo escolhido, como a tela o desenha: a classificação compartilhada + a lista de UMA situação.
+  const grupo = (
+    id: GrupoDoQuadroDeEntregadores,
     entregadores: EntregadorDaEmpresa[],
-    operacao: PainelOperacional | null = null,
-  ) =>
-    renderToStaticMarkup(
-      createElement(ListaEntregadores, {
-        entregadores,
-        painel: operacao,
+    operacao: PainelOperacional = vazio,
+  ) => {
+    const definicao = GRUPOS_DO_QUADRO_DE_ENTREGADORES.find((item) => item.id === id);
+    assert.ok(definicao);
+    return renderToStaticMarkup(
+      createElement(ListaDoGrupo, {
+        rotulo: definicao.rotulo,
+        vazio: definicao.vazio,
+        linhas: classificarQuadroDeEntregadores(entregadores, operacao).grupos[id],
         ocupado: false,
         aoAlterarStatus: () => {},
       }),
     );
+  };
+  const todos = [paulo, joao, convidado];
 
-  it("mostra nome público, @usuario e status de cada vínculo", () => {
-    const html = lista([paulo, joao, convidado]);
-    const conteudo = texto(html);
-    for (const esperado of [
-      "Paulo Entregador",
-      "@paulo",
-      "Situação: Ativo",
-      "João Entregador",
-      "Situação: Inativo",
-      "Carlos Entregador",
-      "Convite enviado",
-    ]) {
-      assert.ok(conteudo.includes(esperado), esperado);
-    }
+  it("cada opção mostra SOMENTE a sua categoria, com nome público e @usuario", () => {
+    const disponiveis = texto(grupo("disponiveis", todos, painel("disponivel_na_base")));
+    assert.ok(disponiveis.includes("Paulo Entregador") && disponiveis.includes("@paulo") && disponiveis.includes("1º da fila da base"));
+    assert.equal(disponiveis.includes("João") || disponiveis.includes("Carlos"), false);
+
+    const desativados = texto(grupo("desativados", todos, painel("disponivel_na_base")));
+    assert.ok(desativados.includes("João Entregador") && desativados.includes("Desativado"));
+    assert.equal(desativados.includes("Paulo") || desativados.includes("Carlos"), false);
     // Só identidade pública: nunca telefone nem dados de conta.
-    assert.equal(conteudo.includes("+55"), false);
+    assert.equal(disponiveis.includes("+55") || desativados.includes("+55"), false);
   });
 
-  it("ativo pode ser desativado, inativo reativado e convite pendente não é ativado pela empresa", () => {
-    assert.ok(texto(lista([paulo])).includes("Desativar"));
-    assert.ok(texto(lista([joao])).includes("Ativar"));
-    assert.equal(
-      lista([convidado]).includes("data-alternar-entregador"),
-      false,
-    );
+  it("Na rota, Fora da base e Indisponíveis seguem o estado operacional do servidor", () => {
+    const naRota = texto(grupo("na_rota", todos, painel("em_entrega")));
+    assert.ok(naRota.includes("Paulo Entregador") && naRota.includes("Em entrega"));
+    assert.equal(naRota.includes("Disponível"), false);
+    assert.ok(texto(grupo("disponiveis", todos, painel("em_entrega"))).includes("Ninguém disponível na base agora."));
+
+    assert.ok(texto(grupo("fora_da_base", todos, painel("disponivel_fora_base"))).includes("Disponível fora da base"));
+    assert.ok(texto(grupo("fora_da_base", todos, painel("indisponivel"))).includes("Ninguém disponível fora da base."));
+    assert.ok(texto(grupo("indisponiveis", todos, painel("indisponivel"))).includes("Não aceitando entregas"));
   });
 
-  it("mostra o estado operacional real e dá precedência à rota em andamento", () => {
-    assert.ok(
-      texto(lista([paulo], painel("disponivel_na_base"))).includes(
-        "Estado: Disponível na base",
-      ),
-    );
-    const emEntrega = texto(lista([paulo], painel("em_entrega")));
-    assert.ok(emEntrega.includes("Estado: Em entrega"));
-    assert.equal(emEntrega.includes("Disponível"), false);
-    assert.equal(emEntrega.includes("Na base"), false);
+  it("ativo pode ser desativado, desativado que já aceitou é reativado e quem nunca aceitou depende de novo convite", () => {
+    assert.ok(texto(grupo("disponiveis", [paulo], painel("disponivel_na_base"))).includes("Desativar"));
+    assert.ok(texto(grupo("desativados", [joao])).includes("Ativar"));
+    const semAceite = grupo("desativados", [{ ...joao, respondidoEm: null }]);
+    assert.equal(semAceite.includes("data-alternar-entregador"), false);
+    assert.ok(texto(semAceite).includes("precisa de novo convite"));
   });
 
-  it("empresa sem entregadores vê o estado vazio", () => {
-    assert.ok(texto(lista([])).includes("Nenhum entregador ainda."));
+  it("convite pendente não aparece em nenhuma opção: fica junto do convite, sem ação da empresa", () => {
+    for (const { id } of GRUPOS_DO_QUADRO_DE_ENTREGADORES) assert.equal(texto(grupo(id, todos, painel("disponivel_na_base"))).includes("Carlos"), false, id);
+    const pendentes = renderToStaticMarkup(createElement(ConvitesPendentes, { pendentes: classificarQuadroDeEntregadores(todos, vazio).pendentes }));
+    assert.ok(texto(pendentes).includes("Aguardando aceite") && texto(pendentes).includes("Carlos Entregador") && texto(pendentes).includes("Convite enviado"));
+    assert.equal(pendentes.includes("<button"), false);
+    assert.equal(renderToStaticMarkup(createElement(ConvitesPendentes, { pendentes: [] })), "");
+  });
+
+  it("as opções: uma marcada por vez, com a quantidade de cada grupo e a base por último", () => {
+    const quadro = classificarQuadroDeEntregadores(todos, painel("disponivel_na_base"));
+    const html = renderToStaticMarkup(createElement(AbasDoQuadro, { aba: "desativados", quadro, aoEscolher: () => {} }));
+    assert.deepEqual([...html.matchAll(/data-aba-entregadores="([^"]+)"/g)].map((item) => item[1]), ["na_rota", "disponiveis", "fora_da_base", "indisponiveis", "desativados", "operacao_da_base"]);
+    assert.equal((html.match(/aria-selected="true"/g) ?? []).length, 1);
+    assert.ok(/aria-selected="true"[^>]*data-aba-entregadores="desativados"/.test(html));
+    assert.ok(texto(html).includes("Disponíveis1") && texto(html).includes("Desativados1") && texto(html).includes("Na rota0") && texto(html).includes("Operação da base"));
+  });
+
+  it("um único fluxo de convite, e a base sai da visão permanente (vira a opção 'Operação da base')", () => {
+    const fonte = readFileSync(new URL("./quadro-entregadores.tsx", import.meta.url), "utf8");
+    assert.equal((fonte.match(/data-convidar-entregador/g) ?? []).length, 1);
+    assert.equal((fonte.match(/Buscar pessoa para convidar/g) ?? []).length, 1);
+    assert.ok(fonte.includes("{aba === ABA_OPERACAO_DA_BASE && <PainelOperacionalEmpresa"));
+    const logistica = readFileSync(new URL("./area-logistica-empresa.tsx", import.meta.url), "utf8");
+    assert.equal(logistica.includes("PainelOperacionalEmpresa"), false);
   });
 });
 
@@ -158,7 +182,7 @@ describe("convite para entregar", () => {
             convidadoEm: "2026-09-16T12:00:00.000Z",
           },
         ],
-        aoResponder: () => {},
+        aoAceitar: () => {},
       }),
     );
     const conteudo = texto(html);
@@ -167,7 +191,8 @@ describe("convite para entregar", () => {
     );
     assert.ok(conteudo.includes("status Disponível e na base local"));
     assert.ok(conteudo.includes("Aceitar convite"));
-    assert.ok(conteudo.includes("Recusar"));
+    // A única ação é aceitar: não existe recusa (quem não quer deixa o convite pendente).
+    assert.equal(conteudo.includes("Recusar"), false);
     assert.equal(
       conteudo.toLocaleLowerCase("pt-BR").includes("vínculo"),
       false,

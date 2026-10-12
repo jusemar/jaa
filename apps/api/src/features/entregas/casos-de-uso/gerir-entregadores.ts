@@ -1,5 +1,5 @@
 import type { Banco } from "@jaa/banco";
-import { entregadorPodeOperar, type StatusEntregador } from "@jaa/contratos";
+import { empresaPodeAlternarVinculo, entregadorPodeOperar, type StatusEntregador } from "@jaa/contratos";
 import { autorizarEmpresa } from "../../empresas/lib/autorizacao-empresas.js";
 import { buscarIdentidadePessoalPorNomeUsuario } from "../../identidades/repositorios/repositorio-identidades.js";
 import {
@@ -13,7 +13,7 @@ import {
   listarEntregadoresDaEmpresa,
   listarPedidosAtribuidosAoEntregador,
   listarVinculosDaPessoa,
-  responderConvite,
+  aceitarConvite,
   type EntregadorComPessoaRegistro,
 } from "../repositorios/repositorio-entregadores.js";
 import { encerrarAtribuicaoAtual } from "../repositorios/repositorio-atribuicoes.js";
@@ -89,8 +89,12 @@ export async function alterarStatusEntregadorAutorizado(
 
   const atual = await buscarEntregadorDaEmpresa(banco, empresaId, entregadorId);
   if (!atual) return { tipo: "entregador-nao-encontrado" };
-  // Convite pendente não é ativado pela empresa: quem aceita é a pessoa.
-  if (atual.status === "convidado" && status === "ativo") return { tipo: "entregador-nao-encontrado" };
+  /*
+   * A empresa só REATIVA quem já aceitou. Convite pendente não é ativado por ela (quem aceita é a
+   * pessoa) — e convite que a empresa desativou antes do aceite também não: sem `respondidoEm` a
+   * pessoa nunca consentiu, e só um NOVO convite a traz para a base.
+   */
+  if (status === "ativo" && !empresaPodeAlternarVinculo(atual)) return { tipo: "entregador-nao-encontrado" };
 
   const alterado = await alterarStatusEntregador(banco, { empresaId, entregadorId, status });
   if (!alterado) return { tipo: "entregador-nao-encontrado" };
@@ -112,14 +116,13 @@ export function listarConvitesPendentes(banco: Banco, usuarioId: string) {
   return listarConvitesDaPessoa(banco, usuarioId);
 }
 
-export async function responderConviteDaPessoa(
+export async function aceitarConviteDaPessoa(
   banco: Banco,
   usuarioId: string,
   entregadorId: string,
-  aceitar: boolean,
-): Promise<{ tipo: "respondido"; empresaId: string; status: StatusEntregador } | { tipo: "convite-nao-encontrado" }> {
-  const vinculo = await responderConvite(banco, { entregadorId, usuarioId, aceitar });
-  return vinculo ? { tipo: "respondido", empresaId: vinculo.empresaId, status: vinculo.status } : { tipo: "convite-nao-encontrado" };
+): Promise<{ tipo: "aceito"; empresaId: string; status: StatusEntregador } | { tipo: "convite-nao-encontrado" }> {
+  const vinculo = await aceitarConvite(banco, { entregadorId, usuarioId });
+  return vinculo ? { tipo: "aceito", empresaId: vinculo.empresaId, status: vinculo.status } : { tipo: "convite-nao-encontrado" };
 }
 
 // "Esta conta pode operar entregas desta empresa agora?" (vínculo ativo, nunca papel administrativo).

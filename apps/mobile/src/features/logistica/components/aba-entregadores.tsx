@@ -7,11 +7,16 @@ import {
   ROTULO_STATUS_ENTREGADOR,
   UNIDADES_FEDERACAO,
   baseTemPontoConfirmado,
-  entregadorPodeOperar,
+  ABA_INICIAL_DO_QUADRO_DE_ENTREGADORES,
+  ABA_OPERACAO_DA_BASE,
+  GRUPOS_DO_QUADRO_DE_ENTREGADORES,
+  ROTULO_ABA_OPERACAO_DA_BASE,
+  classificarQuadroDeEntregadores,
   eventoEntregadorDisponibilidadeSchema,
   eventoFilaAtualizadaSchema,
   formatarCep,
   formatarEnderecoResumido,
+  type AbaDoQuadroDeEntregadores,
   type BaseEmpresa,
   type CandidatoEntregador,
   type Coordenadas,
@@ -20,13 +25,13 @@ import {
   type PainelOperacional,
 } from "@jaa/contratos";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Botao } from "@/components/ui/botao";
 import { CampoTexto } from "@/components/ui/campo-texto";
 import { Icone } from "@/components/ui/icone";
 import { Aviso, Carregando, Cartao, Secao } from "@/components/ui/superficies";
 import { Texto } from "@/components/ui/texto";
-import { Cores, Espaco } from "@/constants/theme";
+import { Cores, Espaco, Raio } from "@/constants/theme";
 import { MapaPonto } from "@/features/enderecos/components/mapa-ponto";
 import { MapaPontoMapbox, useMapboxDoMapaDePonto } from "@/features/enderecos/components/mapa-ponto-mapbox";
 import { consultarCepNaApi } from "@/features/enderecos/lib/api-enderecos";
@@ -50,6 +55,13 @@ const ESPERA_DA_BUSCA_MS = 300;
 export function AbaEntregadores({ empresaId, nomeEmpresa }: { empresaId: string; nomeEmpresa: string }) {
   const [painel, setPainel] = useState<PainelOperacional | null>(null);
   const [erroDoPainel, setErroDoPainel] = useState<string | null>(null);
+  const [entregadores, setEntregadores] = useState<EntregadorDaEmpresa[] | null>(null);
+  // Só UMA situação aparece por vez; trocar de opção não consulta nem altera nada.
+  const [aba, setAba] = useState<AbaDoQuadroDeEntregadores>(ABA_INICIAL_DO_QUADRO_DE_ENTREGADORES);
+  const [convidando, setConvidando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
 
   const carregarPainel = useCallback(async () => {
     const resultado = await obterPainelOperacional(empresaId);
@@ -59,12 +71,20 @@ export function AbaEntregadores({ empresaId, nomeEmpresa }: { empresaId: string;
     } else setErroDoPainel(mensagemDe(resultado));
   }, [empresaId]);
 
+  const recarregar = useCallback(async () => {
+    const resultado = await listarEntregadores(empresaId);
+    if (resultado.ok) setEntregadores(resultado.dados.entregadores);
+    else setErro(mensagemDe(resultado));
+  }, [empresaId]);
+
   useEffect(() => {
     let ativo = true;
-    void obterPainelOperacional(empresaId).then((resultado) => {
+    void Promise.all([obterPainelOperacional(empresaId), listarEntregadores(empresaId)]).then(([doPainel, daLista]) => {
       if (!ativo) return;
-      if (resultado.ok) setPainel(resultado.dados);
-      else setErroDoPainel(mensagemDe(resultado));
+      if (doPainel.ok) setPainel(doPainel.dados);
+      else setErroDoPainel(mensagemDe(doPainel));
+      if (daLista.ok) setEntregadores(daLista.dados.entregadores);
+      else setErro(mensagemDe(daLista));
     });
     return () => {
       ativo = false;
@@ -74,70 +94,162 @@ export function AbaEntregadores({ empresaId, nomeEmpresa }: { empresaId: string;
   // Chegou/saiu alguém, alguém parou de aceitar, a fila andou: a empresa vê na hora, sem recarregar.
   useEffect(() => {
     const socket = obterClienteRealtime();
-    const aoAtualizar = (evento: unknown) => {
+    const aoAtualizarFila = (evento: unknown) => {
       const resultado = eventoFilaAtualizadaSchema.safeParse(evento);
       if (resultado.success) setPainel(resultado.data.painel);
     };
-    const reler = () => void carregarPainel();
-    socket.on(EVENTO_FILA_ATUALIZADA, aoAtualizar);
-    socket.on("connect", reler);
-    return () => {
-      socket.off(EVENTO_FILA_ATUALIZADA, aoAtualizar);
-      socket.off("connect", reler);
-    };
-  }, [carregarPainel]);
-
-  return (
-    <>
-      <QuadroDeEntregadores empresaId={empresaId} nomeEmpresa={nomeEmpresa} painel={painel} aoMudar={() => void carregarPainel()} />
-      <OperacaoDaBase empresaId={empresaId} nomeEmpresa={nomeEmpresa} painel={painel} erroDoPainel={erroDoPainel} />
-    </>
-  );
-}
-
-function QuadroDeEntregadores({ empresaId, nomeEmpresa, painel, aoMudar }: { empresaId: string; nomeEmpresa: string; painel: PainelOperacional | null; aoMudar: () => void }) {
-  const [entregadores, setEntregadores] = useState<EntregadorDaEmpresa[] | null>(null);
-  const [termo, setTermo] = useState("");
-  const [candidatos, setCandidatos] = useState<CandidatoEntregador[]>([]);
-  const [buscando, setBuscando] = useState(false);
-  const buscaAtual = useRef(0);
-  const [erro, setErro] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
-  const [ocupado, setOcupado] = useState(false);
-
-  const recarregar = useCallback(async () => {
-    const resultado = await listarEntregadores(empresaId);
-    if (resultado.ok) setEntregadores(resultado.dados.entregadores);
-    else setErro(mensagemDe(resultado));
-  }, [empresaId]);
-
-  useEffect(() => {
-    let ativo = true;
-    void listarEntregadores(empresaId).then((resultado) => {
-      if (!ativo) return;
-      if (resultado.ok) setEntregadores(resultado.dados.entregadores);
-      else setErro(mensagemDe(resultado));
-    });
-    return () => {
-      ativo = false;
-    };
-  }, [empresaId]);
-
-  // Quem ficou disponível/indisponível chega em tempo real (só para esta empresa).
-  useEffect(() => {
-    const socket = obterClienteRealtime();
-    const aoAtualizar = (evento: unknown) => {
+    // Quem ficou disponível/indisponível chega em tempo real (só para esta empresa).
+    const aoAtualizarDisponibilidade = (evento: unknown) => {
       const resultado = eventoEntregadorDisponibilidadeSchema.safeParse(evento);
       if (!resultado.success) return;
       const atualizado = resultado.data.entregador;
       setEntregadores((atuais) => atuais?.map((item) => (item.id === atualizado.id ? atualizado : item)) ?? null);
       if (atualizado.disponivel) setAviso(`${atualizado.pessoa.nomeExibicao} está disponível para entregas.`);
     };
-    socket.on(EVENTO_ENTREGADOR_DISPONIBILIDADE, aoAtualizar);
-    return () => {
-      socket.off(EVENTO_ENTREGADOR_DISPONIBILIDADE, aoAtualizar);
+    const reler = () => {
+      void carregarPainel();
+      void recarregar();
     };
-  }, []);
+    socket.on(EVENTO_FILA_ATUALIZADA, aoAtualizarFila);
+    socket.on(EVENTO_ENTREGADOR_DISPONIBILIDADE, aoAtualizarDisponibilidade);
+    socket.on("connect", reler);
+    return () => {
+      socket.off(EVENTO_FILA_ATUALIZADA, aoAtualizarFila);
+      socket.off(EVENTO_ENTREGADOR_DISPONIBILIDADE, aoAtualizarDisponibilidade);
+      socket.off("connect", reler);
+    };
+  }, [carregarPainel, recarregar]);
+
+  async function alterar(entregador: EntregadorDaEmpresa, status: "ativo" | "inativo") {
+    setErro(null);
+    setAviso(null);
+    setOcupado(true);
+    try {
+      const resultado = await alterarStatusEntregador(empresaId, entregador.id, status);
+      if (!resultado.ok) {
+        setErro(mensagemDe(resultado));
+        return;
+      }
+      // Desativar revoga na hora as entregas em aberto dele (o servidor encerra as atribuições).
+      if (status === "inativo") setAviso(`${entregador.pessoa.nomeExibicao} não recebe novas entregas e perdeu as que estavam com ele.`);
+      await Promise.all([recarregar(), carregarPainel()]);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  // A classificação é do contrato compartilhado: a tela só mostra o grupo escolhido.
+  const quadro = entregadores && painel ? classificarQuadroDeEntregadores(entregadores, painel) : null;
+  const pendentes = entregadores?.filter((item) => item.status === "convidado") ?? [];
+  const grupo = GRUPOS_DO_QUADRO_DE_ENTREGADORES.find((item) => item.id === aba) ?? null;
+  const linhas = grupo && quadro ? quadro.grupos[grupo.id] : null;
+
+  return (
+    <Secao titulo="Entregadores" descricao={`Quem pode entregar por ${nomeEmpresa}.`}>
+      {/* O ÚNICO caminho para convidar: abre a busca e mostra os convites que ainda aguardam aceite. */}
+      <View style={estilos.acoes}>
+        <Botao rotulo={convidando ? "Fechar convite" : "Convidar entregador"} aparencia={convidando ? "secundario" : "principal"} compacto onPress={() => setConvidando((atual) => !atual)} />
+        {!convidando && pendentes.length > 0 && (
+          <Texto variante="pequeno" cor="conteudoSuave" accessibilityLabel={rotuloDosPendentes(pendentes.length)}>
+            {rotuloDosPendentes(pendentes.length)}
+          </Texto>
+        )}
+      </View>
+      {convidando && (
+        <ConviteDeEntregador
+          empresaId={empresaId}
+          pendentes={pendentes}
+          aoConvidar={(nomeUsuario) => {
+            setErro(null);
+            setAviso(`Convite enviado para @${nomeUsuario}. Ele vira entregador quando aceitar.`);
+            void recarregar();
+            void carregarPainel();
+          }}
+        />
+      )}
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist" accessibilityLabel="Situação dos entregadores" contentContainerStyle={estilos.abas}>
+        {[...GRUPOS_DO_QUADRO_DE_ENTREGADORES.map((item) => ({ id: item.id as AbaDoQuadroDeEntregadores, rotulo: item.rotulo, quantidade: quadro ? quadro.grupos[item.id].length : null })), { id: ABA_OPERACAO_DA_BASE as AbaDoQuadroDeEntregadores, rotulo: ROTULO_ABA_OPERACAO_DA_BASE, quantidade: null }].map((item) => {
+          const marcada = aba === item.id;
+          return (
+            <Pressable
+              key={item.id}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: marcada }}
+              accessibilityLabel={item.quantidade === null ? item.rotulo : `${item.rotulo}: ${item.quantidade}`}
+              onPress={() => setAba(item.id)}
+              style={[estilos.aba, marcada && estilos.abaMarcada]}>
+              <Texto variante="pequenoMedio" cor={marcada ? "marcaConteudo" : "conteudo"}>
+                {item.rotulo}
+              </Texto>
+              {item.quantidade !== null && (
+                <Texto variante="pequenoForte" cor={marcada ? "marcaConteudo" : "conteudoSuave"}>
+                  {item.quantidade}
+                </Texto>
+              )}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {aba === ABA_OPERACAO_DA_BASE ? (
+        <OperacaoDaBase empresaId={empresaId} painel={painel} erroDoPainel={erroDoPainel} />
+      ) : (
+        <>
+          {linhas === null && !erro && !erroDoPainel && <Carregando texto="Carregando entregadores…" />}
+          {linhas !== null && grupo && linhas.length === 0 && <Texto cor="conteudoSuave">{grupo.vazio}</Texto>}
+          {linhas !== null && grupo && linhas.length > 0 && (
+            <Cartao accessibilityLabel={grupo.rotulo}>
+              {linhas.map((linha, indice) => (
+                <View key={linha.entregador.id} style={[estilos.item, indice > 0 && estilos.comDivisa]}>
+                  <View style={estilos.flex}>
+                    <Texto variante="corpoMedio" numberOfLines={1}>
+                      {linha.entregador.pessoa.nomeExibicao}
+                    </Texto>
+                    <Texto variante="pequeno" cor="conteudoSuave" numberOfLines={1}>
+                      @{linha.entregador.pessoa.nomeUsuario}
+                    </Texto>
+                    <Texto variante="pequeno" cor={linha.emDestaque ? "marca" : "conteudoSuave"}>
+                      {linha.situacao}
+                    </Texto>
+                  </View>
+                  {linha.acao && <Botao rotulo={linha.acao.rotulo} aparencia="secundario" compacto disabled={ocupado} onPress={() => linha.acao && void alterar(linha.entregador, linha.acao.status)} />}
+                </View>
+              ))}
+            </Cartao>
+          )}
+          {/* Sem ponto confirmado ninguém é detectado na base: explica por que "Disponíveis" está vazio. */}
+          {painel && !painel.baseConfigurada && (aba === "disponiveis" || aba === "fora_da_base") && <Aviso tom="atencao">Confirme o ponto da base em “Operação da base” para que a chegada dos entregadores seja detectada.</Aviso>}
+          {erroDoPainel && <Aviso tom="erro">{erroDoPainel}</Aviso>}
+        </>
+      )}
+
+      {aviso && (
+        <View accessibilityLiveRegion="polite" style={estilos.aviso}>
+          <Icone nome="check" tamanho={16} cor="marca" />
+          <Texto variante="corpoMedio" cor="marca" style={estilos.flex}>
+            {aviso}
+          </Texto>
+        </View>
+      )}
+      {erro && <Aviso tom="erro">{erro}</Aviso>}
+    </Secao>
+  );
+}
+
+const rotuloDosPendentes = (quantidade: number) => (quantidade === 1 ? "1 convite aguardando aceite" : `${quantidade} convites aguardando aceite`);
+
+/**
+ * CONVITE — o único fluxo: buscar a pessoa pelo nome ou @usuario público e enviar. Os convites ainda
+ * não aceitos ficam aqui (e só aqui): convite pendente não é entregador ativo nem desativado.
+ */
+function ConviteDeEntregador({ empresaId, pendentes, aoConvidar }: { empresaId: string; pendentes: EntregadorDaEmpresa[]; aoConvidar: (nomeUsuario: string) => void }) {
+  const [termo, setTermo] = useState("");
+  const [candidatos, setCandidatos] = useState<CandidatoEntregador[]>([]);
+  const [buscando, setBuscando] = useState(false);
+  const buscaAtual = useRef(0);
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
 
   const termoDaBusca = termo.trim();
   useEffect(() => {
@@ -167,7 +279,6 @@ function QuadroDeEntregadores({ empresaId, nomeEmpresa, painel, aoMudar }: { emp
   // Convite pelo @usuario PÚBLICO: a empresa não procura ninguém por telefone.
   async function convidar(candidato: CandidatoEntregador) {
     setErro(null);
-    setAviso(null);
     setOcupado(true);
     try {
       const resultado = await convidarEntregador(empresaId, candidato.pessoa.nomeUsuario);
@@ -176,110 +287,61 @@ function QuadroDeEntregadores({ empresaId, nomeEmpresa, painel, aoMudar }: { emp
         return;
       }
       setCandidatos((atuais) => atuais.filter((item) => item.pessoa.identidadeId !== candidato.pessoa.identidadeId));
-      setAviso(`Convite enviado para @${resultado.dados.pessoa.nomeUsuario}. Ele vira entregador quando aceitar.`);
-      await recarregar();
-      aoMudar();
+      aoConvidar(resultado.dados.pessoa.nomeUsuario);
     } finally {
       setOcupado(false);
     }
   }
-
-  async function alterar(entregador: EntregadorDaEmpresa, status: "ativo" | "inativo") {
-    setErro(null);
-    setAviso(null);
-    setOcupado(true);
-    try {
-      const resultado = await alterarStatusEntregador(empresaId, entregador.id, status);
-      if (!resultado.ok) {
-        setErro(mensagemDe(resultado));
-        return;
-      }
-      // Desativar revoga na hora as entregas em aberto dele (o servidor encerra as atribuições).
-      if (status === "inativo") setAviso(`${entregador.pessoa.nomeExibicao} não recebe novas entregas e perdeu as que estavam com ele.`);
-      await recarregar();
-      aoMudar();
-    } finally {
-      setOcupado(false);
-    }
-  }
-
-  const operacionais = painel ? [...painel.fila, ...painel.foraDaBase, ...painel.indisponiveis] : [];
 
   return (
-    <Secao titulo="Entregadores" descricao={`Quem pode entregar por ${nomeEmpresa}. O convite vira vínculo quando a pessoa aceitar.`}>
-      <Cartao style={estilos.cartao}>
-        <CampoTexto rotulo="Nome ou @usuario" value={termo} maxLength={31} autoCapitalize="none" autoCorrect={false} placeholder="Buscar pessoa para convidar" onChangeText={setTermo} />
-        {buscando && (
-          <Texto variante="pequeno" cor="conteudoSuave">
-            Procurando…
-          </Texto>
-        )}
-        {!buscando && termoDaBusca.length >= 2 && candidatos.length === 0 && (
-          <Texto variante="pequeno" cor="conteudoSuave">
-            Nenhuma pessoa disponível para convite.
-          </Texto>
-        )}
-        {candidatos.map((candidato) => (
-          <View key={candidato.pessoa.identidadeId} accessibilityLabel={`Pessoa encontrada: ${candidato.pessoa.nomeExibicao}`} style={estilos.linhaComDivisa}>
-            <View style={estilos.flex}>
-              <Texto variante="corpoMedio" numberOfLines={1}>
-                {candidato.pessoa.nomeExibicao}
-              </Texto>
-              <Texto variante="pequeno" cor="conteudoSuave" numberOfLines={1}>
-                @{candidato.pessoa.nomeUsuario}
-                {candidato.situacao === "inativo" ? " · Entregador inativo" : ""}
-              </Texto>
-            </View>
-            <Botao rotulo="Enviar convite" compacto disabled={ocupado} onPress={() => void convidar(candidato)} />
-          </View>
-        ))}
-      </Cartao>
-
-      {entregadores === null && !erro && <Carregando texto="Carregando entregadores…" />}
-      {entregadores !== null && entregadores.length === 0 && <Texto cor="conteudoSuave">Nenhum entregador ainda.</Texto>}
-      {entregadores !== null && entregadores.length > 0 && (
-        <Cartao accessibilityLabel="Entregadores">
-          {entregadores.map((entregador, indice) => {
-            const operacional = operacionais.find((item) => item.id === entregador.id) ?? null;
-            return (
-              <View key={entregador.id} style={[estilos.item, indice > 0 && estilos.comDivisa]}>
-                <View style={estilos.flex}>
-                  <Texto variante="corpoMedio" numberOfLines={1}>
-                    {entregador.pessoa.nomeExibicao}
-                  </Texto>
-                  <Texto variante="pequeno" cor="conteudoSuave" numberOfLines={1}>
-                    @{entregador.pessoa.nomeUsuario}
-                  </Texto>
-                  {/* Vínculo (profissional, da empresa) e estado (operacional, do entregador). */}
-                  <Texto variante="pequeno" cor="conteudoSuave">
-                    Situação: {ROTULO_STATUS_ENTREGADOR[entregador.status]}
-                  </Texto>
-                  {entregadorPodeOperar(entregador.status) && operacional && (
-                    <Texto variante="pequeno" cor={operacional.estado === "disponivel_na_base" ? "marca" : "conteudoSuave"}>
-                      Estado: {ROTULO_ESTADO_OPERACIONAL[operacional.estado]}
-                    </Texto>
-                  )}
-                </View>
-                {/* Convite pendente não é ativado pela empresa: quem aceita é a pessoa. */}
-                {entregador.status !== "convidado" && (
-                  <Botao rotulo={entregador.status === "ativo" ? "Desativar" : "Ativar"} aparencia="secundario" compacto disabled={ocupado} onPress={() => void alterar(entregador, entregador.status === "ativo" ? "inativo" : "ativo")} />
-                )}
-              </View>
-            );
-          })}
-        </Cartao>
+    <Cartao accessibilityLabel="Convidar entregador" style={estilos.cartao}>
+      <CampoTexto rotulo="Nome ou @usuario" value={termo} maxLength={31} autoCapitalize="none" autoCorrect={false} placeholder="Buscar pessoa para convidar" onChangeText={setTermo} />
+      {buscando && (
+        <Texto variante="pequeno" cor="conteudoSuave">
+          Procurando…
+        </Texto>
       )}
+      {!buscando && termoDaBusca.length >= 2 && candidatos.length === 0 && (
+        <Texto variante="pequeno" cor="conteudoSuave">
+          Nenhuma pessoa disponível para convite.
+        </Texto>
+      )}
+      {candidatos.map((candidato) => (
+        <View key={candidato.pessoa.identidadeId} accessibilityLabel={`Pessoa encontrada: ${candidato.pessoa.nomeExibicao}`} style={estilos.linhaComDivisa}>
+          <View style={estilos.flex}>
+            <Texto variante="corpoMedio" numberOfLines={1}>
+              {candidato.pessoa.nomeExibicao}
+            </Texto>
+            <Texto variante="pequeno" cor="conteudoSuave" numberOfLines={1}>
+              @{candidato.pessoa.nomeUsuario}
+              {candidato.situacao === "inativo" ? " · Entregador inativo" : ""}
+            </Texto>
+          </View>
+          <Botao rotulo="Enviar convite" compacto disabled={ocupado} onPress={() => void convidar(candidato)} />
+        </View>
+      ))}
+      {erro && <Aviso tom="erro">{erro}</Aviso>}
 
-      {aviso && (
-        <View accessibilityLiveRegion="polite" style={estilos.aviso}>
-          <Icone nome="check" tamanho={16} cor="marca" />
-          <Texto variante="corpoMedio" cor="marca" style={estilos.flex}>
-            {aviso}
+      {pendentes.length > 0 && (
+        <View accessibilityLabel="Convites aguardando aceite" style={estilos.grupo}>
+          <Texto variante="pequenoForte" cor="conteudoSuave">
+            Aguardando aceite
           </Texto>
+          {pendentes.map((pendente) => (
+            <View key={pendente.id} style={estilos.linhaComDivisa}>
+              <View style={estilos.flex}>
+                <Texto variante="corpoMedio" numberOfLines={1}>
+                  {pendente.pessoa.nomeExibicao}
+                </Texto>
+                <Texto variante="pequeno" cor="conteudoSuave" numberOfLines={1}>
+                  @{pendente.pessoa.nomeUsuario} · {ROTULO_STATUS_ENTREGADOR.convidado}
+                </Texto>
+              </View>
+            </View>
+          ))}
         </View>
       )}
-      {erro && <Aviso tom="erro">{erro}</Aviso>}
-    </Secao>
+    </Cartao>
   );
 }
 
@@ -305,7 +367,11 @@ const rascunhoDaBase = (base: BaseEmpresa | null): RascunhoDaBase => ({
   raio: String(base?.raioMetros ?? 150),
 });
 
-function OperacaoDaBase({ empresaId, nomeEmpresa, painel, erroDoPainel }: { empresaId: string; nomeEmpresa: string; painel: PainelOperacional | null; erroDoPainel: string | null }) {
+/**
+ * OPERAÇÃO DA BASE — o endereço e o ponto da base (raio, edição, mapa) e a FILA de quem está nela agora.
+ * Fica numa opção própria: depois de configurada, a base não precisa estar à vista o tempo todo.
+ */
+function OperacaoDaBase({ empresaId, painel, erroDoPainel }: { empresaId: string; painel: PainelOperacional | null; erroDoPainel: string | null }) {
   // undefined = ainda lendo; null = a empresa ainda não cadastrou a base.
   const [base, setBase] = useState<BaseEmpresa | null | undefined>(undefined);
   const [editando, setEditando] = useState(false);
@@ -389,7 +455,7 @@ function OperacaoDaBase({ empresaId, nomeEmpresa, painel, erroDoPainel }: { empr
   const mudar = (valores: Partial<RascunhoDaBase>) => setRascunho((atual) => ({ ...atual, ...valores }));
 
   return (
-    <Secao titulo="Operação da base" descricao={`De onde saem as entregas de ${nomeEmpresa} e quem está disponível agora.`}>
+    <View accessibilityLabel="Operação da base" style={estilos.fila}>
       {base === undefined && <Carregando texto="Carregando a base…" />}
 
       {base && !mostrarFormulario && !confirmandoPonto && (
@@ -503,7 +569,7 @@ function OperacaoDaBase({ empresaId, nomeEmpresa, painel, erroDoPainel }: { empr
       {erroDoPainel && <Aviso tom="erro">{erroDoPainel}</Aviso>}
 
       <FolhaDeEscolha titulo="UF" aberta={escolhendoUf} atual={rascunho.uf} itens={UNIDADES_FEDERACAO.map((uf) => ({ id: uf, rotulo: uf }))} aoEscolher={(uf) => mudar({ uf: uf as BaseEmpresa["uf"] })} aoFechar={() => setEscolhendoUf(false)} />
-    </Secao>
+    </View>
   );
 }
 
@@ -554,27 +620,17 @@ function ConfirmarPontoDaBase({ base, sugestao, enviando, aoConfirmar, aoCancela
   );
 }
 
-// Quem está na fila da base, quem está disponível fora dela, quem está com rota e quem não está aceitando.
+// A FILA da base: quem está presente e apto, na ordem do servidor. Os demais grupos têm a sua opção.
 function QuadroDaFila({ painel }: { painel: PainelOperacional }) {
-  /*
-   * O terceiro grupo do servidor reúne TODO MUNDO que não está na fila nem "disponível fora da base":
-   * quem está com rota (reservada ou na rua) e quem não está aceitando. São situações opostas — por
-   * isso aparecem separadas, para um entregador com rota não parecer fora do ar.
-   */
-  const naoAceitando = painel.indisponiveis.filter((entregador) => entregador.estado === "indisponivel");
-  const comRota = painel.indisponiveis.filter((entregador) => entregador.estado !== "indisponivel");
   return (
     <View style={estilos.fila}>
       {!painel.baseConfigurada && <Aviso tom="atencao">Confirme o ponto da base para que a chegada dos entregadores seja detectada automaticamente.</Aviso>}
       <GrupoDaFila titulo="Na base — fila" entregadores={painel.fila} vazio="Ninguém na base agora." />
-      <GrupoDaFila titulo="Fora da base" entregadores={painel.foraDaBase} vazio="Ninguém disponível fora da base." />
-      <GrupoDaFila titulo="Com rota" entregadores={comRota} vazio="Ninguém com rota agora." rotuloDoEstado={(entregador) => (entregador.estado === "em_entrega" ? "Em entrega" : "Rota atribuída")} />
-      <GrupoDaFila titulo="Não aceitando entregas" entregadores={naoAceitando} vazio="Todos estão aceitando entregas." />
     </View>
   );
 }
 
-function GrupoDaFila({ titulo, entregadores, vazio, rotuloDoEstado }: { titulo: string; entregadores: EntregadorOperacional[]; vazio: string; rotuloDoEstado?: (entregador: EntregadorOperacional) => string }) {
+function GrupoDaFila({ titulo, entregadores, vazio }: { titulo: string; entregadores: EntregadorOperacional[]; vazio: string }) {
   return (
     <View style={estilos.grupo}>
       <Texto variante="pequenoForte" cor="conteudoSuave">
@@ -593,7 +649,7 @@ function GrupoDaFila({ titulo, entregadores, vazio, rotuloDoEstado }: { titulo: 
                 {entregador.pessoa.nomeExibicao}
               </Texto>
               <Texto variante="pequeno" cor={entregador.estado === "disponivel_na_base" || entregador.estado === "em_entrega" ? "marca" : "conteudoSuave"}>
-                {rotuloDoEstado ? rotuloDoEstado(entregador) : ROTULO_ESTADO_OPERACIONAL[entregador.estado]}
+                {ROTULO_ESTADO_OPERACIONAL[entregador.estado]}
               </Texto>
             </View>
           ))}
@@ -614,6 +670,9 @@ const estilos = StyleSheet.create({
   duasColunas: { alignItems: "flex-start", flexDirection: "row", gap: Espaco.tres },
   estreito: { width: 96 },
   fila: { gap: Espaco.tres },
+  abas: { gap: Espaco.dois, paddingRight: Espaco.quatro },
+  aba: { alignItems: "center", backgroundColor: Cores.superficie, borderColor: Cores.borda, borderRadius: Raio.total, borderWidth: 1, flexDirection: "row", gap: Espaco.um, justifyContent: "center", minHeight: 36, paddingHorizontal: Espaco.tres },
+  abaMarcada: { backgroundColor: Cores.marca, borderColor: Cores.marca },
   grupo: { gap: Espaco.um },
   itemDaFila: { alignItems: "center", flexDirection: "row", gap: Espaco.dois, paddingHorizontal: Espaco.tres, paddingVertical: Espaco.dois },
 });

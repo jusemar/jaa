@@ -85,13 +85,24 @@ export const convidarEntregadorEntradaSchema = z.object({ nomeUsuario: nomeUsuar
 
 export type ConvidarEntregadorEntrada = z.input<typeof convidarEntregadorEntradaSchema>;
 
-// A empresa só liga/desliga o vínculo; aceitar ou recusar o convite é decisão da pessoa.
+/**
+ * A empresa pode ligar/desligar ESTE vínculo? Quem está ATIVO ela sempre pode desativar. REATIVAR,
+ * só quem já aceitou um convite (`respondidoEm`): convite pendente depende da pessoa, e quem nunca
+ * aceitou não vira entregador por decisão da empresa — só com novo convite. Regra única do servidor
+ * (que impõe) e das telas (que só mostram o botão).
+ */
+export function empresaPodeAlternarVinculo(entregador: { status: StatusEntregador; respondidoEm: Date | string | null }): boolean {
+  return entregador.status === "ativo" || (entregador.status === "inativo" && entregador.respondidoEm !== null);
+}
+
+// A empresa só liga/desliga o vínculo; aceitar o convite é decisão da pessoa.
 export const alterarStatusEntregadorEntradaSchema = z.object({ status: z.enum(["ativo", "inativo"]) });
 
 export type AlterarStatusEntregadorEntrada = z.infer<typeof alterarStatusEntregadorEntradaSchema>;
 
-// Resposta da PESSOA ao convite (é ela quem decide virar entregador daquela empresa).
-export const responderConviteEntradaSchema = z.object({ resposta: z.enum(["aceitar", "recusar"]) });
+// Resposta da PESSOA ao convite: é ela quem decide virar entregador daquela empresa. A única resposta
+// é ACEITAR — quem não quer simplesmente deixa o convite pendente (não existe recusa).
+export const responderConviteEntradaSchema = z.object({ resposta: z.literal("aceitar") });
 
 export type ResponderConviteEntrada = z.infer<typeof responderConviteEntradaSchema>;
 
