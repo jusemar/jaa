@@ -15,6 +15,7 @@ export * from "./catalogo/catalogo-publico.ts";
 export * from "./enderecos/endereco.ts";
 export * from "./pedidos/status-pedido.ts";
 export * from "./pedidos/pedido.ts";
+export * from "./pedidos/periodo-pedidos.ts";
 export * from "./pedidos/gestao-pedidos.ts";
 export * from "./entregas/entregador.ts";
 export * from "./entregas/saida.ts";

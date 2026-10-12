@@ -1,9 +1,8 @@
 import type { Banco } from "@jaa/banco";
 import {
-  LIMITE_PADRAO_PEDIDOS_EMPRESA,
   avancarStatusPedidoEntradaSchema,
   cancelarPedidoEntradaSchema,
-  filtroPedidosEmpresaSchema,
+  consultaPedidosEmpresaSchema,
   type ErroApi,
   type ListaPedidosEmpresa,
 } from "@jaa/contratos";
@@ -24,12 +23,6 @@ import { serializarPedido, serializarPedidoDaEmpresa } from "../lib/serializar-p
 
 const parametrosEmpresaSchema = z.object({ empresaId: z.uuid() });
 const parametrosPedidoSchema = z.object({ empresaId: z.uuid(), pedidoId: z.uuid() });
-const consultaListaSchema = z.object({
-  filtro: filtroPedidosEmpresaSchema.default("todos"),
-  antesDe: z.uuid().optional(),
-  limite: z.coerce.number().int().min(1).max(50).default(LIMITE_PADRAO_PEDIDOS_EMPRESA),
-});
-
 function responder(resposta: FastifyReply, status: number, erro: ErroApi) {
   return resposta.code(status).send(erro);
 }
@@ -52,9 +45,9 @@ export function registrarRotasPedidosEmpresa(
   servidor.get("/empresas/:empresaId/pedidos", { preHandler }, async (requisicao, resposta) => {
     const { usuarioId } = obterIdentidadeExigida(requisicao);
     const parametros = parametrosEmpresaSchema.safeParse(requisicao.params);
-    const consulta = consultaListaSchema.safeParse(requisicao.query);
+    const consulta = consultaPedidosEmpresaSchema.safeParse(requisicao.query);
     if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Empresa inválida." });
-    if (!consulta.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Consulta inválida." });
+    if (!consulta.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: consulta.error.issues[0]?.path[0] === "dataFinal" ? (consulta.error.issues[0]?.message ?? "Consulta inválida.") : "Consulta inválida." });
 
     const resultado = await listarPedidosDaEmpresaAutorizado(banco, usuarioId, parametros.data.empresaId, consulta.data);
     if (resultado.tipo !== "lista") return responder(resposta, 404, NAO_ENCONTRADA);
@@ -64,6 +57,7 @@ export function registrarRotasPedidosEmpresa(
       // Página cheia ⇒ pode haver mais; o cursor é o pedido mais antigo desta página.
       proximoCursor: resultado.pedidos.length === consulta.data.limite ? (resultado.pedidos.at(-1)?.id ?? null) : null,
       total: resultado.total,
+      contagens: resultado.contagens,
     };
     return lista;
   });

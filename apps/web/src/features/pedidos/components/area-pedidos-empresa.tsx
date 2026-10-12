@@ -1,6 +1,6 @@
 "use client";
 
-import { EVENTO_PEDIDO_NOVO, EVENTO_SAIDA_ATUALIZADA, entregadorPodeReceberAtribuicao, eventoSaidaAtualizadaSchema, type EntregaDoPedido, type EntregadorDaEmpresa, type ListaPedidosEmpresa as PaginaDaLista, type Pedido, type SaidaEntrega } from "@jaa/contratos";
+import { EVENTO_PEDIDO_NOVO, EVENTO_PEDIDO_STATUS_ATUALIZADO, EVENTO_SAIDA_ATUALIZADA, entregadorPodeReceberAtribuicao, eventoSaidaAtualizadaSchema, type EntregaDoPedido, type EntregadorDaEmpresa, type ListaPedidosEmpresa as PaginaDaLista, type Pedido, type SaidaEntrega } from "@jaa/contratos";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { avisar } from "@/components/ui/avisos";
 import { Carregando } from "@/components/ui/primitivos";
@@ -11,10 +11,10 @@ import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import type { ResultadoApi } from "@/lib/api";
 import { useStatusPedido } from "../hooks/use-status-pedido";
 import { avancarStatusPedido, cancelarPedido, listarPedidosDaEmpresa, obterPedidoDaEmpresa } from "../lib/api-pedidos";
-import { CONSULTA_INICIAL, PEDIDOS_POR_PAGINA, cursorDaPagina, irParaAnterior, irParaProxima, paginaAtual, paginaFicouVazia, resumoDaPagina, trocarFiltro, type ConsultaPedidos } from "../lib/paginacao-pedidos";
+import { CONSULTA_INICIAL, PEDIDOS_POR_PAGINA, cursorDaPagina, dataDeHojeNoCampo, irParaAnterior, irParaProxima, paginaAtual, paginaFicouVazia, parametrosDoPeriodo, problemaDoPeriodo, resumoDaPagina, trocarFiltro, trocarPeriodo, type ConsultaPedidos } from "../lib/paginacao-pedidos";
 import { AcoesPedidoEmpresa } from "./acoes-pedido-empresa";
 import { DetalhePedido } from "./apresentacao-pedido";
-import { FiltrosPedidos, ListaPedidosEmpresa, PaginacaoPedidos } from "./lista-pedidos-empresa";
+import { FiltroDePeriodo, FiltrosPedidos, ListaPedidosEmpresa, PaginacaoPedidos } from "./lista-pedidos-empresa";
 import { LegendaStatusEntrega } from "./resumo-logistico-pedido";
 
 /*
@@ -57,11 +57,18 @@ export function AreaPedidosEmpresa({
   const filtro = consulta.filtro;
   const cursor = cursorDaPagina(consulta);
   const pedidos = lista?.pedidos ?? [];
+  // Período: o que vai ao servidor é a opção e, no personalizado, as duas datas (ele calcula os limites).
+  const { periodo, dataInicial, dataFinal } = parametrosDoPeriodo(consulta);
+  // Datas do personalizado como estão nos CAMPOS (podem estar incompletas; aí a consulta não muda).
+  const [datasDoPeriodo, setDatasDoPeriodo] = useState<{ dataInicial: string; dataFinal: string } | null>(null);
+  const escolhendoPersonalizado = datasDoPeriodo !== null;
+  const problemaDasDatas = escolhendoPersonalizado ? problemaDoPeriodo({ periodo: "personalizado", ...datasDoPeriodo }) : null;
 
-  // Só a página pedida vem do servidor (10 por vez), com o total do filtro.
+  // Só a página pedida vem do servidor (10 por vez), com o total do filtro e as contagens do período.
   const buscar = useCallback(
-    (): Promise<PaginaDePedidos> => Promise.all([listarPedidosDaEmpresa(empresaId, { filtro, antesDe: cursor, limite: PEDIDOS_POR_PAGINA }), listarSaidasDaEmpresa(empresaId, false)]),
-    [empresaId, filtro, cursor],
+    (): Promise<PaginaDePedidos> =>
+      Promise.all([listarPedidosDaEmpresa(empresaId, { filtro, antesDe: cursor, limite: PEDIDOS_POR_PAGINA, periodo, dataInicial, dataFinal }), listarSaidasDaEmpresa(empresaId, false)]),
+    [empresaId, filtro, cursor, periodo, dataInicial, dataFinal],
   );
 
   const adotar = useCallback(([resultado, rotas]: PaginaDePedidos) => {
@@ -119,10 +126,14 @@ export function AreaPedidosEmpresa({
     const socket = obterClienteRealtime();
     const aoChegarPedido = () => void carregar();
     const aoReconectar = () => void carregar();
+    // Status mudou (aqui ou por outro operador): as QUANTIDADES dos filtros mudam junto — relê.
+    const aoMudarStatus = () => void carregar();
     socket.on(EVENTO_PEDIDO_NOVO, aoChegarPedido);
+    socket.on(EVENTO_PEDIDO_STATUS_ATUALIZADO, aoMudarStatus);
     socket.on("connect", aoReconectar);
     return () => {
       socket.off(EVENTO_PEDIDO_NOVO, aoChegarPedido);
+      socket.off(EVENTO_PEDIDO_STATUS_ATUALIZADO, aoMudarStatus);
       socket.off("connect", aoReconectar);
     };
   }, [carregar]);
@@ -222,6 +233,25 @@ export function AreaPedidosEmpresa({
     }
   }
 
+  function escolherPeriodo(novo: typeof consulta.periodo) {
+    if (novo !== "personalizado") {
+      setDatasDoPeriodo(null);
+      navegar(trocarPeriodo(consulta, novo));
+      return;
+    }
+    // Abre com o dia de hoje nas duas datas (já é um período válido) e a pessoa ajusta a partir daí.
+    const hoje = dataDeHojeNoCampo();
+    const datas = { dataInicial: consulta.dataInicial ?? hoje, dataFinal: consulta.dataFinal ?? hoje };
+    setDatasDoPeriodo(datas);
+    navegar(trocarPeriodo(consulta, "personalizado", datas));
+  }
+
+  function mudarDatasDoPeriodo(datas: { dataInicial: string; dataFinal: string }) {
+    setDatasDoPeriodo(datas);
+    // Só período COMPLETO e em ordem vira consulta; enquanto isso a lista mostra o último válido.
+    if (problemaDoPeriodo({ periodo: "personalizado", ...datas }) === null) navegar(trocarPeriodo(consulta, "personalizado", datas));
+  }
+
   function voltarParaPedidos() {
     setErro(null);
     setTransferencia(null);
@@ -284,9 +314,26 @@ export function AreaPedidosEmpresa({
             </button>
           </div>
 
-          <FiltrosPedidos filtro={filtro} aoFiltrar={(novo) => navegar(trocarFiltro(consulta, novo))} />
+          <FiltroDePeriodo
+            periodo={escolhendoPersonalizado ? "personalizado" : consulta.periodo}
+            dataInicial={datasDoPeriodo?.dataInicial ?? ""}
+            dataFinal={datasDoPeriodo?.dataFinal ?? ""}
+            problema={problemaDasDatas}
+            aoEscolherPeriodo={escolherPeriodo}
+            aoMudarDatas={mudarDatasDoPeriodo}
+          />
+          <FiltrosPedidos filtro={filtro} contagens={lista?.contagens ?? null} aoFiltrar={(novo) => navegar(trocarFiltro(consulta, novo))} />
           <LegendaStatusEntrega />
-          {lista === null && !erro ? <Carregando texto="Carregando pedidos…" /> : <ListaPedidosEmpresa pedidos={pedidos} saidas={saidas} aoAbrir={(pedido) => void abrir(pedido.id)} />}
+          {lista === null && !erro ? (
+            <Carregando texto="Carregando pedidos…" />
+          ) : (
+            <ListaPedidosEmpresa
+              pedidos={pedidos}
+              saidas={saidas}
+              vazio={consulta.periodo === "todos" ? "Nenhum pedido aqui." : "Nenhum pedido neste período."}
+              aoAbrir={(pedido) => void abrir(pedido.id)}
+            />
+          )}
           <PaginacaoPedidos resumo={resumo} ocupado={carregando} aoAnterior={() => navegar(irParaAnterior(consulta))} aoProxima={() => navegar(irParaProxima(consulta, lista?.proximoCursor ?? null))} />
         </>
       )}

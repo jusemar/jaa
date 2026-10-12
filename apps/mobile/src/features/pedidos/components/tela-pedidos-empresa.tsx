@@ -3,19 +3,23 @@ import {
   EVENTO_SAIDA_ATUALIZADA,
   ROTULO_FILTRO_PEDIDOS,
   ROTULO_PAGAMENTO_ENTREGA,
+  ROTULO_PERIODO_PEDIDOS,
+  entregadorNoResumoDoPedido,
   entregadorPodeReceberAtribuicao,
   eventoSaidaAtualizadaSchema,
   filtroPedidosEmpresaSchema,
+  periodoPedidosSchema,
   type EntregaDoPedido,
   type EntregadorDaEmpresa,
   type FiltroPedidosEmpresa,
   type ListaPedidosEmpresa,
   type Pedido,
   type PedidoDaEmpresa,
+  type PeriodoPedidos,
   type SaidaEntrega,
 } from "@jaa/contratos";
 import { useCallback, useEffect, useState } from "react";
-import { BackHandler, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { BackHandler, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Botao } from "@/components/ui/botao";
 import { Icone } from "@/components/ui/icone";
 import { Aviso, Carregando, Cartao, EstadoVazio, Secao } from "@/components/ui/superficies";
@@ -24,13 +28,33 @@ import { Texto } from "@/components/ui/texto";
 import { ALTURA_TOQUE, Cores, Espaco, Raio } from "@/constants/theme";
 import { formatarHorarioMensagem } from "@/features/conversas/lib/horarios";
 import { atribuirEntrega, listarEntregadores, listarSaidasDaEmpresa, obterEntregaDoPedido } from "@/features/entregas/lib/api-entregas-empresa";
+import { CampoDeEscolha, FolhaDeEscolha } from "@/features/produtos/components/pecas";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import type { RespostaApi } from "@/lib/api";
 import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { useStatusPedido } from "../hooks/use-status-pedido";
 import { avancarStatusPedido, cancelarPedido, listarPedidosDaEmpresa, obterPedidoDaEmpresa } from "../lib/api-pedidos";
 import { APRESENTACAO_STATUS_ENTREGA, ROTULO_STATUS_PEDIDO_NA_LISTA, adotarSaida, apresentacaoEntregaDoPedido, encontrarSaidaDoPedido, nomeDaRota, rotuloDeItens } from "../lib/gestao-pedidos";
-import { CONSULTA_INICIAL, PEDIDOS_POR_PAGINA, cursorDaPagina, irParaAnterior, irParaProxima, paginaAtual, paginaFicouVazia, resumoDaPagina, trocarFiltro, type ConsultaPedidos, type ResumoDaPagina } from "../lib/paginacao-pedidos";
+import {
+  CONSULTA_INICIAL,
+  PEDIDOS_POR_PAGINA,
+  cursorDaPagina,
+  dataDeHojeNoCampo,
+  dataDoCampo,
+  dataParaCampo,
+  irParaAnterior,
+  irParaProxima,
+  mascararData,
+  paginaAtual,
+  paginaFicouVazia,
+  parametrosDoPeriodo,
+  problemaDoPeriodo,
+  resumoDaPagina,
+  trocarFiltro,
+  trocarPeriodo,
+  type ConsultaPedidos,
+  type ResumoDaPagina,
+} from "../lib/paginacao-pedidos";
 import { AcoesPedidoEmpresa, ConfirmarTransferencia, DetalhePedidoEmpresa, EntregaDoPedidoEmpresa } from "./detalhe-pedido-empresa";
 
 /*
@@ -66,11 +90,19 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
   const filtro = consulta.filtro;
   const cursor = cursorDaPagina(consulta);
   const pedidos = lista?.pedidos ?? [];
+  // Período: o que vai ao servidor é a opção e, no personalizado, as duas datas (ele calcula os limites).
+  const { periodo, dataInicial, dataFinal } = parametrosDoPeriodo(consulta);
+  // Datas do personalizado como estão DIGITADAS (DD/MM/AAAA; podem estar incompletas — aí a consulta não muda).
+  const [datasDigitadas, setDatasDigitadas] = useState<{ inicial: string; final: string } | null>(null);
+  const [escolhendoPeriodo, setEscolhendoPeriodo] = useState(false);
+  const escolhendoPersonalizado = datasDigitadas !== null;
+  const problemaDasDatas = datasDigitadas ? problemaDoPeriodo({ periodo: "personalizado", dataInicial: dataDoCampo(datasDigitadas.inicial), dataFinal: dataDoCampo(datasDigitadas.final) }) : null;
 
-  // Só a página pedida vem do servidor (10 por vez), com o total do filtro.
+  // Só a página pedida vem do servidor (10 por vez), com o total do filtro e as contagens do período.
   const buscar = useCallback(
-    (): Promise<PaginaDePedidos> => Promise.all([listarPedidosDaEmpresa(empresaId, { filtro, antesDe: cursor, limite: PEDIDOS_POR_PAGINA }), listarSaidasDaEmpresa(empresaId, false)]),
-    [empresaId, filtro, cursor],
+    (): Promise<PaginaDePedidos> =>
+      Promise.all([listarPedidosDaEmpresa(empresaId, { filtro, antesDe: cursor, limite: PEDIDOS_POR_PAGINA, periodo, dataInicial, dataFinal }), listarSaidasDaEmpresa(empresaId, false)]),
+    [empresaId, filtro, cursor, periodo, dataInicial, dataFinal],
   );
 
   const adotar = useCallback(([resultado, rotas]: PaginaDePedidos) => {
@@ -141,8 +173,10 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
             if (resultado.ok) setAberto(resultado.dados);
           });
         }
+        // As QUANTIDADES dos filtros mudam junto com o status: relê a página (mesmo filtro e período).
+        void carregar();
       },
-      [abertoId, empresaId],
+      [abertoId, empresaId, carregar],
     ),
   );
 
@@ -215,6 +249,26 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
     }
   }
 
+  function escolherPeriodo(novo: PeriodoPedidos) {
+    if (novo !== "personalizado") {
+      setDatasDigitadas(null);
+      navegar(trocarPeriodo(consulta, novo));
+      return;
+    }
+    // Abre com o dia de hoje nas duas datas (já é um período válido) e a pessoa ajusta a partir daí.
+    const hoje = dataDeHojeNoCampo();
+    const datas = { dataInicial: consulta.dataInicial ?? hoje, dataFinal: consulta.dataFinal ?? hoje };
+    setDatasDigitadas({ inicial: dataParaCampo(datas.dataInicial), final: dataParaCampo(datas.dataFinal) });
+    navegar(trocarPeriodo(consulta, "personalizado", datas));
+  }
+
+  function mudarDatas(digitadas: { inicial: string; final: string }) {
+    setDatasDigitadas(digitadas);
+    const datas = { dataInicial: dataDoCampo(digitadas.inicial), dataFinal: dataDoCampo(digitadas.final) };
+    // Só período COMPLETO e em ordem vira consulta; enquanto isso a lista mostra o último válido.
+    if (problemaDoPeriodo({ periodo: "personalizado", ...datas }) === null) navegar(trocarPeriodo(consulta, "personalizado", datas));
+  }
+
   const voltarParaPedidos = useCallback(() => {
     setErro(null);
     setAviso(null);
@@ -246,14 +300,45 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
             void carregar().finally(() => setAtualizando(false));
           }}>
           <Secao titulo="Pedidos" descricao={`Pedidos recebidos por ${nomeEmpresa} e a próxima ação de cada um.`}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="Filtrar pedidos" contentContainerStyle={estilos.filtros}>
+            {/* PERÍODO (pela criação do pedido, no fuso da empresa — quem calcula é o servidor). */}
+            <View style={estilos.periodo}>
+              <CampoDeEscolha rotulo="Período" valor={ROTULO_PERIODO_PEDIDOS[escolhendoPersonalizado ? "personalizado" : consulta.periodo]} aoAbrir={() => setEscolhendoPeriodo(true)} />
+              {datasDigitadas && (
+                <View style={estilos.datas}>
+                  <CampoDeData rotulo="Data inicial" valor={datasDigitadas.inicial} aoMudar={(inicial) => mudarDatas({ ...datasDigitadas, inicial })} />
+                  <CampoDeData rotulo="Data final" valor={datasDigitadas.final} aoMudar={(final) => mudarDatas({ ...datasDigitadas, final })} />
+                </View>
+              )}
+              {problemaDasDatas && (
+                <Texto variante="pequeno" cor="aviso" accessibilityLiveRegion="polite">
+                  {problemaDasDatas}
+                </Texto>
+              )}
+            </View>
+
+            {/* FILTROS são controles: pílulas com a quantidade do período num contador próprio. */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="Filtrar pedidos por status" contentContainerStyle={estilos.filtros}>
               {filtroPedidosEmpresaSchema.options.map((opcao: FiltroPedidosEmpresa) => {
                 const marcado = filtro === opcao;
+                const quantidade = lista?.contagens[opcao];
                 return (
-                  <Pressable key={opcao} accessibilityRole="button" accessibilityState={{ selected: marcado }} onPress={() => navegar(trocarFiltro(consulta, opcao))} style={[estilos.filtro, marcado && estilos.filtroMarcado]}>
-                    <Texto variante="pequenoMedio" cor={marcado ? "marcaConteudo" : "conteudoSuave"}>
+                  <Pressable
+                    key={opcao}
+                    accessibilityRole="button"
+                    accessibilityLabel={quantidade === undefined ? ROTULO_FILTRO_PEDIDOS[opcao] : `${ROTULO_FILTRO_PEDIDOS[opcao]}: ${quantidade} ${quantidade === 1 ? "pedido" : "pedidos"}`}
+                    accessibilityState={{ selected: marcado }}
+                    onPress={() => navegar(trocarFiltro(consulta, opcao))}
+                    style={[estilos.filtro, marcado && estilos.filtroMarcado]}>
+                    <Texto variante="pequenoMedio" cor={marcado ? "marcaConteudo" : "conteudo"}>
                       {ROTULO_FILTRO_PEDIDOS[opcao]}
                     </Texto>
+                    {quantidade !== undefined && (
+                      <View style={[estilos.quantidade, marcado && estilos.quantidadeMarcada]}>
+                        <Texto variante="miniForte" cor={marcado ? "marcaConteudo" : "conteudoSuave"}>
+                          {quantidade}
+                        </Texto>
+                      </View>
+                    )}
                   </Pressable>
                 );
               })}
@@ -264,7 +349,7 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
             {lista === null && !erro ? (
               <Carregando texto="Carregando pedidos…" />
             ) : pedidos.length === 0 ? (
-              lista !== null && <EstadoVazio titulo="Nenhum pedido aqui" descricao={filtro === "todos" ? "Quando um cliente pedir, o pedido aparece nesta lista." : "Nenhum pedido neste filtro agora."} />
+              lista !== null && <EstadoVazio titulo="Nenhum pedido aqui" descricao={consulta.periodo !== "todos" ? "Nenhum pedido neste período." : filtro === "todos" ? "Quando um cliente pedir, o pedido aparece nesta lista." : "Nenhum pedido neste filtro agora."} />
             ) : (
               <Cartao accessibilityLabel="Pedidos" style={estilos.lista}>
                 {pedidos.map((pedido, indice) => (
@@ -278,6 +363,15 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
           </Secao>
         </Tela>
       </View>
+
+      <FolhaDeEscolha
+        titulo="Período"
+        aberta={escolhendoPeriodo}
+        atual={escolhendoPersonalizado ? "personalizado" : consulta.periodo}
+        itens={periodoPedidosSchema.options.map((opcao) => ({ id: opcao, rotulo: ROTULO_PERIODO_PEDIDOS[opcao] }))}
+        aoEscolher={(opcao) => escolherPeriodo(opcao as PeriodoPedidos)}
+        aoFechar={() => setEscolhendoPeriodo(false)}
+      />
 
       {aberto && (
         <Tela>
@@ -326,6 +420,8 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
 // Lista operacional: clareza para triagem (quem pediu, quanto, como paga, em que pé está).
 function ItemDaLista({ pedido, saida, primeiro, abrindo, aoAbrir }: { pedido: PedidoDaEmpresa; saida: SaidaEntrega | null; primeiro: boolean; abrindo: boolean; aoAbrir: () => void }) {
   const entrega = apresentacaoEntregaDoPedido(pedido.status, saida);
+  // Quem está (ou esteve) com o pedido; "aguardando" só enquanto ele ainda pode receber entregador.
+  const entregador = entregadorNoResumoDoPedido(pedido.status, saida);
   return (
     <Pressable
       accessibilityRole="button"
@@ -348,7 +444,7 @@ function ItemDaLista({ pedido, saida, primeiro, abrindo, aoAbrir }: { pedido: Pe
             {saida && (
               <>
                 <Texto variante="pequeno">Rota: {nomeDaRota(saida)}</Texto>
-                <Texto variante="pequeno">Entregador: {saida.entregador?.nomeExibicao ?? "Aguardando atribuição"}</Texto>
+                {entregador && <Texto variante="pequeno">Entregador: {entregador.tipo === "atribuido" ? entregador.nome : "Aguardando atribuição"}</Texto>}
               </>
             )}
           </View>
@@ -356,6 +452,18 @@ function ItemDaLista({ pedido, saida, primeiro, abrindo, aoAbrir }: { pedido: Pe
       </View>
       <Icone nome="seta" tamanho={18} />
     </Pressable>
+  );
+}
+
+/** Data do período personalizado, digitada como DD/MM/AAAA (as barras entram sozinhas). */
+function CampoDeData({ rotulo, valor, aoMudar }: { rotulo: string; valor: string; aoMudar: (valor: string) => void }) {
+  return (
+    <View style={estilos.campoDeData}>
+      <Texto variante="pequeno" cor="conteudoSuave">
+        {rotulo}
+      </Texto>
+      <TextInput accessibilityLabel={rotulo} value={valor} keyboardType="number-pad" maxLength={10} placeholder="DD/MM/AAAA" placeholderTextColor="#A2AAAB" onChangeText={(texto) => aoMudar(mascararData(texto))} style={estilos.data} />
+    </View>
   );
 }
 
@@ -397,7 +505,13 @@ const estilos = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   escondida: { display: "none" },
   filtros: { gap: Espaco.dois, paddingRight: Espaco.quatro },
-  filtro: { alignItems: "center", backgroundColor: Cores.superficie, borderColor: Cores.borda, borderRadius: Raio.total, borderWidth: 1, justifyContent: "center", minHeight: 36, paddingHorizontal: Espaco.tres },
+  periodo: { gap: Espaco.dois },
+  datas: { flexDirection: "row", gap: Espaco.tres },
+  campoDeData: { flex: 1, gap: Espaco.um, minWidth: 0 },
+  data: { backgroundColor: Cores.superficie, borderColor: Cores.borda, borderRadius: Raio.compacto, borderWidth: 1, color: Cores.conteudo, fontSize: 16, minHeight: ALTURA_TOQUE, paddingHorizontal: Espaco.tres, paddingVertical: 0 },
+  filtro: { alignItems: "center", backgroundColor: Cores.superficie, borderColor: Cores.borda, borderRadius: Raio.total, borderWidth: 1, flexDirection: "row", gap: Espaco.um, justifyContent: "center", minHeight: 40, paddingHorizontal: Espaco.tres },
+  quantidade: { alignItems: "center", backgroundColor: Cores.superficieSuave, borderRadius: Raio.total, justifyContent: "center", minWidth: 22, paddingHorizontal: 6, paddingVertical: 3 },
+  quantidadeMarcada: { backgroundColor: "rgba(255,255,255,0.22)" },
   filtroMarcado: { backgroundColor: Cores.marca, borderColor: Cores.marca },
   lista: { overflow: "hidden" },
   item: { alignItems: "center", flexDirection: "row", gap: Espaco.dois, minHeight: ALTURA_TOQUE, paddingHorizontal: Espaco.tres, paddingVertical: Espaco.tres },

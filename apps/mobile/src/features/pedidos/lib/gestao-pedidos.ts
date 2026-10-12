@@ -1,4 +1,4 @@
-import { MOTIVOS_CANCELAMENTO_SUGERIDOS, type SaidaEntrega, type StatusPedido, type StatusSaida } from "@jaa/contratos";
+import { MOTIVOS_CANCELAMENTO_SUGERIDOS, saidaDoPedido, type SaidaEntrega, type StatusPedido, type StatusSaida } from "@jaa/contratos";
 
 /*
  * GESTÃO DOS PEDIDOS pela empresa no app — as regras de apresentação da Web
@@ -41,8 +41,12 @@ export function apresentacaoEntregaDoPedido(statusPedido: StatusPedido, saida: S
   return status ? APRESENTACAO_STATUS_ENTREGA[status] : null;
 }
 
+/**
+ * A rota que vale para o pedido (ele pode ter passado por mais de uma): a regra é única, em
+ * `@jaa/contratos` — a parada ativa; sem nenhuma, a de encerramento mais recente.
+ */
 export function encontrarSaidaDoPedido(saidas: readonly SaidaEntrega[], pedidoId: string): SaidaEntrega | null {
-  return saidas.find((saida) => saida.paradas.some((parada) => parada.pedidoId === pedidoId)) ?? null;
+  return saidaDoPedido(saidas, pedidoId);
 }
 
 export function nomeDaRota(saida: SaidaEntrega): string {

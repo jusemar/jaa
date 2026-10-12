@@ -1,11 +1,15 @@
 import type { Banco } from "@jaa/banco";
 import {
   LIMITE_MAXIMO_PEDIDOS_EMPRESA,
+  SEM_INTERVALO,
+  contagensPorFiltro,
   entregadorPodeOperar,
+  intervaloDoPeriodo,
   STATUS_POR_FILTRO_PEDIDOS,
   proximoStatusPedido,
   statusPedidoTerminal,
-  type FiltroPedidosEmpresa,
+  type ConsultaPedidosEmpresa,
+  type ContagensPedidosEmpresa,
   type StatusPedido,
 } from "@jaa/contratos";
 import { buscarEmpresaPublicaPorId, type EmpresaPublicaRegistro } from "../../catalogo/repositorios/repositorio-empresas-publicas.js";
@@ -24,7 +28,8 @@ import type { CanalEventosPedidos } from "../lib/eventos-pedidos.js";
 import {
   alterarStatusPedido,
   buscarPedidoDaEmpresa,
-  contarPedidosDaEmpresa,
+  buscarFusoDaEmpresa,
+  contarPedidosDaEmpresaPorStatus,
   listarPedidosDaEmpresa,
   type PedidoComItensRegistro,
   type PedidoDaEmpresaRegistro,
@@ -44,18 +49,28 @@ export async function listarPedidosDaEmpresaAutorizado(
   banco: Banco,
   usuarioId: string,
   empresaId: string,
-  consulta: { filtro: FiltroPedidosEmpresa; limite: number; antesDe?: string | undefined },
-): Promise<{ tipo: "lista"; pedidos: PedidoDaEmpresaRegistro[]; total: number } | SemAcesso> {
+  consulta: Pick<ConsultaPedidosEmpresa, "filtro" | "limite" | "antesDe"> & Partial<Pick<ConsultaPedidosEmpresa, "periodo" | "dataInicial" | "dataFinal">>,
+  // Relógio do SERVIDOR: é ele (no fuso da empresa) que diz que dia é hoje. Injetável para os testes.
+  agora: () => Date = () => new Date(),
+): Promise<{ tipo: "lista"; pedidos: PedidoDaEmpresaRegistro[]; total: number; contagens: ContagensPedidosEmpresa } | SemAcesso> {
   const acesso = await autorizarEmpresa(banco, usuarioId, empresaId, "ver-pedidos");
   if (!acesso) return { tipo: "empresa-nao-encontrada" };
 
   const limite = Math.min(Math.max(Math.trunc(consulta.limite), 1), LIMITE_MAXIMO_PEDIDOS_EMPRESA);
   const status = STATUS_POR_FILTRO_PEDIDOS[consulta.filtro];
-  const [pedidos, total] = await Promise.all([
-    listarPedidosDaEmpresa(banco, empresaId, { status, limite, antesDe: consulta.antesDe }),
-    contarPedidosDaEmpresa(banco, empresaId, status),
+  const periodo = consulta.periodo ?? "todos";
+  // Sem período não há o que converter: nem consulta o fuso.
+  const fuso = periodo === "todos" ? null : await buscarFusoDaEmpresa(banco, empresaId);
+  const intervalo = fuso ? intervaloDoPeriodo(periodo, { agora: agora(), fuso, dataInicial: consulta.dataInicial, dataFinal: consulta.dataFinal }) : SEM_INTERVALO;
+
+  // O PERÍODO vale para a lista e para as contagens; o filtro de status e a página, só para a lista.
+  const [pedidos, porStatus] = await Promise.all([
+    listarPedidosDaEmpresa(banco, empresaId, { status, limite, antesDe: consulta.antesDe, intervalo }),
+    contarPedidosDaEmpresaPorStatus(banco, empresaId, intervalo),
   ]);
-  return { tipo: "lista", pedidos, total };
+  const contagens = contagensPorFiltro(porStatus);
+  // O total do filtro marcado é a própria contagem dele: lista e chips nunca discordam.
+  return { tipo: "lista", pedidos, total: contagens[consulta.filtro], contagens };
 }
 
 export async function obterPedidoDaEmpresaAutorizado(

@@ -1,4 +1,4 @@
-import type { SaidaEntrega, StatusPedido, StatusSaida } from "@jaa/contratos";
+import { entregadorNoResumoDoPedido, saidaDoPedido, type SaidaEntrega, type StatusPedido, type StatusSaida } from "@jaa/contratos";
 
 type StatusVisualEntrega = StatusSaida | "cancelada";
 
@@ -46,15 +46,15 @@ export function apresentacaoEntregaDoPedido(
   return status ? APRESENTACAO_STATUS_ENTREGA[status] : null;
 }
 
+/**
+ * A rota que vale para o pedido (ele pode ter passado por mais de uma): a regra é única, em
+ * `@jaa/contratos` — a parada ativa; sem nenhuma, a de encerramento mais recente.
+ */
 export function encontrarSaidaDoPedido(
   saidas: SaidaEntrega[],
   pedidoId: string,
 ): SaidaEntrega | null {
-  return (
-    saidas.find((saida) =>
-      saida.paradas.some((parada) => parada.pedidoId === pedidoId),
-    ) ?? null
-  );
+  return saidaDoPedido(saidas, pedidoId);
 }
 
 function nomeRota(saida: SaidaEntrega): string {
@@ -75,6 +75,11 @@ export function ResumoLogisticoPedido({
 }) {
   const apresentacao = apresentacaoEntregaDoPedido(statusPedido, saida);
   if (!apresentacao) return null;
+  /*
+   * Quem está (ou esteve) com o pedido. "Aguardando atribuição" só enquanto o pedido ainda pode
+   * receber entregador: em pedido entregue ou cancelado que nunca teve um, a linha não aparece.
+   */
+  const entregador = entregadorNoResumoDoPedido(statusPedido, saida);
   return (
     <div
       data-resumo-logistico
@@ -84,10 +89,14 @@ export function ResumoLogisticoPedido({
       {saida ? (
         <>
           <span>Rota: {nomeRota(saida)}</span>
-          <span>
-            Entregador:{" "}
-            {saida.entregador?.nomeExibicao ?? "Aguardando atribuição"}
-          </span>
+          {entregador ? (
+            <span data-entregador-do-pedido={entregador.tipo}>
+              Entregador:{" "}
+              {entregador.tipo === "atribuido"
+                ? entregador.nome
+                : "Aguardando atribuição"}
+            </span>
+          ) : null}
         </>
       ) : null}
     </div>

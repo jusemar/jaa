@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
-import { historicoStatusPedido, pedidos } from "@jaa/banco/schema";
+import { historicoStatusPedido, membrosEmpresa, pedidos } from "@jaa/banco/schema";
 import {
   EVENTO_MENSAGEM_NOVA,
   EVENTO_PEDIDO_STATUS_ATUALIZADO,
@@ -15,6 +15,7 @@ import {
 } from "@jaa/contratos";
 import { asc, eq } from "drizzle-orm";
 import { aguardarAte, coletar, como, criarAmbienteIntegracao, type Pessoa } from "./apoio/integracao.js";
+import { listarPedidosDaEmpresaAutorizado } from "../src/features/pedidos/casos-de-uso/gerir-pedidos-empresa.js";
 
 /*
  * Integração REAL da GESTÃO DO PEDIDO pela empresa: máquina de estados, cancelamento com motivo,
@@ -188,6 +189,150 @@ describe("lista de pedidos da empresa", () => {
     assert.equal((await cancelar(A, farmacia, pedido.id, "recebido", "Não é meu pedido")).statusCode, 404);
     // Nada mudou na Pizzaria.
     assert.equal((await ctx.api(A, "GET", `/empresas/${pizzaria.id}/pedidos/${pedido.id}`)).json().status, "recebido");
+  });
+});
+
+describe("contagens por status e filtro por período", () => {
+  // Empresa PRÓPRIA deste bloco: as contagens são exatas, sem depender dos outros testes.
+  let lanchonete: Empresa;
+  const SOMA = (lista: ListaPedidosEmpresa) => lista.contagens.recebidos + lista.contagens.em_preparacao + lista.contagens.prontos + lista.contagens.em_entrega + lista.contagens.entregues + lista.contagens.cancelados;
+  const listar = async (consulta = ""): Promise<ListaPedidosEmpresa> => {
+    const resposta = await ctx.api(A, "GET", `/empresas/${lanchonete.id}/pedidos${consulta}`);
+    assert.equal(resposta.statusCode, 200, resposta.body);
+    return resposta.json();
+  };
+  // Pedido REAL da lanchonete (pela API); depois o instante de criação e o status são ajustados no
+  // banco — a criação sempre usa "agora", e aqui interessa só o que a LISTA lê: `criado_em` e `status`.
+  async function pedidoEm(criadoEm: string, status: StatusPedido = "recebido"): Promise<string> {
+    const resposta = await ctx.api(B, "POST", "/pedidos", {
+      idCliente: randomUUID(),
+      empresaIdentidadeId: lanchonete.identidadeId,
+      conversaId: conversaComALanchonete,
+      enderecoId: enderecoB,
+      itens: [{ produtoId: lanche.id, quantidade: 1 }],
+      pagamento: { forma: "cartao" },
+    });
+    assert.equal(resposta.statusCode, 201, resposta.body);
+    const pedido: Pedido = resposta.json();
+    await ctx.banco
+      .update(pedidos)
+      .set({ criadoEm: new Date(criadoEm), status, motivoCancelamento: status === "cancelado" ? "Teste de período" : null })
+      .where(eq(pedidos.id, pedido.id));
+    return pedido.id;
+  }
+
+  let lanche: Produto;
+  let conversaComALanchonete = "";
+
+  before(async () => {
+    const criada = await ctx.api(A, "POST", "/empresas", { nome: "Lanchonete Período", nomeUsuario: `${PREFIXO}_lanch`, slug: `${PREFIXO}-lanchonete` });
+    assert.equal(criada.statusCode, 201, criada.body);
+    lanchonete = criada.json();
+    lanche = (await ctx.api(A, "POST", `/empresas/${lanchonete.id}/produtos`, { nome: "X-Tudo", precoCentavos: 2500 })).json();
+    conversaComALanchonete = await ctx.abrirConversa(B, `${PREFIXO}_lanch`);
+    // Fuso da empresa: São Paulo (UTC−3). 11/10/2026 é domingo.
+    await pedidoEm("2026-10-11T03:00:00.000Z", "recebido"); // 00:00 de domingo 11 (primeiro instante do dia)
+    await pedidoEm("2026-10-11T15:00:00.000Z", "em_preparacao"); // domingo 11, meio-dia
+    await pedidoEm("2026-10-12T02:59:59.999Z", "pronto"); // 23:59:59,999 de domingo 11 (último instante do dia)
+    await pedidoEm("2026-10-12T03:00:00.000Z", "cancelado"); // 00:00 de segunda 12 (já é outro dia e outra semana)
+    await pedidoEm("2026-10-05T03:00:00.000Z", "entregue"); // segunda 05, 00:00 (primeiro instante da semana)
+    await pedidoEm("2026-10-05T02:59:59.999Z", "entregue"); // domingo 04, 23:59 (semana anterior)
+    await pedidoEm("2026-10-01T03:00:00.000Z", "saiu_para_entrega"); // 1º de outubro, 00:00
+    await pedidoEm("2026-10-01T02:59:59.999Z", "em_rota"); // 30 de setembro, 23:59 (mês anterior)
+    await pedidoEm("2026-11-01T03:00:00.000Z", "confirmado"); // 1º de novembro, 00:00 (mês seguinte)
+  });
+
+  const AGORA = () => new Date("2026-10-11T15:00:00.000Z"); // domingo 11/10, 12:00 em São Paulo
+  const noRelogio = async (consulta: Parameters<typeof listarPedidosDaEmpresaAutorizado>[3]) => {
+    // A conta que opera a lanchonete (o apoio dos testes não expõe o id da conta de A).
+    const [dono] = await ctx.banco.select({ usuarioId: membrosEmpresa.usuarioId }).from(membrosEmpresa).where(eq(membrosEmpresa.empresaId, lanchonete.id)).limit(1);
+    assert.ok(dono);
+    const resultado = await listarPedidosDaEmpresaAutorizado(ctx.banco, dono.usuarioId, lanchonete.id, consulta, AGORA);
+    assert.equal(resultado.tipo, "lista");
+    if (resultado.tipo !== "lista") throw new Error("sem acesso");
+    return resultado;
+  };
+
+  it("todo o período: conta cada filtro no banco inteiro, e Todos é a soma", async () => {
+    const lista = await listar("?limite=50");
+    assert.deepEqual(lista.contagens, { todos: 9, recebidos: 2, em_preparacao: 1, prontos: 1, em_entrega: 2, entregues: 2, cancelados: 1 });
+    assert.equal(SOMA(lista), lista.contagens.todos);
+    assert.equal(lista.total, 9);
+    assert.equal(lista.pedidos.length, 9);
+  });
+
+  it("paginação e filtro de status não mudam as contagens; o total acompanha o filtro marcado", async () => {
+    const esperadas = (await listar("?limite=50")).contagens;
+    const primeira = await listar("?limite=2");
+    assert.equal(primeira.pedidos.length, 2);
+    assert.deepEqual(primeira.contagens, esperadas);
+    const segunda = await listar(`?limite=2&antesDe=${primeira.proximoCursor}`);
+    assert.deepEqual(segunda.contagens, esperadas);
+
+    const entregues = await listar("?filtro=entregues&limite=1");
+    assert.deepEqual(entregues.contagens, esperadas);
+    assert.equal(entregues.total, 2);
+    assert.equal(entregues.pedidos.length, 1);
+    // "Em entrega" reúne dois status reais; "Recebidos" inclui o legado confirmado.
+    assert.equal((await listar("?filtro=em_entrega")).pedidos.length, 2);
+    assert.equal((await listar("?filtro=recebidos")).pedidos.length, 2);
+  });
+
+  it("Hoje: o dia inteiro no fuso da empresa, com os dois limites certos", async () => {
+    const hoje = await noRelogio({ filtro: "todos", limite: 50, periodo: "hoje" });
+    assert.deepEqual(hoje.contagens, { todos: 3, recebidos: 1, em_preparacao: 1, prontos: 1, em_entrega: 0, entregues: 0, cancelados: 0 });
+    assert.deepEqual(hoje.pedidos.map((item) => item.status).sort(), ["em_preparacao", "pronto", "recebido"]);
+    assert.equal(hoje.total, 3);
+  });
+
+  it("Esta semana (segunda a domingo) e Este mês", async () => {
+    const semana = await noRelogio({ filtro: "todos", limite: 50, periodo: "semana" });
+    assert.deepEqual(semana.contagens, { todos: 4, recebidos: 1, em_preparacao: 1, prontos: 1, em_entrega: 0, entregues: 1, cancelados: 0 });
+    const mes = await noRelogio({ filtro: "todos", limite: 50, periodo: "mes" });
+    assert.deepEqual(mes.contagens, { todos: 7, recebidos: 1, em_preparacao: 1, prontos: 1, em_entrega: 1, entregues: 2, cancelados: 1 });
+    assert.equal(mes.pedidos.length, 7);
+  });
+
+  it("período + status: a lista filtra pelos dois e as contagens continuam sendo as do período", async () => {
+    const entreguesDoMes = await noRelogio({ filtro: "entregues", limite: 50, periodo: "mes" });
+    assert.equal(entreguesDoMes.pedidos.length, 2);
+    assert.equal(entreguesDoMes.total, 2);
+    assert.equal(entreguesDoMes.contagens.todos, 7);
+    const entreguesDaSemana = await noRelogio({ filtro: "entregues", limite: 50, periodo: "semana" });
+    assert.equal(entreguesDaSemana.pedidos.length, 1);
+    const canceladosDeHoje = await noRelogio({ filtro: "cancelados", limite: 50, periodo: "hoje" });
+    assert.deepEqual([canceladosDeHoje.pedidos.length, canceladosDeHoje.total, canceladosDeHoje.contagens.todos], [0, 0, 3]);
+  });
+
+  it("período + paginação: o cursor continua dentro do período", async () => {
+    const primeira = await noRelogio({ filtro: "todos", limite: 2, periodo: "hoje" });
+    assert.equal(primeira.pedidos.length, 2);
+    const segunda = await noRelogio({ filtro: "todos", limite: 2, periodo: "hoje", antesDe: primeira.pedidos.at(-1)?.id });
+    assert.equal(segunda.pedidos.length, 1);
+    assert.equal(segunda.total, 3);
+  });
+
+  it("Personalizado: as duas datas entram inteiras (pela rota)", async () => {
+    const umDia = await listar("?periodo=personalizado&dataInicial=2026-10-11&dataFinal=2026-10-11&limite=50");
+    assert.equal(umDia.contagens.todos, 3);
+    const doisDias = await listar("?periodo=personalizado&dataInicial=2026-10-11&dataFinal=2026-10-12&limite=50");
+    assert.deepEqual([doisDias.contagens.todos, doisDias.contagens.cancelados], [4, 1]);
+    const setembro = await listar("?periodo=personalizado&dataInicial=2026-09-01&dataFinal=2026-09-30&filtro=em_entrega");
+    assert.deepEqual([setembro.contagens.todos, setembro.pedidos.length], [1, 1]);
+    const vazio = await listar("?periodo=personalizado&dataInicial=2020-01-01&dataFinal=2020-01-31");
+    assert.deepEqual([vazio.contagens.todos, vazio.total, vazio.pedidos.length, vazio.proximoCursor], [0, 0, 0, null]);
+  });
+
+  it("personalizado sem datas, fora de ordem ou com data inválida é recusado; período desconhecido também", async () => {
+    for (const consulta of ["?periodo=personalizado", "?periodo=personalizado&dataInicial=2026-10-11", "?periodo=personalizado&dataInicial=2026-10-12&dataFinal=2026-10-11", "?periodo=personalizado&dataInicial=11/10/2026&dataFinal=2026-10-11", "?periodo=ontem"]) {
+      assert.equal((await ctx.api(A, "GET", `/empresas/${lanchonete.id}/pedidos${consulta}`)).statusCode, 400, consulta);
+    }
+  });
+
+  it("o período não vaza entre empresas nem abre a lista para quem não opera a empresa", async () => {
+    assert.equal((await ctx.api(B, "GET", `/empresas/${lanchonete.id}/pedidos?periodo=hoje`)).statusCode, 404);
+    const daFarmacia: ListaPedidosEmpresa = (await ctx.api(A, "GET", `/empresas/${farmacia.id}/pedidos?periodo=personalizado&dataInicial=2026-10-01&dataFinal=2026-10-31`)).json();
+    assert.equal(daFarmacia.contagens.todos, 0);
   });
 });
 

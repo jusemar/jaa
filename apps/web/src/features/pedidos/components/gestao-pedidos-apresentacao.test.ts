@@ -11,7 +11,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AcoesPedidoEmpresa } from "./acoes-pedido-empresa.tsx";
 import { DetalhePedido, TimelinePedido } from "./apresentacao-pedido.tsx";
-import { ListaPedidosEmpresa } from "./lista-pedidos-empresa.tsx";
+import { FiltroDePeriodo, FiltrosPedidos, ListaPedidosEmpresa } from "./lista-pedidos-empresa.tsx";
 import {
   APRESENTACAO_STATUS_ENTREGA,
   LegendaStatusEntrega,
@@ -505,7 +505,8 @@ describe("lista → página/filtros → Abrir → tela exclusiva do pedido → V
     assert.ok(abrir.includes("setAberto(resultado.dados)") && !abrir.includes("setConsulta") && !abrir.includes("setLista"));
     assert.ok(voltar.includes("setAberto(null)") && !voltar.includes("setConsulta") && !voltar.includes("setLista"));
     // Só a página pedida vem do servidor.
-    assert.match(fonte, /listarPedidosDaEmpresa\(empresaId, \{ filtro, antesDe: cursor, limite: PEDIDOS_POR_PAGINA \}\)/);
+    // Só a página pedida vem do servidor — sempre com o período da consulta.
+    assert.match(fonte, /listarPedidosDaEmpresa\(empresaId, \{ filtro, antesDe: cursor, limite: PEDIDOS_POR_PAGINA, periodo, dataInicial, dataFinal \}\)/);
   });
 
   it("DetalhePedido: sem `aoFechar` não há X e o título pode ser de quem usa; o padrão (cliente/conversa) não mudou", () => {
@@ -545,7 +546,7 @@ describe("paginação da lista de pedidos (10 por página)", () => {
     assert.deepEqual(irParaAnterior(p3), p2);
     assert.equal(irParaAnterior(CONSULTA_INICIAL), CONSULTA_INICIAL);
     assert.equal(irParaProxima(p3, null), p3, "sem cursor não há próxima página");
-    assert.deepEqual(trocarFiltro(p3, "em_preparacao"), { filtro: "em_preparacao", cursores: [] });
+    assert.deepEqual(trocarFiltro(p3, "em_preparacao"), { filtro: "em_preparacao", cursores: [], periodo: "todos" });
     assert.equal(trocarFiltro(p3, "todos"), p3, "o mesmo filtro não perde a página");
     assert.ok(paginaFicouVazia(p3, 0) && !paginaFicouVazia(p3, 2) && !paginaFicouVazia(CONSULTA_INICIAL, 0));
   });
@@ -563,5 +564,109 @@ describe("paginação da lista de pedidos (10 por página)", () => {
     assert.ok(texto(unica).includes("3 pedidos") && !unica.includes("data-pagina-proxima"));
     assert.equal(render({ pagina: 1, quantidadeNaPagina: 0, total: 0, temProxima: false }), "");
     assert.ok(!primeira.includes(" style="));
+  });
+});
+
+describe("filtros de status com quantidade e filtro por período", () => {
+  const contagens = { todos: 15, recebidos: 4, em_preparacao: 3, prontos: 2, em_entrega: 1, entregues: 5, cancelados: 0 };
+
+  it("cada filtro mostra a quantidade que o SERVIDOR mandou (não a da página) e continua sendo um botão", () => {
+    const html = renderToStaticMarkup(createElement(FiltrosPedidos, { filtro: "recebidos", contagens, aoFiltrar: () => {} }));
+    for (const [opcao, quantidade] of Object.entries(contagens)) {
+      assert.match(html, new RegExp(`data-filtro="${opcao}"[^>]*>[^<]*<span data-quantidade-do-filtro="${quantidade}"`), opcao);
+    }
+    assert.ok(texto(html).includes("Todos15") && texto(html).includes("Recebidos4") && texto(html).includes("Cancelados0"));
+    // Controle interativo: botão com estado pressionado, e o marcado é só o escolhido.
+    assert.equal((html.match(/<button/g) ?? []).length, 7);
+    assert.equal((html.match(/aria-pressed="true"/g) ?? []).length, 1);
+    assert.match(html, /data-filtro="recebidos" aria-pressed="true" aria-label="Recebidos: 4 pedidos"/);
+    assert.match(html, /aria-label="Em entrega: 1 pedido"/);
+    assert.ok(!html.includes(" style="));
+  });
+
+  it("sem contagens (ainda carregando) os filtros aparecem sem número", () => {
+    const html = renderToStaticMarkup(createElement(FiltrosPedidos, { filtro: "todos", aoFiltrar: () => {} }));
+    assert.ok(!html.includes("data-quantidade-do-filtro"));
+    assert.ok(texto(html).includes("Todos") && texto(html).includes("Cancelados"));
+  });
+
+  it("período: as cinco opções; as datas só existem no personalizado; o problema é dito em texto", () => {
+    const base = { dataInicial: "", dataFinal: "", problema: null, aoEscolherPeriodo: () => {}, aoMudarDatas: () => {} };
+    const todo = renderToStaticMarkup(createElement(FiltroDePeriodo, { ...base, periodo: "todos" }));
+    for (const rotulo of ["Todo o período", "Hoje", "Esta semana", "Este mês", "Personalizado"]) assert.ok(todo.includes(`>${rotulo}</option>`), rotulo);
+    assert.ok(!todo.includes('type="date"'));
+
+    const personalizado = renderToStaticMarkup(
+      createElement(FiltroDePeriodo, { ...base, periodo: "personalizado", dataInicial: "2026-10-03", dataFinal: "2026-10-01", problema: "A data final não pode ser anterior à data inicial." }),
+    );
+    assert.equal((personalizado.match(/type="date"/g) ?? []).length, 2);
+    assert.ok(personalizado.includes('value="2026-10-03"') && personalizado.includes('value="2026-10-01"'));
+    assert.ok(texto(personalizado).includes("A data final não pode ser anterior à data inicial."));
+  });
+
+  it("consulta: trocar o período volta à página 1, mantém o status e só o personalizado leva datas", async () => {
+    const { CONSULTA_INICIAL, dataDeHojeNoCampo, irParaProxima, parametrosDoPeriodo, problemaDoPeriodo, trocarFiltro, trocarPeriodo } = await import("../lib/paginacao-pedidos.ts");
+    const naPagina2 = irParaProxima(trocarFiltro(CONSULTA_INICIAL, "entregues"), uuid(1));
+    const hoje = trocarPeriodo(naPagina2, "hoje");
+    assert.deepEqual(hoje, { filtro: "entregues", cursores: [], periodo: "hoje" });
+    assert.equal(trocarPeriodo(hoje, "hoje"), hoje, "o mesmo período não perde a página");
+    assert.deepEqual(parametrosDoPeriodo(hoje), { periodo: "hoje" });
+
+    const datas = { dataInicial: "2026-10-01", dataFinal: "2026-10-03" };
+    const personalizado = trocarPeriodo(hoje, "personalizado", datas);
+    assert.deepEqual(personalizado, { filtro: "entregues", cursores: [], periodo: "personalizado", ...datas });
+    assert.equal(trocarPeriodo(personalizado, "personalizado", datas), personalizado);
+    assert.deepEqual(parametrosDoPeriodo(personalizado), { periodo: "personalizado", ...datas });
+    assert.equal(problemaDoPeriodo(personalizado), null);
+    assert.match(problemaDoPeriodo({ periodo: "personalizado", dataInicial: "2026-10-03", dataFinal: "2026-10-01" }) ?? "", /anterior/);
+    assert.match(problemaDoPeriodo({ periodo: "personalizado", dataInicial: "2026-10-03", dataFinal: "" }) ?? "", /data inicial e a data final/);
+    assert.equal(problemaDoPeriodo({ periodo: "semana" }), null);
+    // Voltar a "todo o período" esquece as datas.
+    assert.deepEqual(trocarPeriodo(personalizado, "todos"), { filtro: "entregues", cursores: [], periodo: "todos" });
+    // Trocar o status dentro de um período mantém o período.
+    assert.deepEqual(trocarFiltro(personalizado, "cancelados"), { filtro: "cancelados", cursores: [], periodo: "personalizado", ...datas });
+    assert.equal(dataDeHojeNoCampo(new Date(2026, 9, 5, 23, 59)), "2026-10-05");
+  });
+
+  it("a tela relê a lista quando um status muda: as quantidades acompanham", async () => {
+    const fonte = (await import("node:fs")).readFileSync(new URL("./area-pedidos-empresa.tsx", import.meta.url), "utf8");
+    assert.match(fonte, /socket\.on\(EVENTO_PEDIDO_STATUS_ATUALIZADO, aoMudarStatus\)/);
+    assert.ok(fonte.includes("contagens={lista?.contagens ?? null}"));
+  });
+});
+
+describe("entregador no resumo logístico: nada de 'aguardando atribuição' em pedido encerrado", () => {
+  const render = (statusPedido: StatusPedido, daSaida: SaidaEntrega | null) => texto(renderToStaticMarkup(createElement(ResumoLogisticoPedido, { statusPedido, saida: daSaida })));
+
+  it("pedido cancelado ou entregue sem entregador não mostra a linha do entregador", () => {
+    const cancelado = render("cancelado", saida("concluida", false));
+    assert.ok(cancelado.includes("Entrega: Cancelada") && cancelado.includes("Rota:"));
+    assert.ok(!cancelado.includes("Entregador") && !cancelado.includes("Aguardando atribuição"));
+    assert.ok(!render("entregue", saida("concluida", false)).includes("Aguardando atribuição"));
+    // Rota ainda aberta, mas o pedido já foi cancelado.
+    assert.ok(!render("cancelado", saida("aguardando_entregador", false)).includes("Aguardando atribuição"));
+  });
+
+  it("quem esteve com o pedido continua aparecendo depois de cancelado ou entregue", () => {
+    const nome = saida("concluida").entregador?.nomeExibicao ?? "";
+    assert.ok(nome !== "");
+    assert.ok(render("cancelado", saida("concluida")).includes(`Entregador: ${nome}`));
+    assert.ok(render("entregue", saida("concluida")).includes(`Entregador: ${nome}`));
+  });
+
+  it("pedido em aberto sem entregador continua dizendo 'Aguardando atribuição'", () => {
+    assert.ok(render("pronto", saida("aguardando_entregador", false)).includes("Entregador: Aguardando atribuição"));
+    assert.ok(render("pronto", saida("em_formacao", false)).includes("Entregador: Aguardando atribuição"));
+  });
+
+  it("pedido que passou por duas rotas usa a última em que esteve (a que teve entregador)", () => {
+    const pedidoId = linha.id;
+    // Só o que a escolha da rota lê: de quem é a parada e quando ela foi encerrada.
+    const comParada = (rota: SaidaEntrega, id: string, encerradaEm: string): SaidaEntrega => ({ ...rota, id, paradas: [{ pedidoId, encerradaEm } as SaidaEntrega["paradas"][number]] });
+    const manual = comParada(saida("concluida"), uuid(7), "2026-09-15T12:40:00.000Z");
+    const saidas = [comParada(saida("concluida", false), uuid(6), "2026-09-15T12:20:00.000Z"), manual];
+    const html = texto(renderToStaticMarkup(createElement(ListaPedidosEmpresa, { pedidos: [{ ...linha, id: pedidoId, status: "cancelado" }], saidas, aoAbrir: () => {} })));
+    assert.ok(html.includes(`Entregador: ${manual.entregador?.nomeExibicao ?? "?"}`), html);
+    assert.ok(!html.includes("Aguardando atribuição"));
   });
 });

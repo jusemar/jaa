@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Banco } from "@jaa/banco";
-import { destinosPedido, escolhasItemPedido, historicoStatusPedido, identidades, itensPedido, mensagens, pedidos } from "@jaa/banco/schema";
-import type { DestinoPedido, EscolhaItemPedido, EventoStatusPedido, FormaPagamentoEntrega, ItemPedido, StatusPedido, Uf } from "@jaa/contratos";
-import { and, asc, count, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { destinosPedido, empresas, escolhasItemPedido, historicoStatusPedido, identidades, itensPedido, mensagens, pedidos } from "@jaa/banco/schema";
+import type { DestinoPedido, EscolhaItemPedido, EventoStatusPedido, FormaPagamentoEntrega, IntervaloDePedidos, ItemPedido, StatusPedido, Uf } from "@jaa/contratos";
+import { and, asc, count, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
 export type PedidoRegistro = typeof pedidos.$inferSelect;
 
@@ -308,9 +308,9 @@ export interface PedidoDaEmpresaRegistro {
 export async function listarPedidosDaEmpresa(
   banco: Banco,
   empresaId: string,
-  opcoes: { status: readonly StatusPedido[]; limite: number; antesDe?: string | undefined },
+  opcoes: { status: readonly StatusPedido[]; limite: number; antesDe?: string | undefined; intervalo?: IntervaloDePedidos | undefined },
 ): Promise<PedidoDaEmpresaRegistro[]> {
-  const filtros = [eq(pedidos.empresaId, empresaId)];
+  const filtros = [eq(pedidos.empresaId, empresaId), ...filtrosDoIntervalo(opcoes.intervalo)];
   if (opcoes.status.length > 0) filtros.push(inArray(pedidos.status, [...opcoes.status]));
   if (opcoes.antesDe) filtros.push(lt(pedidos.id, opcoes.antesDe));
 
@@ -342,15 +342,28 @@ export async function listarPedidosDaEmpresa(
     .limit(opcoes.limite);
 }
 
-/** Quantos pedidos a empresa tem nesse filtro, ao todo (independente da página pedida). */
-export async function contarPedidosDaEmpresa(banco: Banco, empresaId: string, status: readonly StatusPedido[] = []): Promise<number> {
-  const filtros = [eq(pedidos.empresaId, empresaId)];
-  if (status.length > 0) filtros.push(inArray(pedidos.status, [...status]));
-  const [linha] = await banco
-    .select({ total: sql<number>`count(*)::int` })
+/** Fuso da empresa (IANA): é nele que "hoje", "esta semana" e "este mês" da lista são contados. */
+export async function buscarFusoDaEmpresa(banco: Banco, empresaId: string): Promise<string | null> {
+  const [linha] = await banco.select({ fusoHorario: empresas.fusoHorario }).from(empresas).where(eq(empresas.id, empresaId)).limit(1);
+  return linha?.fusoHorario ?? null;
+}
+
+/** Período pela CRIAÇÃO do pedido: `de ≤ criado_em < ate` (limite ausente = sem limite daquele lado). */
+function filtrosDoIntervalo(intervalo: IntervaloDePedidos | undefined) {
+  return [...(intervalo?.de ? [gte(pedidos.criadoEm, intervalo.de)] : []), ...(intervalo?.ate ? [lt(pedidos.criadoEm, intervalo.ate)] : [])];
+}
+
+/**
+ * Quantos pedidos a empresa tem em cada STATUS no período — uma consulta agrupada, independente da
+ * página e do filtro de status que a tela está mostrando.
+ */
+export async function contarPedidosDaEmpresaPorStatus(banco: Banco, empresaId: string, intervalo?: IntervaloDePedidos): Promise<Partial<Record<StatusPedido, number>>> {
+  const linhas = await banco
+    .select({ status: pedidos.status, total: sql<number>`count(*)::int` })
     .from(pedidos)
-    .where(and(...filtros));
-  return linha?.total ?? 0;
+    .where(and(eq(pedidos.empresaId, empresaId), ...filtrosDoIntervalo(intervalo)))
+    .groupBy(pedidos.status);
+  return Object.fromEntries(linhas.map((linha) => [linha.status, linha.total]));
 }
 
 export type ResultadoAlteracaoStatus = { tipo: "alterado"; pedido: PedidoRegistro } | { tipo: "status-mudou"; statusAtual: StatusPedido | null };

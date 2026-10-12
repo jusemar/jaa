@@ -1,4 +1,4 @@
-import type { FiltroPedidosEmpresa } from "@jaa/contratos";
+import { problemaDoPeriodoPersonalizado, type FiltroPedidosEmpresa, type PeriodoPedidos } from "@jaa/contratos";
 
 /*
  * PAGINAÇÃO da lista de pedidos da empresa. A API pagina por CURSOR (o id do pedido mais antigo da
@@ -15,16 +15,47 @@ export interface ConsultaPedidos {
   filtro: FiltroPedidosEmpresa;
   // Cursor de cada página a partir da 2ª: a página atual é `cursores.length + 1`.
   cursores: string[];
+  // Período pela criação do pedido. As datas (AAAA-MM-DD) só existem no personalizado.
+  periodo: PeriodoPedidos;
+  dataInicial?: string | undefined;
+  dataFinal?: string | undefined;
 }
 
-export const CONSULTA_INICIAL: ConsultaPedidos = { filtro: "todos", cursores: [] };
+export const CONSULTA_INICIAL: ConsultaPedidos = { filtro: "todos", cursores: [], periodo: "todos" };
 
 export const paginaAtual = (consulta: ConsultaPedidos) => consulta.cursores.length + 1;
 export const cursorDaPagina = (consulta: ConsultaPedidos): string | undefined => consulta.cursores.at(-1);
 
 // Outro filtro é outra lista: volta para a primeira página (a página antiga pode nem existir nele).
 export function trocarFiltro(consulta: ConsultaPedidos, filtro: FiltroPedidosEmpresa): ConsultaPedidos {
-  return filtro === consulta.filtro ? consulta : { filtro, cursores: [] };
+  return filtro === consulta.filtro ? consulta : { ...consulta, filtro, cursores: [] };
+}
+
+/**
+ * Outro período também é outra lista: primeira página, mesmo filtro de status. No personalizado as
+ * datas acompanham; nos demais elas são esquecidas (quem calcula os limites é o servidor).
+ */
+export function trocarPeriodo(consulta: ConsultaPedidos, periodo: PeriodoPedidos, datas?: { dataInicial: string; dataFinal: string }): ConsultaPedidos {
+  if (periodo !== "personalizado") return periodo === consulta.periodo ? consulta : { filtro: consulta.filtro, cursores: [], periodo };
+  const dataInicial = datas?.dataInicial ?? consulta.dataInicial ?? "";
+  const dataFinal = datas?.dataFinal ?? consulta.dataFinal ?? "";
+  if (consulta.periodo === "personalizado" && consulta.dataInicial === dataInicial && consulta.dataFinal === dataFinal) return consulta;
+  return { filtro: consulta.filtro, cursores: [], periodo, dataInicial, dataFinal };
+}
+
+/** O que impede a consulta (só existe no personalizado: datas faltando ou fora de ordem). */
+export function problemaDoPeriodo(consulta: Pick<ConsultaPedidos, "periodo" | "dataInicial" | "dataFinal">): string | null {
+  return consulta.periodo === "personalizado" ? problemaDoPeriodoPersonalizado(consulta.dataInicial, consulta.dataFinal) : null;
+}
+
+/** O período como vai na consulta à API. */
+export function parametrosDoPeriodo(consulta: Pick<ConsultaPedidos, "periodo" | "dataInicial" | "dataFinal">): { periodo: PeriodoPedidos; dataInicial?: string; dataFinal?: string } {
+  return consulta.periodo === "personalizado" && consulta.dataInicial && consulta.dataFinal ? { periodo: "personalizado", dataInicial: consulta.dataInicial, dataFinal: consulta.dataFinal } : { periodo: consulta.periodo };
+}
+
+/** Data de hoje no relógio de quem usa (AAAA-MM-DD): só o valor INICIAL dos campos do personalizado. */
+export function dataDeHojeNoCampo(agora: Date = new Date()): string {
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
 }
 
 export function irParaProxima(consulta: ConsultaPedidos, proximoCursor: string | null): ConsultaPedidos {

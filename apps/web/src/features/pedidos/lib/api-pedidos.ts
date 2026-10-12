@@ -3,6 +3,7 @@ import {
   pedidoSchema,
   type CriarPedidoEntrada,
   type FiltroPedidosEmpresa,
+  type PeriodoPedidos,
   type ListaPedidosEmpresa,
   type Pedido,
   type StatusPedido,
@@ -26,8 +27,18 @@ export function obterPedido(pedidoId: string): Promise<ResultadoApi<Pedido>> {
 
 const caminhoEmpresa = (empresaId: string, sufixo = "") => `/empresas/${encodeURIComponent(empresaId)}/pedidos${sufixo}`;
 
-export function listarPedidosDaEmpresa(empresaId: string, opcoes: { filtro: FiltroPedidosEmpresa; antesDe?: string | undefined; limite?: number }): Promise<ResultadoApi<ListaPedidosEmpresa>> {
-  const consulta = new URLSearchParams({ filtro: opcoes.filtro, ...(opcoes.antesDe ? { antesDe: opcoes.antesDe } : {}), ...(opcoes.limite ? { limite: String(opcoes.limite) } : {}) });
+export function listarPedidosDaEmpresa(
+  empresaId: string,
+  opcoes: { filtro: FiltroPedidosEmpresa; antesDe?: string | undefined; limite?: number; periodo?: PeriodoPedidos | undefined; dataInicial?: string | undefined; dataFinal?: string | undefined },
+): Promise<ResultadoApi<ListaPedidosEmpresa>> {
+  const consulta = new URLSearchParams({
+    filtro: opcoes.filtro,
+    ...(opcoes.antesDe ? { antesDe: opcoes.antesDe } : {}),
+    ...(opcoes.limite ? { limite: String(opcoes.limite) } : {}),
+    // Período pela criação do pedido; ausente = todo o período. Quem calcula os limites é o servidor.
+    ...(opcoes.periodo && opcoes.periodo !== "todos" ? { periodo: opcoes.periodo } : {}),
+    ...(opcoes.periodo === "personalizado" && opcoes.dataInicial && opcoes.dataFinal ? { dataInicial: opcoes.dataInicial, dataFinal: opcoes.dataFinal } : {}),
+  });
   return requisitarApi(`${caminhoEmpresa(empresaId)}?${consulta.toString()}`, listaPedidosEmpresaSchema, {});
 }
 

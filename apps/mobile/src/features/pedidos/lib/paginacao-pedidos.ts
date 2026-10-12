@@ -1,12 +1,9 @@
-import type { FiltroPedidosEmpresa } from "@jaa/contratos";
+import { problemaDoPeriodoPersonalizado, type FiltroPedidosEmpresa, type PeriodoPedidos } from "@jaa/contratos";
 
 /*
  * PAGINAÇÃO da lista de pedidos da empresa. A API pagina por CURSOR (o id do pedido mais antigo da
  * página) e informa o total do filtro; a tela guarda os cursores das páginas já percorridas para
- * poder voltar. Aqui fica só o estado e a conta — sem React, testável sem navegador.
- *
- * Cópia de `apps/web/src/features/pedidos/lib/paginacao-pedidos.ts` (os apps não importam código um do
- * outro): mudou lá, muda aqui.
+ * poder voltar. Aqui fica só o estado e a conta — sem React, testável sem aparelho. Cópia da Web: mudou lá, muda aqui.
  *
  * Este estado é o "contexto da lista": abrir um pedido e voltar não mexe nele, então a pessoa retorna
  * à MESMA página e ao MESMO filtro.
@@ -18,16 +15,47 @@ export interface ConsultaPedidos {
   filtro: FiltroPedidosEmpresa;
   // Cursor de cada página a partir da 2ª: a página atual é `cursores.length + 1`.
   cursores: string[];
+  // Período pela criação do pedido. As datas (AAAA-MM-DD) só existem no personalizado.
+  periodo: PeriodoPedidos;
+  dataInicial?: string | undefined;
+  dataFinal?: string | undefined;
 }
 
-export const CONSULTA_INICIAL: ConsultaPedidos = { filtro: "todos", cursores: [] };
+export const CONSULTA_INICIAL: ConsultaPedidos = { filtro: "todos", cursores: [], periodo: "todos" };
 
 export const paginaAtual = (consulta: ConsultaPedidos) => consulta.cursores.length + 1;
 export const cursorDaPagina = (consulta: ConsultaPedidos): string | undefined => consulta.cursores.at(-1);
 
 // Outro filtro é outra lista: volta para a primeira página (a página antiga pode nem existir nele).
 export function trocarFiltro(consulta: ConsultaPedidos, filtro: FiltroPedidosEmpresa): ConsultaPedidos {
-  return filtro === consulta.filtro ? consulta : { filtro, cursores: [] };
+  return filtro === consulta.filtro ? consulta : { ...consulta, filtro, cursores: [] };
+}
+
+/**
+ * Outro período também é outra lista: primeira página, mesmo filtro de status. No personalizado as
+ * datas acompanham; nos demais elas são esquecidas (quem calcula os limites é o servidor).
+ */
+export function trocarPeriodo(consulta: ConsultaPedidos, periodo: PeriodoPedidos, datas?: { dataInicial: string; dataFinal: string }): ConsultaPedidos {
+  if (periodo !== "personalizado") return periodo === consulta.periodo ? consulta : { filtro: consulta.filtro, cursores: [], periodo };
+  const dataInicial = datas?.dataInicial ?? consulta.dataInicial ?? "";
+  const dataFinal = datas?.dataFinal ?? consulta.dataFinal ?? "";
+  if (consulta.periodo === "personalizado" && consulta.dataInicial === dataInicial && consulta.dataFinal === dataFinal) return consulta;
+  return { filtro: consulta.filtro, cursores: [], periodo, dataInicial, dataFinal };
+}
+
+/** O que impede a consulta (só existe no personalizado: datas faltando ou fora de ordem). */
+export function problemaDoPeriodo(consulta: Pick<ConsultaPedidos, "periodo" | "dataInicial" | "dataFinal">): string | null {
+  return consulta.periodo === "personalizado" ? problemaDoPeriodoPersonalizado(consulta.dataInicial, consulta.dataFinal) : null;
+}
+
+/** O período como vai na consulta à API. */
+export function parametrosDoPeriodo(consulta: Pick<ConsultaPedidos, "periodo" | "dataInicial" | "dataFinal">): { periodo: PeriodoPedidos; dataInicial?: string; dataFinal?: string } {
+  return consulta.periodo === "personalizado" && consulta.dataInicial && consulta.dataFinal ? { periodo: "personalizado", dataInicial: consulta.dataInicial, dataFinal: consulta.dataFinal } : { periodo: consulta.periodo };
+}
+
+/** Data de hoje no relógio de quem usa (AAAA-MM-DD): só o valor INICIAL dos campos do personalizado. */
+export function dataDeHojeNoCampo(agora: Date = new Date()): string {
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
 }
 
 export function irParaProxima(consulta: ConsultaPedidos, proximoCursor: string | null): ConsultaPedidos {
@@ -76,4 +104,31 @@ export function resumoDaPagina(dados: { pagina: number; quantidadeNaPagina: numb
     temProxima,
     contagem: variasPaginas ? `${primeiro}–${ultimo} de ${total} pedidos` : `${total} pedido${total === 1 ? "" : "s"}`,
   };
+}
+
+/*
+ * DATAS DO PERÍODO PERSONALIZADO no app: a pessoa digita DD/MM/AAAA (sem seletor nativo novo) e o que
+ * vai para a API é AAAA-MM-DD, como na Web. Quem valida de verdade é o servidor.
+ */
+
+/** Máscara de digitação: só números, com as barras entrando sozinhas ("11102026" → "11/10/2026"). */
+export function mascararData(texto: string): string {
+  const digitos = texto.replace(/\D/g, "").slice(0, 8);
+  return [digitos.slice(0, 2), digitos.slice(2, 4), digitos.slice(4, 8)].filter((parte) => parte !== "").join("/");
+}
+
+/** "11/10/2026" → "2026-10-11". Incompleta ou que não existe no calendário → "" (ainda não é uma data). */
+export function dataDoCampo(texto: string): string {
+  const partes = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(texto.trim());
+  if (!partes) return "";
+  const [dia, mes, ano] = [Number(partes[1]), Number(partes[2]), Number(partes[3])];
+  const data = new Date(Date.UTC(ano, mes - 1, dia));
+  if (data.getUTCFullYear() !== ano || data.getUTCMonth() !== mes - 1 || data.getUTCDate() !== dia) return "";
+  return `${partes[3]}-${partes[2]}-${partes[1]}`;
+}
+
+/** "2026-10-11" → "11/10/2026" (para mostrar no campo). */
+export function dataParaCampo(data: string): string {
+  const partes = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data);
+  return partes ? `${partes[3]}/${partes[2]}/${partes[1]}` : "";
 }
