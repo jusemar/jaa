@@ -92,7 +92,12 @@ export function FiltroDePeriodo({
   problema,
   aoEscolherPeriodo,
   aoMudarDatas,
+  opcoes = periodoPedidosSchema.options,
+  idDoCampo = "pedidos-periodo",
 }: {
+  // Períodos oferecidos (o histórico de entregas, por exemplo, não tem "Todo o período").
+  opcoes?: readonly PeriodoPedidos[];
+  idDoCampo?: string;
   periodo: PeriodoPedidos;
   dataInicial: string;
   dataFinal: string;
@@ -104,12 +109,12 @@ export function FiltroDePeriodo({
   return (
     <div data-filtro-de-periodo={periodo} className="flex flex-col gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="pedidos-periodo" className="flex items-center gap-1.5 text-xs font-medium text-conteudo-suave">
+        <label htmlFor={idDoCampo} className="flex items-center gap-1.5 text-xs font-medium text-conteudo-suave">
           <IconeCalendario className="h-4 w-4" />
           Período
         </label>
-        <select id="pedidos-periodo" value={periodo} onChange={(evento) => aoEscolherPeriodo(evento.target.value as PeriodoPedidos)} className={campo}>
-          {periodoPedidosSchema.options.map((opcao) => (
+        <select id={idDoCampo} value={periodo} onChange={(evento) => aoEscolherPeriodo(evento.target.value as PeriodoPedidos)} className={campo}>
+          {opcoes.map((opcao) => (
             <option key={opcao} value={opcao}>
               {ROTULO_PERIODO_PEDIDOS[opcao]}
             </option>

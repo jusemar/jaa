@@ -1,6 +1,7 @@
 import type { Banco } from "@jaa/banco";
 import {
   alterarDisponibilidadeEntradaSchema,
+  consultaHistoricoEntregasSchema,
   confirmarPontoBaseEntradaSchema,
   definirCompatibilidadesEntradaSchema,
   salvarConfiguracaoDespachoEntradaSchema,
@@ -21,6 +22,7 @@ import {
   type ListaConvitesEntregador,
   type ListaCandidatosEntregador,
   type ListaEntregadores,
+  type HistoricoEntregas,
   type ListaEntregas,
   type BaseEmpresa,
   type ListaSaidas,
@@ -60,6 +62,7 @@ import {
   listarMeusVinculos,
   aceitarConviteDaPessoa,
 } from "../casos-de-uso/gerir-entregadores.js";
+import { listarMeuHistoricoDeEntregas } from "../casos-de-uso/historico-entregas.js";
 import {
   criarSaidaAutorizada,
   concluirProximaParadaMinhaSaida,
@@ -1742,6 +1745,63 @@ export function registrarRotasEntregas(
         });
       }
       return serializarEntregador(resultado.entregador);
+    },
+  );
+
+  /**
+   * HISTÓRICO do próprio entregador naquele vínculo (uma empresa): só o que ele efetivamente entregou,
+   * paginado e por período de CONCLUSÃO. Vale também com o vínculo já inativo; vínculo de outra pessoa
+   * responde 404, como se não existisse. Só número do pedido e data — nada do cliente nem do pedido.
+   */
+  servidor.get(
+    "/entregas/vinculos/:entregadorId/historico",
+    { preHandler },
+    async (requisicao, resposta) => {
+      const { usuarioId } = obterIdentidadeExigida(requisicao);
+      const parametros = parametrosConviteSchema.safeParse(requisicao.params);
+      const consulta = consultaHistoricoEntregasSchema.safeParse(
+        requisicao.query,
+      );
+      if (!parametros.success)
+        return responder(resposta, 400, {
+          codigo: "DADOS_INVALIDOS",
+          mensagem: "Vínculo inválido.",
+        });
+      if (!consulta.success) {
+        const problema = consulta.error.issues[0];
+        return responder(resposta, 400, {
+          codigo: "DADOS_INVALIDOS",
+          mensagem:
+            problema?.path[0] === "dataFinal"
+              ? problema.message
+              : "Consulta inválida.",
+        });
+      }
+
+      const resultado = await listarMeuHistoricoDeEntregas(
+        banco,
+        usuarioId,
+        parametros.data.entregadorId,
+        consulta.data,
+      );
+      if (resultado.tipo !== "historico")
+        return responder(resposta, 404, ENTREGADOR_NAO_ENCONTRADO);
+
+      const historico: HistoricoEntregas = {
+        entregas: resultado.entregas.map((entrega) => ({
+          id: entrega.id,
+          numeroPedido: entrega.numeroPedido,
+          concluidaEm: entrega.concluidaEm.toISOString(),
+          status: "entregue",
+        })),
+        // Página cheia ⇒ pode haver mais; o cursor é a entrega mais antiga desta página.
+        proximoCursor:
+          resultado.entregas.length === consulta.data.limite
+            ? (resultado.entregas.at(-1)?.id ?? null)
+            : null,
+        total: resultado.total,
+      };
+      return historico;
     },
   );
 

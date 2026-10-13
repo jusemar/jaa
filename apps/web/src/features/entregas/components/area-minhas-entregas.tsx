@@ -42,6 +42,7 @@ import {
   recalcularRota,
   aceitarConvite,
 } from "../lib/api-entregas";
+import { HistoricoDaEmpresa } from "./historico-da-empresa";
 import { MapaPercursoMapbox } from "./mapa-percurso-mapbox";
 import {
   AvisoLocalizacao,
@@ -50,6 +51,12 @@ import {
 } from "./presenca-na-base";
 import { SequenciaDaSaida } from "./saida-apresentacao";
 import { ResumoPercurso } from "./percurso-saida";
+
+type AbaDaEmpresa = "entregas" | "historico";
+const ABAS_DA_EMPRESA: readonly { id: AbaDaEmpresa; rotulo: string }[] = [
+  { id: "entregas", rotulo: "Entregas" },
+  { id: "historico", rotulo: "Histórico" },
+];
 
 export function entregasForaDasSaidas(
   entregas: EntregaAtribuida[],
@@ -65,6 +72,9 @@ export function entregasForaDasSaidas(
  * "MINHAS ENTREGAS": área do ENTREGADOR, separada da administração da empresa.
  * Mostra só o que está atribuído a ele AGORA e só o necessário para entregar — sem telefone do
  * cliente, sem outros pedidos e sem nada do painel da empresa.
+ *
+ * "Abrir" numa empresa mostra o CONTEXTO dela, no mesmo lugar: "Entregas" (a mesma operação, só
+ * daquela empresa) e "Histórico" (o que ele já concluiu ali). A visão geral continua sendo a entrada.
  */
 export function AreaMinhasEntregas({ aoAbrirConversa }: { aoAbrirConversa?: (nomeUsuario: string) => void } = {}) {
   const [entregas, setEntregas] = useState<EntregaAtribuida[]>([]);
@@ -75,7 +85,20 @@ export function AreaMinhasEntregas({ aoAbrirConversa }: { aoAbrirConversa?: (nom
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
-  const entregasSemSaida = entregasForaDasSaidas(entregas, saidas);
+  // Empresa aberta (id do vínculo) e a aba dela: só o que está à vista — a operação não muda.
+  const [empresaAbertaId, setEmpresaAbertaId] = useState<string | null>(null);
+  const [aba, setAba] = useState<AbaDaEmpresa>("entregas");
+  // O vínculo pode sumir da lista (releitura): aí a área volta sozinha para a visão geral.
+  const empresaAberta =
+    vinculos.find((vinculo) => vinculo.id === empresaAbertaId) ?? null;
+  const daEmpresaAberta = (empresa: { identidadeId: string }) =>
+    empresaAberta === null ||
+    empresa.identidadeId === empresaAberta.empresa.identidadeId;
+  const saidasNaTela = saidas.filter((saida) => daEmpresaAberta(saida.empresa));
+  const entregasNaTela = entregas.filter((entrega) =>
+    daEmpresaAberta(entrega.empresa),
+  );
+  const entregasSemSaida = entregasForaDasSaidas(entregasNaTela, saidas);
 
   const aplicarSituacao = useCallback((situacao: SituacaoOperacional) => {
     setSituacoes((atuais) =>
@@ -395,83 +418,152 @@ export function AreaMinhasEntregas({ aoAbrirConversa }: { aoAbrirConversa?: (nom
         aria-label="Minhas entregas"
         className="flex flex-col gap-3 rounded-jaa border border-borda p-3"
       >
-        <h2 className="text-base font-semibold">Minhas entregas</h2>
+        {empresaAberta ? (
+          <>
+            <button
+              type="button"
+              data-voltar-minhas-entregas
+              onClick={() => setEmpresaAbertaId(null)}
+              className="self-start text-xs font-medium text-marca"
+            >
+              ← Minhas entregas
+            </button>
+            <h2 className="text-base font-semibold">
+              {empresaAberta.empresa.nome}
+            </h2>
+            <div
+              role="tablist"
+              aria-label={`Entregas e histórico de ${empresaAberta.empresa.nome}`}
+              className="flex border-b border-borda"
+            >
+              {ABAS_DA_EMPRESA.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  id={`aba-minhas-entregas-${item.id}`}
+                  data-aba-da-empresa={item.id}
+                  aria-selected={aba === item.id}
+                  aria-controls="painel-minhas-entregas"
+                  onClick={() => setAba(item.id)}
+                  className={`shrink-0 border-b-2 px-4 py-2 text-sm font-medium ${aba === item.id ? "border-marca text-marca" : "border-transparent text-conteudo-suave"}`}
+                >
+                  {item.rotulo}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <h2 className="text-base font-semibold">Minhas entregas</h2>
+        )}
 
-        <EmpresasEmQueTrabalho
-          vinculos={vinculos}
-          situacoes={situacoes}
-          ocupado={ocupado}
-          aoAlterarDisponibilidade={(vinculo, disponivel) =>
-            void alterarDisponibilidade(vinculo, disponivel)
-          }
-        />
-
-        <AvisoLocalizacao permissao={permissao} />
-        {permissao !== "ativa" && permissao !== "indisponivel" ? (
-          <button
-            type="button"
-            data-permitir-localizacao
-            onClick={permitir}
-            className="self-start rounded-jaa border px-2 py-1 text-xs"
-          >
-            Permitir localização
-          </button>
-        ) : null}
-
-        {/* Saídas: os pedidos que ele leva juntos, na sequência que pode reordenar. */}
-        {saidas.map((saida) => (
+        {empresaAberta && aba === "historico" ? (
           <div
-            key={saida.id}
-            data-saida={saida.id}
-            className="flex flex-col gap-2 rounded-jaa border border-borda p-2"
+            role="tabpanel"
+            id="painel-minhas-entregas"
+            aria-labelledby="aba-minhas-entregas-historico"
           >
-            <p className="text-sm font-medium">
-              {saida.zonaPrincipal
-                ? `Rota ${[saida.zonaPrincipal.nome, ...saida.zonasCombinadas.map((zona) => zona.nome)].join(" + ")}`
-                : "Rota manual"}{" "}
-              · {paradasAtivas(saida).length}{" "}
-              {paradasAtivas(saida).length === 1 ? "entrega" : "entregas"}
-            </p>
-            {/* Problema na entrega? A conversa DIRETA de sempre com a empresa (nada de chat paralelo). */}
-            {aoAbrirConversa ? (
-              <button
-                type="button"
-                data-conversar-empresa={saida.empresa.nomeUsuario}
-                onClick={() => aoAbrirConversa(saida.empresa.nomeUsuario)}
-                className="self-start rounded-full border border-borda px-3 py-1 text-xs font-medium text-marca"
-              >
-                Conversar com {saida.empresa.nome}
-              </button>
-            ) : null}
-            <AcaoIniciarSaida
-              saida={saida}
-              ocupado={ocupado}
-              aoIniciar={() => void iniciar(saida)}
-              aoRecusar={() => void recusar(saida)}
-            />
-            <ResumoPercurso saida={saida} />
-            <MapaDaSaidaRecolhivel saida={saida} />
-            <SequenciaDaSaida
-              saida={saida}
-              entregas={entregas}
-              mostrarPercurso={false}
-              ocupado={ocupado}
-              aoSalvarOrdem={(ordem) => salvarOrdem(saida, ordem)}
-              aoRecalcularRota={() => recalcularMinhaRota(saida)}
-              {...(aoAbrirConversa ? { aoConversar: aoAbrirConversa } : {})}
-              aoConcluir={(pedidoId, numeroPedido) =>
-                void concluirParada(saida, pedidoId, numeroPedido)
-              }
+            <HistoricoDaEmpresa
+              key={empresaAberta.id}
+              entregadorId={empresaAberta.id}
             />
           </div>
-        ))}
+        ) : (
+          <div
+            {...(empresaAberta
+              ? {
+                  role: "tabpanel",
+                  id: "painel-minhas-entregas",
+                  "aria-labelledby": "aba-minhas-entregas-entregas",
+                }
+              : {})}
+            className="flex flex-col gap-3"
+          >
+            <EmpresasEmQueTrabalho
+              vinculos={empresaAberta ? [empresaAberta] : vinculos}
+              situacoes={situacoes}
+              ocupado={ocupado}
+              aoAlterarDisponibilidade={(vinculo, disponivel) =>
+                void alterarDisponibilidade(vinculo, disponivel)
+              }
+              {...(empresaAberta
+                ? {}
+                : {
+                    aoAbrir: (vinculo: VinculoEntregador) => {
+                      setAba("entregas");
+                      setEmpresaAbertaId(vinculo.id);
+                    },
+                  })}
+            />
 
-        {entregasSemSaida.length > 0 ? (
-          <ListaMinhasEntregas entregas={entregasSemSaida} />
-        ) : null}
-        {saidas.length === 0 && entregas.length === 0 ? (
-          <ListaMinhasEntregas entregas={[]} />
-        ) : null}
+            <AvisoLocalizacao permissao={permissao} />
+            {permissao !== "ativa" && permissao !== "indisponivel" ? (
+              <button
+                type="button"
+                data-permitir-localizacao
+                onClick={permitir}
+                className="self-start rounded-jaa border px-2 py-1 text-xs"
+              >
+                Permitir localização
+              </button>
+            ) : null}
+
+            {/* Saídas: os pedidos que ele leva juntos, na sequência que pode reordenar. */}
+            {saidasNaTela.map((saida) => (
+              <div
+                key={saida.id}
+                data-saida={saida.id}
+                className="flex flex-col gap-2 rounded-jaa border border-borda p-2"
+              >
+                <p className="text-sm font-medium">
+                  {saida.zonaPrincipal
+                    ? `Rota ${[saida.zonaPrincipal.nome, ...saida.zonasCombinadas.map((zona) => zona.nome)].join(" + ")}`
+                    : "Rota manual"}{" "}
+                  · {paradasAtivas(saida).length}{" "}
+                  {paradasAtivas(saida).length === 1 ? "entrega" : "entregas"}
+                </p>
+                {/* Problema na entrega? A conversa DIRETA de sempre com a empresa (nada de chat paralelo). */}
+                {aoAbrirConversa ? (
+                  <button
+                    type="button"
+                    data-conversar-empresa={saida.empresa.nomeUsuario}
+                    onClick={() => aoAbrirConversa(saida.empresa.nomeUsuario)}
+                    className="self-start rounded-full border border-borda px-3 py-1 text-xs font-medium text-marca"
+                  >
+                    Conversar com {saida.empresa.nome}
+                  </button>
+                ) : null}
+                <AcaoIniciarSaida
+                  saida={saida}
+                  ocupado={ocupado}
+                  aoIniciar={() => void iniciar(saida)}
+                  aoRecusar={() => void recusar(saida)}
+                />
+                <ResumoPercurso saida={saida} />
+                <MapaDaSaidaRecolhivel saida={saida} />
+                <SequenciaDaSaida
+                  saida={saida}
+                  entregas={entregas}
+                  mostrarPercurso={false}
+                  ocupado={ocupado}
+                  aoSalvarOrdem={(ordem) => salvarOrdem(saida, ordem)}
+                  aoRecalcularRota={() => recalcularMinhaRota(saida)}
+                  {...(aoAbrirConversa ? { aoConversar: aoAbrirConversa } : {})}
+                  aoConcluir={(pedidoId, numeroPedido) =>
+                    void concluirParada(saida, pedidoId, numeroPedido)
+                  }
+                />
+              </div>
+            ))}
+
+            {entregasSemSaida.length > 0 ? (
+              <ListaMinhasEntregas entregas={entregasSemSaida} />
+            ) : null}
+            {saidasNaTela.length === 0 && entregasNaTela.length === 0 ? (
+              <ListaMinhasEntregas entregas={[]} />
+            ) : null}
+          </div>
+        )}
 
         {sucesso ? (
           <p role="status" className="text-sm text-marca">
@@ -624,10 +716,13 @@ export function EmpresasEmQueTrabalho({
   situacoes = [],
   ocupado,
   aoAlterarDisponibilidade,
+  aoAbrir,
 }: {
   vinculos: VinculoEntregador[];
   situacoes?: SituacaoOperacional[];
   ocupado: boolean;
+  /** Abre as entregas e o histórico da empresa. Ausente = a lista já está dentro dela. */
+  aoAbrir?: (vinculo: VinculoEntregador) => void;
   aoAlterarDisponibilidade: (
     vinculo: VinculoEntregador,
     disponivel: boolean,
@@ -673,19 +768,34 @@ export function EmpresasEmQueTrabalho({
                 <DetalhesEstadoOperacional situacao={situacao} />
               ) : null}
             </span>
-            {entregadorPodeEscolherDisponibilidade(vinculo.status) && (
-              <button
-                type="button"
-                data-alternar-disponibilidade
-                disabled={ocupado}
-                onClick={() =>
-                  aoAlterarDisponibilidade(vinculo, !vinculo.disponivel)
-                }
-                className="shrink-0 rounded-jaa border px-2 py-1 text-xs disabled:opacity-50"
-              >
-                {vinculo.disponivel ? "Ficar indisponível" : "Ficar disponível"}
-              </button>
-            )}
+            <span className="flex shrink-0 flex-wrap items-center gap-2">
+              {entregadorPodeEscolherDisponibilidade(vinculo.status) && (
+                <button
+                  type="button"
+                  data-alternar-disponibilidade
+                  disabled={ocupado}
+                  onClick={() =>
+                    aoAlterarDisponibilidade(vinculo, !vinculo.disponivel)
+                  }
+                  className="rounded-jaa border px-2 py-1 text-xs disabled:opacity-50"
+                >
+                  {vinculo.disponivel
+                    ? "Ficar indisponível"
+                    : "Ficar disponível"}
+                </button>
+              )}
+              {aoAbrir && (
+                <button
+                  type="button"
+                  data-abrir-empresa
+                  aria-label={`Abrir entregas e histórico de ${vinculo.empresa.nome}`}
+                  onClick={() => aoAbrir(vinculo)}
+                  className="rounded-jaa border border-borda px-2 py-1 text-xs font-medium text-marca"
+                >
+                  Abrir
+                </button>
+              )}
+            </span>
           </li>
         );
       })}

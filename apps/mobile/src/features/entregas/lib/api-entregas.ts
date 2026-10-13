@@ -1,5 +1,6 @@
 import {
   entregadorDaEmpresaSchema,
+  historicoEntregasSchema,
   listaConvitesEntregadorSchema,
   listaEntregasSchema,
   listaSaidasSchema,
@@ -84,3 +85,9 @@ export function reordenarSequencia(saidaId: string, versaoSequencia: number, ped
 export function recalcularRota(saidaId: string, versaoSequencia: number) {
   return requisitarApi(caminhoSaida(saidaId, "/recalcular-rota"), saidaEntregaSchema, { method: "POST", body: JSON.stringify({ versaoSequencia }) });
 }
+
+/**
+ * HISTÓRICO do próprio entregador naquele vínculo (uma empresa): só entregas concluídas, uma página
+ * por vez. A consulta (período, limite, cursor) vem pronta de `consultaDoHistorico`.
+ */
+export const listarHistoricoDeEntregas = (entregadorId: string, consulta: string) => requisitarApi(`/entregas/vinculos/${encodeURIComponent(entregadorId)}/historico?${consulta}`, historicoEntregasSchema);

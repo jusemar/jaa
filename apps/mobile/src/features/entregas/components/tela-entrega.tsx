@@ -13,7 +13,7 @@ import {
   type VinculoEntregador,
 } from "@jaa/contratos";
 import { useEffect, useState } from "react";
-import { Alert, Linking, StyleSheet, Switch, View } from "react-native";
+import { Alert, BackHandler, Linking, Pressable, StyleSheet, Switch, View } from "react-native";
 import { Botao } from "@/components/ui/botao";
 import { Icone } from "@/components/ui/icone";
 import { Aviso, Cartao, EstadoVazio, Secao } from "@/components/ui/superficies";
@@ -23,6 +23,7 @@ import { Cores, Espaco, Raio } from "@/constants/theme";
 import { avisarUmaVez } from "@/lib/sons/avisar";
 import { useContextoConta } from "@/features/conta/components/provedor-contexto-conta";
 import { useAbrirConversa } from "@/features/conversas/hooks/use-abrir-conversa";
+import { TopoComVoltar } from "@/features/produtos/components/pecas";
 import { formatarPrecoCentavos } from "@/features/produtos/lib/precos";
 import { useMinhasEntregas } from "../hooks/use-minhas-entregas";
 import { usePresencaNaBase } from "../hooks/use-presenca-na-base";
@@ -30,11 +31,15 @@ import { alterarMinhaDisponibilidade, concluirMinhaProximaParada, iniciarMinhaSa
 import { entregasForaDasSaidas, estadoEmUmaLinha, ordenarSaidas, urlDeNavegacao } from "../lib/minhas-entregas";
 import { iniciarRastreamento, observarEmPrimeiroPlano, pararRastreamento } from "../lib/rastreamento";
 import { CartaoSaida } from "./cartao-saida";
+import { HistoricoDaEmpresa } from "./historico-da-empresa";
 
 /**
  * "MINHAS ENTREGAS" no app — a MESMA operação da área do entregador na Web, com as mesmas rotas da
  * API: disponibilidade e base, convites, a rota liberada (sair para entrega / recusar), a rota na rua
  * (paradas, concluir, reordenar, recalcular), mapa, itens e as conversas de sempre.
+ *
+ * Tocar numa empresa abre o CONTEXTO dela, dentro da mesma aba: "Entregas" (a mesma operação, só
+ * daquela empresa) e "Histórico" (o que ele já concluiu ali). A visão geral continua sendo a entrada.
  *
  * A tela não decide nada de negócio: cada ação é um pedido à API, que confere quem é o entregador e
  * se o estado permite. O que a tela mostra vem do servidor e dos eventos em tempo real.
@@ -47,6 +52,9 @@ export function TelaEntrega() {
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [situacao, setSituacao] = useState<SituacaoRastreamento>("sem_operacao");
+  // Empresa aberta (id do vínculo) e a aba dela. Nada disso mexe na operação: é só o que está à vista.
+  const [empresaAbertaId, setEmpresaAbertaId] = useState<string | null>(null);
+  const [aba, setAba] = useState<AbaDaEmpresa>("entregas");
   const conversa = useAbrirConversa(contexto?.identidadePessoal?.id ?? "");
   const naRua = saidaEmAndamento(saidas);
   const naRuaId = naRua?.id ?? null;
@@ -84,6 +92,27 @@ export function TelaEntrega() {
     });
     return () => encerrar?.();
   }, [naRuaId, situacao]);
+
+  // O vínculo pode sumir da lista (releitura): aí a tela volta sozinha para a visão geral.
+  const empresaAberta = vinculos.find((vinculo) => vinculo.id === empresaAbertaId) ?? null;
+  const temEmpresaAberta = empresaAberta !== null;
+
+  // Voltar do Android fecha a empresa aberta em vez de sair da aba.
+  useEffect(() => {
+    if (!temEmpresaAberta) return;
+    const assinatura = BackHandler.addEventListener("hardwareBackPress", () => {
+      setEmpresaAbertaId(null);
+      return true;
+    });
+    return () => assinatura.remove();
+  }, [temEmpresaAberta]);
+
+  function abrirEmpresa(vinculo: VinculoEntregador) {
+    setErro(null);
+    setSucesso(null);
+    setAba("entregas");
+    setEmpresaAbertaId(vinculo.id);
+  }
 
   /** Uma ação por vez: trava os botões, mostra a recusa da API e relê a situação real. */
   async function executar<T>(acao: () => Promise<{ ok: true; dados: T } | { ok: false; mensagem: string }>, aoDarCerto: (dados: T) => void | Promise<void>): Promise<boolean> {
@@ -175,9 +204,85 @@ export function TelaEntrega() {
   const aceitar = (convite: ConviteEntregador) => void executar(() => aceitarConvite(convite.id), recarregar);
 
   const semSaida = entregasForaDasSaidas(entregas, saidas);
+
+  // O mesmo cartão de rota na visão geral e dentro da empresa.
+  const cartaoDaSaida = (saida: SaidaEntrega) => (
+    <CartaoSaida
+      key={saida.id}
+      saida={saida}
+      entregas={entregas}
+      ocupado={ocupado || conversa.abrindo}
+      aoConversar={(nomeUsuario) => void conversa.abrirCom(nomeUsuario)}
+      aoIniciar={() => iniciar(saida)}
+      aoRecusar={() => recusar(saida)}
+      aoConcluir={(parada) => concluir(saida, parada)}
+      aoSalvarOrdem={(ordem) => salvarOrdem(saida, ordem)}
+      aoRecalcularRota={() => recalcular(saida)}
+      rastreamento={
+        saida.id === naRuaId ? (
+          <LinhaDeLocalizacao
+            ativa={situacao === "ativo"}
+            titulo={situacao === "ativo" ? "Localização ativa" : "Localização da entrega"}
+            texto={ROTULO_SITUACAO_RASTREAMENTO[situacao]}
+            {...(situacao === "ativo" ? {} : { acao: "Ativar", aoTocar: () => void iniciarRastreamento(saida.id).then(setSituacao) })}
+          />
+        ) : undefined
+      }
+    />
+  );
   const nome = contexto?.identidadePessoal?.nomeExibicao;
   const ehEntregador = vinculos.length > 0 || convites.length > 0 || saidas.length > 0 || entregas.length > 0;
   const falha = erro ?? conversa.erro ?? minhas.erro;
+
+  if (empresaAberta) {
+    const daEmpresa = (empresa: { identidadeId: string }) => empresa.identidadeId === empresaAberta.empresa.identidadeId;
+    const saidasDaEmpresa = ordenarSaidas(saidas.filter((saida) => daEmpresa(saida.empresa)));
+    const avulsasDaEmpresa = semSaida.filter((entrega) => daEmpresa(entrega.empresa));
+    return (
+      <Tela atualizando={minhas.carregando} aoAtualizar={minhas.atualizar}>
+        <TopoComVoltar rotulo="Minhas entregas" aoVoltar={() => setEmpresaAbertaId(null)} />
+        <Secao titulo={empresaAberta.empresa.nome}>
+          <View accessibilityRole="tablist" accessibilityLabel={`Entregas e histórico de ${empresaAberta.empresa.nome}`} style={estilos.abas}>
+            {ABAS_DA_EMPRESA.map((item) => {
+              const marcada = aba === item.id;
+              return (
+                <Pressable key={item.id} accessibilityRole="tab" accessibilityState={{ selected: marcada }} onPress={() => setAba(item.id)} style={[estilos.aba, marcada && estilos.abaMarcada]}>
+                  <Texto variante="pequenoMedio" cor={marcada ? "marca" : "conteudoSuave"}>
+                    {item.rotulo}
+                  </Texto>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {aba === "entregas" ? (
+            <>
+              {falha && <Aviso tom="erro">{falha}</Aviso>}
+              {sucesso && <Aviso>{sucesso}</Aviso>}
+              <Cartao style={estilos.lista}>
+                <EmpresaEmQueTrabalho
+                  vinculo={empresaAberta}
+                  situacao={situacoes.find((item) => item.entregadorId === empresaAberta.id)}
+                  primeira
+                  ocupado={ocupado}
+                  aoAlternar={() => alternarDisponibilidade(empresaAberta)}
+                />
+              </Cartao>
+              {saidasDaEmpresa.map(cartaoDaSaida)}
+              {avulsasDaEmpresa.map((entrega) => (
+                <EntregaAvulsa key={entrega.pedidoId} entrega={entrega} />
+              ))}
+              {!minhas.carregando && !falha && saidasDaEmpresa.length === 0 && avulsasDaEmpresa.length === 0 && (
+                <EstadoVazio titulo="Nenhuma entrega desta empresa agora" descricao="Quando uma rota desta empresa for direcionada a você, ela aparece aqui na hora." />
+              )}
+            </>
+          ) : (
+            <HistoricoDaEmpresa key={empresaAberta.id} entregadorId={empresaAberta.id} />
+          )}
+        </Secao>
+      </Tela>
+    );
+  }
 
   return (
     <Tela atualizando={minhas.carregando} aoAtualizar={minhas.atualizar}>
@@ -207,6 +312,7 @@ export function TelaEntrega() {
                 primeira={indice === 0}
                 ocupado={ocupado}
                 aoAlternar={() => alternarDisponibilidade(vinculo)}
+                aoAbrir={() => abrirEmpresa(vinculo)}
               />
             ))}
           </Cartao>
@@ -225,30 +331,7 @@ export function TelaEntrega() {
           <LinhaDeLocalizacao titulo="Presença só com o Jaaa aberto" texto={'Permita a localização "o tempo todo" para manter seu lugar na fila com a tela bloqueada.'} acao="Permitir" aoTocar={presenca.permitir} />
         )}
 
-        {ordenarSaidas(saidas).map((saida) => (
-          <CartaoSaida
-            key={saida.id}
-            saida={saida}
-            entregas={entregas}
-            ocupado={ocupado || conversa.abrindo}
-            aoConversar={(nomeUsuario) => void conversa.abrirCom(nomeUsuario)}
-            aoIniciar={() => iniciar(saida)}
-            aoRecusar={() => recusar(saida)}
-            aoConcluir={(parada) => concluir(saida, parada)}
-            aoSalvarOrdem={(ordem) => salvarOrdem(saida, ordem)}
-            aoRecalcularRota={() => recalcular(saida)}
-            rastreamento={
-              saida.id === naRuaId ? (
-                <LinhaDeLocalizacao
-                  ativa={situacao === "ativo"}
-                  titulo={situacao === "ativo" ? "Localização ativa" : "Localização da entrega"}
-                  texto={ROTULO_SITUACAO_RASTREAMENTO[situacao]}
-                  {...(situacao === "ativo" ? {} : { acao: "Ativar", aoTocar: () => void iniciarRastreamento(saida.id).then(setSituacao) })}
-                />
-              ) : undefined
-            }
-          />
-        ))}
+        {ordenarSaidas(saidas).map(cartaoDaSaida)}
 
         {semSaida.map((entrega) => (
           <EntregaAvulsa key={entrega.pedidoId} entrega={entrega} />
@@ -270,15 +353,39 @@ export function TelaEntrega() {
  * na base) e um interruptor — ligado = aceitando entregas desta empresa. A cor acompanha o texto,
  * nunca o substitui.
  */
-function EmpresaEmQueTrabalho({ vinculo, situacao, primeira, ocupado, aoAlternar }: { vinculo: VinculoEntregador; situacao: SituacaoOperacional | undefined; primeira: boolean; ocupado: boolean; aoAlternar: () => void }) {
+function EmpresaEmQueTrabalho({
+  vinculo,
+  situacao,
+  primeira,
+  ocupado,
+  aoAlternar,
+  aoAbrir,
+}: {
+  vinculo: VinculoEntregador;
+  situacao: SituacaoOperacional | undefined;
+  primeira: boolean;
+  ocupado: boolean;
+  aoAlternar: () => void;
+  /** Abre as entregas e o histórico desta empresa. Ausente = a linha já está dentro dela. */
+  aoAbrir?: () => void;
+}) {
   const estado = estadoEmUmaLinha(vinculo, situacao);
   const cor = estado.tom === "ativo" ? "marca" : estado.tom === "atencao" ? "aviso" : "conteudoSuave";
   return (
     <View style={[estilos.empresa, !primeira && estilos.divisoria]}>
-      <View style={estilos.textoDaEmpresa}>
-        <Texto variante="corpoForte" numberOfLines={1}>
-          {vinculo.empresa.nome}
-        </Texto>
+      <Pressable
+        disabled={!aoAbrir}
+        accessibilityRole={aoAbrir ? "button" : "none"}
+        accessibilityLabel={aoAbrir ? `${vinculo.empresa.nome}: ${estado.texto}` : undefined}
+        accessibilityHint={aoAbrir ? "Abre as entregas e o histórico desta empresa" : undefined}
+        onPress={aoAbrir}
+        style={({ pressed }) => [estilos.textoDaEmpresa, pressed && estilos.apagado]}>
+        <View style={estilos.nomeDaEmpresa}>
+          <Texto variante="corpoForte" numberOfLines={1} style={estilos.encolhe}>
+            {vinculo.empresa.nome}
+          </Texto>
+          {aoAbrir && <Icone nome="seta" tamanho={16} cor="conteudoSuave" />}
+        </View>
         <Texto variante="pequenoMedio" cor={cor}>
           ● {estado.texto}
         </Texto>
@@ -287,7 +394,7 @@ function EmpresaEmQueTrabalho({ vinculo, situacao, primeira, ocupado, aoAlternar
             A empresa ainda não confirmou o ponto da base.
           </Texto>
         )}
-      </View>
+      </Pressable>
       {entregadorPodeEscolherDisponibilidade(vinculo.status) && (
         <Switch
           accessibilityLabel={`Aceitar entregas de ${vinculo.empresa.nome}`}
@@ -302,6 +409,12 @@ function EmpresaEmQueTrabalho({ vinculo, situacao, primeira, ocupado, aoAlternar
     </View>
   );
 }
+
+type AbaDaEmpresa = "entregas" | "historico";
+const ABAS_DA_EMPRESA: readonly { id: AbaDaEmpresa; rotulo: string }[] = [
+  { id: "entregas", rotulo: "Entregas" },
+  { id: "historico", rotulo: "Histórico" },
+];
 
 const TITULO_PERMISSAO = { ausente: "Localização desativada", negada: "Localização negada", indisponivel: "Localização do aparelho desligada" } as const;
 const TEXTO_PERMISSAO = {
@@ -365,5 +478,11 @@ const estilos = StyleSheet.create({
   empresa: { alignItems: "center", flexDirection: "row", gap: Espaco.tres, minHeight: 56, paddingVertical: Espaco.dois },
   divisoria: { borderTopColor: Cores.borda, borderTopWidth: 1 },
   textoDaEmpresa: { flex: 1, gap: 2, minWidth: 0 },
+  nomeDaEmpresa: { alignItems: "center", flexDirection: "row", gap: Espaco.um },
+  encolhe: { flexShrink: 1 },
+  apagado: { opacity: 0.6 },
+  abas: { backgroundColor: Cores.superficieSuave, borderRadius: Raio.bloco, flexDirection: "row", gap: Espaco.um, padding: Espaco.um },
+  aba: { alignItems: "center", borderRadius: Raio.compacto, flex: 1, justifyContent: "center", minHeight: 40, paddingHorizontal: Espaco.um },
+  abaMarcada: { backgroundColor: Cores.superficie },
   localizacao: { alignItems: "center", backgroundColor: Cores.superficieSuave, borderRadius: Raio.compacto, flexDirection: "row", gap: Espaco.dois, paddingHorizontal: Espaco.tres, paddingVertical: Espaco.dois },
 });

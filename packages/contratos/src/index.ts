@@ -18,6 +18,7 @@ export * from "./pedidos/pedido.ts";
 export * from "./pedidos/periodo-pedidos.ts";
 export * from "./pedidos/gestao-pedidos.ts";
 export * from "./entregas/entregador.ts";
+export * from "./entregas/historico-entregas.ts";
 export * from "./entregas/saida.ts";
 export * from "./entregas/base-e-fila.ts";
 export * from "./entregas/quadro-entregadores.ts";

@@ -11,6 +11,7 @@ import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import type { ResultadoApi } from "@/lib/api";
 import { useStatusPedido } from "../hooks/use-status-pedido";
 import { avancarStatusPedido, cancelarPedido, listarPedidosDaEmpresa, obterPedidoDaEmpresa } from "../lib/api-pedidos";
+import { criarSincroniaDaEntrega } from "../lib/sincronia-entrega";
 import { CONSULTA_INICIAL, PEDIDOS_POR_PAGINA, cursorDaPagina, dataDeHojeNoCampo, irParaAnterior, irParaProxima, paginaAtual, paginaFicouVazia, parametrosDoPeriodo, problemaDoPeriodo, resumoDaPagina, trocarFiltro, trocarPeriodo, type ConsultaPedidos } from "../lib/paginacao-pedidos";
 import { AcoesPedidoEmpresa } from "./acoes-pedido-empresa";
 import { DetalhePedido } from "./apresentacao-pedido";
@@ -49,6 +50,9 @@ export function AreaPedidosEmpresa({
   const [ocupado, setOcupado] = useState(false);
   // Entrega do pedido aberto: quem está levando + histórico de atribuições.
   const [entrega, setEntrega] = useState<EntregaDoPedido | null>(null);
+  // Rota mudou sem ação desta tela (despacho automático, recusa, outro operador): o evento avisa e a
+  // entrega do pedido ABERTO é relida do servidor. Resposta de um pedido já fechado é descartada.
+  const [sincroniaDaEntrega] = useState(() => criarSincroniaDaEntrega({ obter: obterEntregaDoPedido, aplicar: setEntrega }));
   const [entregadores, setEntregadores] = useState<EntregadorDaEmpresa[]>([]);
   const [saidas, setSaidas] = useState<SaidaEntrega[]>([]);
   // Atribuição pedindo confirmação: o pedido está numa saída que ainda não saiu.
@@ -110,12 +114,14 @@ export function AreaPedidosEmpresa({
       if (!resultado.success) return;
       const atualizada = resultado.data.saida;
       setSaidas((atuais) => (atuais.some((item) => item.id === atualizada.id) ? atuais.map((item) => (item.id === atualizada.id ? atualizada : item)) : [atualizada, ...atuais]));
+      // O bloco "Entregador" do pedido aberto acompanha (só quando esta saída é a dele).
+      void sincroniaDaEntrega.aoAtualizarSaida(atualizada);
     };
     socket.on(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
     return () => {
       socket.off(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
     };
-  }, []);
+  }, [sincroniaDaEntrega]);
 
   /*
    * PEDIDO NOVO sem F5: `pedido:novo` chega só à identidade da empresa (pedido não é mensagem para
@@ -125,7 +131,11 @@ export function AreaPedidosEmpresa({
   useEffect(() => {
     const socket = obterClienteRealtime();
     const aoChegarPedido = () => void carregar();
-    const aoReconectar = () => void carregar();
+    const aoReconectar = () => {
+      void carregar();
+      // Com um pedido aberto, a entrega dele também pode ter mudado enquanto a conexão esteve caída.
+      void sincroniaDaEntrega.reler();
+    };
     // Status mudou (aqui ou por outro operador): as QUANTIDADES dos filtros mudam junto — relê.
     const aoMudarStatus = () => void carregar();
     socket.on(EVENTO_PEDIDO_NOVO, aoChegarPedido);
@@ -136,7 +146,7 @@ export function AreaPedidosEmpresa({
       socket.off(EVENTO_PEDIDO_STATUS_ATUALIZADO, aoMudarStatus);
       socket.off("connect", aoReconectar);
     };
-  }, [carregar]);
+  }, [carregar, sincroniaDaEntrega]);
 
   // Status mudado aqui ou por outro operador: lista e pedido aberto acompanham sem F5.
   const abertoId = aberto?.id ?? null;
@@ -178,6 +188,8 @@ export function AreaPedidosEmpresa({
     }
     setErro(null);
     if (!aberto) rolagemDaLista.current = areaRolavel()?.scrollTop ?? 0;
+    sincroniaDaEntrega.definirPedidoAberto(empresaId, resultado.dados.id);
+    sincroniaDaEntrega.descartarPendentes();
     setAberto(resultado.dados);
     setEntrega(daEntrega.ok ? daEntrega.dados : null);
     // Só quem pode receber AGORA: vínculo ativo E disponível (o servidor confere de novo).
@@ -203,6 +215,7 @@ export function AreaPedidosEmpresa({
       }
       setErro(null);
       setTransferencia(null);
+      sincroniaDaEntrega.descartarPendentes();
       setEntrega(resultado.dados);
       const nome = resultado.dados.entregadorAtual?.pessoa.nomeExibicao;
       avisar.sucesso(nome ? `Pedido atribuído a ${nome}.` : "Pedido atribuído.");
@@ -255,6 +268,7 @@ export function AreaPedidosEmpresa({
   function voltarParaPedidos() {
     setErro(null);
     setTransferencia(null);
+    sincroniaDaEntrega.definirPedidoAberto(empresaId, null);
     setAberto(null);
   }
 

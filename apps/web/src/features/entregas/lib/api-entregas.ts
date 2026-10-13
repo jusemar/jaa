@@ -2,6 +2,7 @@ import {
   entregaAtribuidaSchema,
   entregaDoPedidoSchema,
   entregadorDaEmpresaSchema,
+  historicoEntregasSchema,
   listaConvitesEntregadorSchema,
   listaEntregadoresSchema,
   listaCandidatosEntregadorSchema,
@@ -24,6 +25,7 @@ import {
   type EntregaAtribuida,
   type EntregaDoPedido,
   type EntregadorDaEmpresa,
+  type HistoricoEntregas,
   type ListaConvitesEntregador,
   type ListaEntregadores,
   type ListaCandidatosEntregador,
@@ -491,4 +493,12 @@ export function listarMinhasSituacoes(): Promise<
     listaSituacoesOperacionaisSchema,
     {},
   );
+}
+
+/**
+ * HISTÓRICO do próprio entregador naquele vínculo (uma empresa): só entregas concluídas, uma página
+ * por vez. A consulta (período, limite, cursor) vem pronta de `consultaDoHistorico`.
+ */
+export function listarHistoricoDeEntregas(entregadorId: string, consulta: string): Promise<ResultadoApi<HistoricoEntregas>> {
+  return requisitarApi(`/entregas/vinculos/${encodeURIComponent(entregadorId)}/historico?${consulta}`, historicoEntregasSchema, {});
 }

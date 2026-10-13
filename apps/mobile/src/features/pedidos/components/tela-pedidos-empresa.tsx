@@ -35,6 +35,7 @@ import { obterClienteRealtime } from "@/lib/realtime/cliente-realtime";
 import { useStatusPedido } from "../hooks/use-status-pedido";
 import { avancarStatusPedido, cancelarPedido, listarPedidosDaEmpresa, obterPedidoDaEmpresa } from "../lib/api-pedidos";
 import { APRESENTACAO_STATUS_ENTREGA, ROTULO_STATUS_PEDIDO_NA_LISTA, adotarSaida, apresentacaoEntregaDoPedido, encontrarSaidaDoPedido, nomeDaRota, rotuloDeItens } from "../lib/gestao-pedidos";
+import { criarSincroniaDaEntrega } from "../lib/sincronia-entrega";
 import {
   CONSULTA_INICIAL,
   PEDIDOS_POR_PAGINA,
@@ -82,6 +83,9 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
   const [ocupado, setOcupado] = useState(false);
   // Entrega do pedido aberto: quem está levando + histórico de atribuições.
   const [entrega, setEntrega] = useState<EntregaDoPedido | null>(null);
+  // Rota mudou sem ação desta tela (despacho automático, recusa, outro operador): o evento avisa e a
+  // entrega do pedido ABERTO é relida do servidor. Resposta de um pedido já fechado é descartada.
+  const [sincroniaDaEntrega] = useState(() => criarSincroniaDaEntrega({ obter: obterEntregaDoPedido, aplicar: setEntrega }));
   const [entregadores, setEntregadores] = useState<EntregadorDaEmpresa[]>([]);
   const [saidas, setSaidas] = useState<SaidaEntrega[]>([]);
   // Atribuição pedindo confirmação: o pedido está numa saída que ainda não saiu.
@@ -141,25 +145,33 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
     const socket = obterClienteRealtime();
     const aoAtualizarSaida = (evento: unknown) => {
       const resultado = eventoSaidaAtualizadaSchema.safeParse(evento);
-      if (resultado.success) setSaidas((atuais) => adotarSaida(atuais, resultado.data.saida));
+      if (!resultado.success) return;
+      setSaidas((atuais) => adotarSaida(atuais, resultado.data.saida));
+      // O bloco "Entregador" do pedido aberto acompanha (só quando esta saída é a dele).
+      void sincroniaDaEntrega.aoAtualizarSaida(resultado.data.saida);
     };
     socket.on(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
     return () => {
       socket.off(EVENTO_SAIDA_ATUALIZADA, aoAtualizarSaida);
     };
-  }, []);
+  }, [sincroniaDaEntrega]);
 
   // PEDIDO NOVO sem recarregar: `pedido:novo` chega só à identidade da empresa. Reconectar também relê.
   useEffect(() => {
     const socket = obterClienteRealtime();
     const reler = () => void carregar();
+    const aoReconectar = () => {
+      reler();
+      // Com um pedido aberto, a entrega dele também pode ter mudado enquanto a conexão esteve caída.
+      void sincroniaDaEntrega.reler();
+    };
     socket.on(EVENTO_PEDIDO_NOVO, reler);
-    socket.on("connect", reler);
+    socket.on("connect", aoReconectar);
     return () => {
       socket.off(EVENTO_PEDIDO_NOVO, reler);
-      socket.off("connect", reler);
+      socket.off("connect", aoReconectar);
     };
-  }, [carregar]);
+  }, [carregar, sincroniaDaEntrega]);
 
   // Status mudado aqui ou por outro operador: lista e pedido aberto acompanham.
   const abertoId = aberto?.id ?? null;
@@ -190,6 +202,8 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
         return;
       }
       setErro(null);
+      sincroniaDaEntrega.definirPedidoAberto(empresaId, resultado.dados.id);
+      sincroniaDaEntrega.descartarPendentes();
       setAberto(resultado.dados);
       setEntrega(daEntrega.ok ? daEntrega.dados : null);
       // Só quem pode receber AGORA: vínculo ativo E disponível (o servidor confere de novo).
@@ -219,6 +233,7 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
       }
       setErro(null);
       setTransferencia(null);
+      sincroniaDaEntrega.descartarPendentes();
       setEntrega(resultado.dados);
       const nome = resultado.dados.entregadorAtual?.pessoa.nomeExibicao;
       setAviso(nome ? `Pedido atribuído a ${nome}.` : "Pedido atribuído.");
@@ -273,8 +288,9 @@ export function TelaPedidosEmpresa({ empresaId, nomeEmpresa, aoAbrirConversa }: 
     setErro(null);
     setAviso(null);
     setTransferencia(null);
+    sincroniaDaEntrega.definirPedidoAberto(empresaId, null);
     setAberto(null);
-  }, []);
+  }, [empresaId, sincroniaDaEntrega]);
 
   // O "Voltar" do Android sai do pedido para a lista, não da área.
   const mostrandoPedido = aberto !== null;
@@ -456,7 +472,7 @@ function ItemDaLista({ pedido, saida, primeiro, abrindo, aoAbrir }: { pedido: Pe
 }
 
 /** Data do período personalizado, digitada como DD/MM/AAAA (as barras entram sozinhas). */
-function CampoDeData({ rotulo, valor, aoMudar }: { rotulo: string; valor: string; aoMudar: (valor: string) => void }) {
+export function CampoDeData({ rotulo, valor, aoMudar }: { rotulo: string; valor: string; aoMudar: (valor: string) => void }) {
   return (
     <View style={estilos.campoDeData}>
       <Texto variante="pequeno" cor="conteudoSuave">

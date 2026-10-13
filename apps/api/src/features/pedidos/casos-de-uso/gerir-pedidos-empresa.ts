@@ -18,6 +18,7 @@ import { encerrarEntregaDoPedido, publicarEntrega } from "../../entregas/casos-d
 import { aoPedidoFicarPronto } from "../../entregas/casos-de-uso/despacho-automatico.js";
 import { encerrarParadaDoPedidoConcluido } from "../../entregas/casos-de-uso/gerir-saidas.js";
 import { reavaliarFila } from "../../entregas/casos-de-uso/presenca-e-fila.js";
+import { MOTIVO_ENCERRAMENTO_PEDIDO_ENTREGUE } from "../../entregas/lib/motivos-encerramento.js";
 import { publicarOperacao } from "../../entregas/lib/publicar-operacao.js";
 import { publicarSaidaPorId } from "../../entregas/lib/publicar-saida.js";
 import { buscarSaidaAtivaDoPedido } from "../../entregas/repositorios/repositorio-saidas.js";
@@ -175,7 +176,7 @@ export async function executarAlteracaoStatusPedido(
    */
   const saidaDoPedido = await buscarSaidaAtivaDoPedido(banco, pedidoId);
   if (novoStatus === "entregue" || novoStatus === "cancelado") {
-    const motivo = novoStatus === "entregue" ? "Pedido entregue" : "Pedido cancelado";
+    const motivo = novoStatus === "entregue" ? MOTIVO_ENCERRAMENTO_PEDIDO_ENTREGUE : "Pedido cancelado";
     await encerrarEntregaDoPedido({ banco, eventosEntregas }, pedidoId, motivo);
     // A parada sai da sequência ativa (e a saída se conclui quando foi a última); histórico intacto.
     const parada = await encerrarParadaDoPedidoConcluido(banco, pedidoId, motivo);
