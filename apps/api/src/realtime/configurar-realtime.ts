@@ -61,6 +61,7 @@ const MENSAGENS_ERRO_CONEXAO: Record<CodigoErroConexaoRealtime, string> = {
   NAO_AUTENTICADO: "Sessão ausente ou expirada.",
   CADASTRO_INCOMPLETO: "Conclua o cadastro para usar o realtime.",
   IDENTIDADE_NAO_AUTORIZADA: "Você não pode agir como esta identidade.",
+  CONTA_NECESSARIA: "Para continuar, crie sua conta ou entre no Jaaa.",
   ERRO_INTERNO: "Não foi possível autenticar a conexão.",
 };
 
@@ -111,7 +112,8 @@ export function configurarRealtime(servidor: FastifyInstance, dependencias: Depe
     try {
       const auth: unknown = socket.handshake.auth;
       const identidadeSolicitada = typeof auth === "object" && auth !== null && "identidadeId" in auth ? auth.identidadeId : undefined;
-      const resultado = await autenticarIdentidade(dependencias, socket.handshake.headers, identidadeSolicitada);
+      // O visitante do Link do Jaa conversa em tempo real como qualquer pessoa (e só isso).
+      const resultado = await autenticarIdentidade(dependencias, socket.handshake.headers, identidadeSolicitada, { permitirVisitante: true });
 
       if (!resultado.ok) {
         servidor.log.info({ motivo: resultado.codigo }, "Conexão realtime recusada");

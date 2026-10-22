@@ -55,6 +55,8 @@ const paraResultado = (identidade: IdentidadePublica, fotoUrl: string | null, ap
 
 export function registrarRotasContatos(servidor: FastifyInstance, dependencias: { banco: Banco; autenticacao: Autenticacao; armazenamento: ArmazenamentoDeArquivos }) {
   const preHandler = exigirIdentidadeAtuante(dependencias);
+  // A PESQUISA também serve ao visitante do Link do Jaa (encontrar alguém para conversar); a agenda não.
+  const preHandlerBusca = exigirIdentidadeAtuante(dependencias, { permitirVisitante: true });
   const { banco, armazenamento } = dependencias;
   const urlPublica = (chave: string) => armazenamento.urlPublica(chave);
   // Foto de cada identidade listada, decidida pela privacidade DELA para quem está vendo (uma consulta).
@@ -110,8 +112,8 @@ export function registrarRotasContatos(servidor: FastifyInstance, dependencias: 
    * Encontra por nome e @usuario; por telefone, só quem optou por ser encontrado assim.
    * O telefone NUNCA volta no resultado.
    */
-  servidor.get("/busca", { preHandler }, async (requisicao, resposta) => {
-    const { identidadeId } = obterIdentidadeExigida(requisicao);
+  servidor.get("/busca", { preHandler: preHandlerBusca }, async (requisicao, resposta) => {
+    const { identidadeId, visitante } = obterIdentidadeExigida(requisicao);
     const consulta = z.object({ termo: z.string().optional() }).safeParse(requisicao.query);
     const digitado = consulta.success ? (consulta.data.termo ?? "").trim() : "";
     // "@joao" procura o @usuario joao: o @ é só a forma de dizer "pessoa/empresa", não faz parte do nome.
@@ -123,7 +125,8 @@ export function registrarRotasContatos(servidor: FastifyInstance, dependencias: 
 
     const daAgenda = await buscarNosContatos(banco, identidadeId, termo);
     // Telefone só entra na comparação quando o termo realmente parece um celular brasileiro.
-    const telefone = termoParecePelefone(termo) ? normalizarCelularBrasileiro(termo) : null;
+    // Visitante (sessão anônima, descartável) nunca procura por telefone: seria enumeração de números.
+    const telefone = !visitante && termoParecePelefone(termo) ? normalizarCelularBrasileiro(termo) : null;
     const externos = await buscarNoJaa(banco, {
       identidadeAtual: identidadeId,
       termo,

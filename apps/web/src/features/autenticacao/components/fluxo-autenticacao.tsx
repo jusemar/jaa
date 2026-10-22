@@ -7,10 +7,13 @@ import {
   TAMANHO_PIN,
   somenteDigitosDoPin,
   type ContaAtual,
+  NOME_PADRAO_VISITANTE,
 } from "@jaa/contratos";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AppJaa } from "@/components/navegacao/app-jaa";
+import { Janela } from "@/components/ui/janela";
 import { Aviso, Botao, CampoTexto, Cartao } from "@/components/ui/primitivos";
+import { entrarComoVisitante } from "@/features/link/lib/api-visitante";
 import type { DestinoDoLink } from "@/features/link/lib/link-do-jaa";
 import { useConexaoRealtime } from "@/lib/realtime/use-realtime-conectado";
 import {
@@ -43,6 +46,10 @@ import { EXEMPLOS_ENTRADA, TEXTOS_ENTRADA, fraseDoDestino } from "../lib/textos-
  * CÓDIGO (SMS ou e-mail) e só se este navegador ainda não tiver um — nunca depois de entrar só com a
  * senha (o servidor também recusaria). Quem diz se este navegador está autorizado é o servidor
  * (`api-pin.ts`).
+ *
+ * VISITANTE (Link do Jaa): recebe o MESMO AppJaa de quem tem conta, com as capacidades de visitante.
+ * "Criar conta" / "Entrar" abrem esta entrada numa janela POR CIMA do app — ele continua montado
+ * atrás, e ao concluir é o mesmo app que passa a ter conta (a conversa vai junto, no servidor).
  */
 
 type Etapa =
@@ -60,6 +67,10 @@ type Etapa =
   | { nome: "pin" }
   // Acabou de entrar com o código: pode autorizar este dispositivo (a conta já está pronta para abrir).
   | { nome: "criar-pin"; conta: ContaAtual }
+  // Sessão de VISITANTE (Link do Jaa): o app de sempre, sem conta, até criar conta ou entrar.
+  | { nome: "visitante"; conta: ContaAtual }
+  // Pelo Link do Jaa, a sessão de visitante não abriu (limite, servidor, rede): é falha técnica, não "faça login".
+  | { nome: "falha-visitante"; mensagem: string }
   | { nome: "autenticado"; conta: ContaAtual };
 
 export function FluxoAutenticacao({
@@ -107,8 +118,15 @@ export function FluxoAutenticacao({
     };
   }, []);
 
-  // Realtime só com sessão válida e identidade pessoal; sair volta à entrada e desconecta.
-  useConexaoRealtime(etapa.nome === "autenticado");
+  // Realtime só com sessão válida e identidade (pessoal ou de visitante); sair volta à entrada e desconecta.
+  useConexaoRealtime(etapa.nome === "autenticado" || etapa.nome === "visitante");
+  /*
+   * VISITANTE indo criar conta ou entrar: a sessão temporária continua valendo durante o código/senha
+   * (é ela que prova que a conversa é desta pessoa). Enquanto isso o app dele fica atrás da entrada,
+   * e dá para voltar a ele.
+   */
+  const [contaVisitante, setContaVisitante] = useState<ContaAtual | null>(null);
+  const visitante = contaVisitante?.visitante ?? null;
 
   // Este navegador tem PIN? (decisão do servidor, pelo cookie protegido que só ele lê)
   const [pinDisponivel, setPinDisponivel] = useState(false);
@@ -120,8 +138,14 @@ export function FluxoAutenticacao({
 
   const aplicarConta = useCallback((conta: Awaited<ReturnType<typeof buscarContaAtual>>, comPin = false) => {
     if (!conta.ok) {
+      setContaVisitante(null);
       setEtapa(iniciarCadastro ? { nome: "canal", motivo: "criar" } : comPin ? { nome: "pin" } : { nome: "entrar" });
       if (conta.status !== 401) setErro(conta.mensagem);
+      return;
+    }
+    if (conta.dados.visitante) {
+      setContaVisitante(conta.dados);
+      setEtapa({ nome: "visitante", conta: conta.dados });
       return;
     }
     if (!conta.dados.cadastroCompleto) {
@@ -138,11 +162,32 @@ export function FluxoAutenticacao({
     aplicarConta(await buscarContaAtual());
   }
 
+  /*
+   * Pelo LINK DO JAA e sem sessão nenhuma, a pessoa entra DIRETO na conversa como visitante: a sessão
+   * temporária é aberta aqui, sem cartão nem botão no caminho. Se não der (limite por IP, servidor,
+   * rede), a falha aparece COMO falha, com "Tentar novamente": não é a pessoa que precisa de conta.
+   */
+  const linkDeDestino = destino?.nomeUsuario;
+  const [tentativaVisitante, setTentativaVisitante] = useState(0);
   useEffect(() => {
     let ativo = true;
-    void buscarContaAtual().then(async (conta) => {
-      // Sem sessão: antes de mostrar a entrada, saber se este navegador pode entrar com PIN.
-      const comPin = conta.ok ? false : await buscarSituacaoPin();
+    void buscarContaAtual().then(async (resposta) => {
+      let conta = resposta;
+      if (!conta.ok && linkDeDestino) {
+        // 401 = ninguém aqui ainda: abre o visitante. Qualquer outra falha (servidor, rede) já é a falha.
+        let falha = conta.status === 401 ? null : conta;
+        if (!falha) {
+          const criado = await entrarComoVisitante();
+          if (criado.ok) conta = await buscarContaAtual();
+          falha = !criado.ok ? criado : !conta.ok ? conta : null;
+        }
+        if (falha) {
+          if (ativo) setEtapa({ nome: "falha-visitante", mensagem: falha.mensagem });
+          return;
+        }
+      }
+      // Sem sessão (ou só a de visitante): antes de mostrar a entrada, saber se este navegador pode entrar com PIN.
+      const comPin = conta.ok && !conta.dados.visitante ? false : await buscarSituacaoPin();
       if (!ativo) return;
       definirPinDisponivel(comPin);
       aplicarConta(conta, comPin);
@@ -150,7 +195,7 @@ export function FluxoAutenticacao({
     return () => {
       ativo = false;
     };
-  }, [aplicarConta]);
+  }, [aplicarConta, linkDeDestino, tentativaVisitante]);
 
   function definirPinDisponivel(disponivel: boolean) {
     navegadorComPin.current = disponivel;
@@ -339,14 +384,23 @@ export function FluxoAutenticacao({
         return;
       }
       // Sair encerra a sessão; o PIN deste dispositivo continua valendo para a próxima entrada.
+      setContaVisitante(null);
       setEtapa(pinDisponivel ? { nome: "pin" } : { nome: "entrar" });
       aoSairParaPaginaPublica?.();
     });
   }
 
-  if (etapa.nome === "autenticado") {
-    return <AppJaa conta={etapa.conta} aoSair={sair} saindo={enviando} destinoInicial={destino} />;
-  }
+  const irParaEntrar = () => irPara(pinDisponivel ? { nome: "pin" } : { nome: "entrar" });
+
+  // Visitante a caminho da conta: o app dele continua a um toque, e o motivo de criar a conta fica claro.
+  const voltarAoApp = contaVisitante && etapa.nome !== "carregando" && etapa.nome !== "cadastro" && etapa.nome !== "criar-pin" && (
+    <Cartao className="flex flex-col gap-3 p-4" data-visitante-a-caminho>
+      <p className="text-sm text-conteudo-suave">Ao criar sua conta ou entrar, as conversas que você começou como visitante continuam com você.</p>
+      <Botao type="button" aparencia="discreto" data-voltar-a-conversa onClick={() => irPara({ nome: "visitante", conta: contaVisitante })}>
+        Continuar sem conta
+      </Botao>
+    </Cartao>
+  );
 
   const entrada = (
     <section id={idEntrada} aria-label="Entrar no Jaaa" data-entrada-jaa className="flex w-full scroll-mt-4 flex-col gap-4">
@@ -357,6 +411,8 @@ export function FluxoAutenticacao({
       )}
 
       {etapa.nome === "carregando" && <p className="text-center text-sm text-conteudo-suave">Carregando…</p>}
+
+      {voltarAoApp}
 
       {etapa.nome === "pin" && (
         <Cartao className="p-5">
@@ -506,7 +562,16 @@ export function FluxoAutenticacao({
           <form onSubmit={concluirCadastro} className="flex flex-col gap-4">
             <h2 className="text-lg font-semibold">{TEXTOS_ENTRADA.cadastro.titulo}</h2>
             <p className="text-sm text-conteudo-suave">{TEXTOS_ENTRADA.cadastro.descricao}</p>
-            <CampoTexto id="cadastro-nome" rotulo="Nome" name="nomeExibicao" required placeholder={EXEMPLOS_ENTRADA.nome} autoComplete="name" />
+            <CampoTexto
+              id="cadastro-nome"
+              rotulo="Nome"
+              name="nomeExibicao"
+              required
+              placeholder={EXEMPLOS_ENTRADA.nome}
+              autoComplete="name"
+              // Quem conversou como visitante já disse como quer ser chamado.
+              defaultValue={visitante && visitante.nomeExibicao !== NOME_PADRAO_VISITANTE ? visitante.nomeExibicao : undefined}
+            />
             <CampoTexto
               id="cadastro-usuario"
               rotulo="@usuario"
@@ -550,6 +615,67 @@ export function FluxoAutenticacao({
       {erro && <Aviso tom="erro">{erro}</Aviso>}
     </section>
   );
+
+  /*
+   * O APP — o mesmo para conta e visitante, sempre na MESMA posição da árvore: o visitante que cria a
+   * conta ou entra continua no mesmo app (conversa aberta, área, rolagem), que só ganha capacidades.
+   */
+  const contaDoApp = etapa.nome === "autenticado" ? etapa.conta : etapa.nome !== "carregando" ? contaVisitante : null;
+  if (contaDoApp) {
+    const ehVisitante = etapa.nome !== "autenticado";
+    // Depois do código a conta já existe: concluir o cadastro (ou o PIN) não tem "voltar" para o visitante.
+    const podeVoltar = etapa.nome !== "cadastro" && etapa.nome !== "criar-pin";
+    return (
+      <>
+        <AppJaa
+          conta={contaDoApp}
+          aoSair={sair}
+          saindo={enviando}
+          destinoInicial={destino}
+          {...(ehVisitante ? { aoCriarConta: () => comecarComCodigo("criar"), aoEntrar: irParaEntrar } : {})}
+        />
+        {ehVisitante && etapa.nome !== "visitante" && (
+          <Janela
+            rotulo="Entrar no Jaaa"
+            titulo={etapa.nome === "cadastro" ? "Falta pouco" : "Sua conta no Jaaa"}
+            largura="estreita"
+            aoFechar={() => {
+              if (podeVoltar && contaVisitante) irPara({ nome: "visitante", conta: contaVisitante });
+            }}
+          >
+            {entrada}
+          </Janela>
+        )}
+      </>
+    );
+  }
+
+  if (etapa.nome === "falha-visitante") {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-fundo px-4 py-10">
+        <section aria-label="Link do Jaaa" data-falha-visitante className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
+          <h1 className="text-3xl font-bold text-marca">Jaaa</h1>
+          <p className="text-sm text-conteudo">Não foi possível abrir a conversa{destino ? ` com ${destino.nomeExibicao ?? `@${destino.nomeUsuario}`}` : ""} agora.</p>
+          <p role="alert" className="text-sm text-perigo">
+            {etapa.mensagem}
+          </p>
+          <Botao
+            data-tentar-visitante-de-novo
+            onClick={() => {
+              setEtapa({ nome: "carregando" });
+              setTentativaVisitante((atual) => atual + 1);
+            }}
+          >
+            Tentar novamente
+          </Botao>
+          {/* Entrar continua sendo uma ESCOLHA de quem já tem conta, nunca a saída da falha. */}
+          <Botao type="button" aparencia="discreto" onClick={irParaEntrar}>
+            Já tenho conta
+          </Botao>
+        </section>
+      </main>
+    );
+  }
 
   if (moldura) return <>{moldura({ entrada, focarEntrada })}</>;
 

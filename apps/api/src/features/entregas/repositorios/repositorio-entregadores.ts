@@ -3,6 +3,7 @@ import { atribuicoesEntrega, entregadoresEmpresa, identidades, membrosEmpresa } 
 import type { StatusEntregador } from "@jaa/contratos";
 import { and, asc, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { aplicarMudancaOperacional } from "./repositorio-fila.js";
+import { naoEhVisitante } from "../../visitantes/repositorios/repositorio-visitantes.js";
 
 export type EntregadorRegistro = typeof entregadoresEmpresa.$inferSelect;
 
@@ -62,6 +63,7 @@ export function buscarCandidatosEntregador(banco: Banco, empresaId: string, term
     .where(
       and(
         eq(identidades.tipo, "pessoal"),
+        naoEhVisitante(identidades.id),
         or(ilike(identidades.nomeExibicao, padrao), ilike(identidades.nomeUsuario, padrao)),
         or(isNull(entregadoresEmpresa.id), eq(entregadoresEmpresa.status, "inativo")),
         sql`not exists (select 1 from ${membrosEmpresa} where ${membrosEmpresa.empresaId} = ${empresaId} and ${membrosEmpresa.usuarioId} = ${identidades.usuarioId})`,

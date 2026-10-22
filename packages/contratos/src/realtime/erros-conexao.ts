@@ -7,6 +7,8 @@ export const codigoErroConexaoRealtimeSchema = z.enum([
   "CADASTRO_INCOMPLETO",
   // `auth.identidadeId` pedido não é operável por esta conta.
   "IDENTIDADE_NAO_AUTORIZADA",
+  // Reservado: hoje a conexão realtime aceita visitante (conversar é o que ele pode fazer).
+  "CONTA_NECESSARIA",
   "ERRO_INTERNO",
 ]);
 

@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { phoneNumber } from "better-auth/plugins";
+import { anonymous, phoneNumber } from "better-auth/plugins";
 
 // Usado SOMENTE pela CLI do Better Auth para gerar packages/banco/src/tabelas/autenticacao/better-auth.ts.
 // Deve refletir as opções de src/features/autenticacao/autenticacao.ts que afetam tabelas
@@ -9,5 +9,5 @@ import { phoneNumber } from "better-auth/plugins";
 export const auth = betterAuth({
   database: drizzleAdapter({}, { provider: "pg", usePlural: true }),
   rateLimit: { storage: "database" },
-  plugins: [phoneNumber({ sendOTP: () => {} })],
+  plugins: [phoneNumber({ sendOTP: () => {} }), anonymous()],
 });

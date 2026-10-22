@@ -5,7 +5,7 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { and, eq, ne } from "drizzle-orm";
-import { emailOTP, phoneNumber } from "better-auth/plugins";
+import { anonymous, emailOTP, phoneNumber } from "better-auth/plugins";
 import { expo } from "@better-auth/expo";
 import { SENHA_TAMANHO_MAXIMO, SENHA_TAMANHO_MINIMO } from "@jaa/contratos";
 import type { Ambiente } from "../../lib/ambiente.js";
@@ -18,6 +18,8 @@ import { normalizarEmail } from "./lib/email.js";
 import { pinDoDispositivo } from "./pin/plugin-pin-dispositivo.js";
 import type { AvisoSessoesEncerradas } from "./lib/sessoes-encerradas.js";
 import { ehCelularBrasileiroNormalizado, normalizarCelularBrasileiro } from "./lib/telefone.js";
+import { vincularVisitanteAConta } from "../visitantes/casos-de-uso/vincular-visitante.js";
+import { ehSessaoAnonima } from "./lib/sessao-anonima.js";
 
 export const CAMINHO_BASE_AUTENTICACAO = "/api/auth";
 
@@ -79,6 +81,10 @@ const ROTAS_EMAIL_DESATIVADAS = [
   "/email-otp/reset-password",
 ];
 
+// Domínio do e-mail técnico da conta TEMPORÁRIA de visitante (".invalid": ninguém recebe nada nele).
+const DOMINIO_EMAIL_VISITANTE = "visitante.jaa.invalid";
+
+
 // O destinatário (e o IP) entram na chave do limite só como hash: a tabela de limites não guarda e-mails.
 const resumo = (valor: string) => createHash("sha256").update(valor).digest("hex");
 const chaveLimiteEmail = (email: string) => `otp-email:${resumo(email)}`;
@@ -129,7 +135,17 @@ export function criarOpcoesAutenticacao({
      * senha nenhuma segue entrando por OTP e pode definir uma senha depois.
      */
     emailAndPassword: { enabled: true, minPasswordLength: SENHA_TAMANHO_MINIMO, maxPasswordLength: SENHA_TAMANHO_MAXIMO },
-    disabledPaths: ["/sign-in/email", "/sign-up/email", "/forget-password", "/reset-password", ...ROTAS_EMAIL_DESATIVADAS],
+    disabledPaths: [
+      "/sign-in/email",
+      "/sign-up/email",
+      "/forget-password",
+      "/reset-password",
+      ...ROTAS_EMAIL_DESATIVADAS,
+      // Visitante: a sessão anônima só nasce por `POST /visitantes` (limite por IP + identidade visitante),
+      // e quem apaga a conta temporária é o Jaa (ao converter ou expirar), nunca o cliente.
+      "/sign-in/anonymous",
+      "/delete-anonymous-user",
+    ],
     rateLimit: {
       // Por padrão o Better Auth só limita em produção; o Jaa limita em todos os ambientes.
       enabled: true,
@@ -196,6 +212,11 @@ export function criarOpcoesAutenticacao({
            * falharia e o outro não), o dono do endereço recebe um AVISO pelo mesmo canal — e a falha
            * desse envio é falha do pedido, igual à do código. Nada é unido nem trocado aqui.
            */
+          // Visitante não ganha e-mail: para ter e-mail ele CRIA A CONTA (o código de entrada), e a conversa vai junto.
+          if ((ctx.path === "/email-otp/request-email-change" || ctx.path === "/email-otp/change-email") && ehSessaoAnonima(await getSessionFromCtx(ctx))) {
+            throw APIError.from("FORBIDDEN", { code: "CONTA_NECESSARIA", message: "Crie sua conta para cadastrar um e-mail." });
+          }
+
           if (ctx.path === "/email-otp/request-email-change" && entregadorOtpEmail) {
             const sessao = await getSessionFromCtx(ctx);
             if (sessao) {
@@ -265,7 +286,9 @@ export function criarOpcoesAutenticacao({
         if (ctx.path === "/phone-number/verify") {
           const sessao = await getSessionFromCtx(ctx);
           const telefoneDaConta: unknown = sessao?.user.phoneNumber;
-          if (sessao && !telefoneDaConta) {
+          // Sessão de VISITANTE: o código é a entrada/cadastro normal; a conversa dele é levada para a
+          // conta pelo gancho `after` (nunca o telefone entra na conta temporária).
+          if (sessao && !telefoneDaConta && !ehSessaoAnonima(sessao)) {
             return { context: { body: { ...corpoObjeto, phoneNumber: telefone, updatePhoneNumber: true } } };
           }
         }
@@ -276,6 +299,24 @@ export function criarOpcoesAutenticacao({
       after: createAuthMiddleware(async (ctx) => {
         if (ctx.request && enviosDeEmailQueFalharam.has(ctx.request)) {
           throw APIError.from("SERVICE_UNAVAILABLE", { code: "FALHA_AO_ENVIAR_CODIGO", message: "Não foi possível enviar o código. Tente novamente." });
+        }
+
+        /*
+         * VISITANTE QUE ENTROU NUMA CONTA (qualquer caminho: código por SMS/e-mail, senha, PIN). Vale
+         * só quando a requisição TROUXE a sessão anônima (cookie) E acabou de abrir uma sessão de conta
+         * de verdade: é a prova de que a mesma pessoa tem as duas. A conversa do visitante vai para a
+         * conta (vincular-visitante.ts). Falha aqui não desfaz a entrada; o histórico continua com o
+         * visitante até ele expirar, e o erro fica registrado.
+         */
+        const novaSessao = ctx.context.newSession;
+        if (!novaSessao || ehSessaoAnonima(novaSessao)) return;
+        const anterior = await getSessionFromCtx(ctx, { disableRefresh: true }).catch(() => null);
+        if (!anterior || !ehSessaoAnonima(anterior) || anterior.user.id === novaSessao.user.id) return;
+        try {
+          const vinculo = await vincularVisitanteAConta(banco, { usuarioVisitanteId: anterior.user.id, usuarioContaId: novaSessao.user.id });
+          if (vinculo.tipo !== "nada") for (const sessaoId of vinculo.sessoesEncerradas) sessoesEncerradas.notificar(sessaoId);
+        } catch (erro) {
+          ctx.context.logger.error("Falha ao levar a conversa do visitante para a conta:", erro instanceof Error ? erro.message : "desconhecido");
         }
       }),
     },
@@ -329,6 +370,12 @@ export function criarOpcoesAutenticacao({
             }),
           ]
         : []),
+      /*
+       * VISITANTE (Link do Jaa): conta temporária oficial do Better Auth, com sessão normal. Criada só
+       * por `POST /visitantes`; a união com a conta definitiva e a remoção são feitas pelo Jaa (gancho
+       * `after` acima e rotina de expiração), por isso a remoção automática do plugin fica desligada.
+       */
+      anonymous({ emailDomainName: DOMINIO_EMAIL_VISITANTE, generateName: () => NOME_TECNICO_CONTA, disableDeleteAnonymousUser: true }),
       // PIN do dispositivo autorizado: entrada sem novo código em aparelho/navegador já comprovado.
       pinDoDispositivo({ banco, segredo: ambiente.BETTER_AUTH_SECRET }),
     ],
@@ -347,5 +394,6 @@ export type Autenticacao = Pick<InstanciaAutenticacao, "handler"> & {
   // `setPassword` é server-only no Better Auth: só existe por aqui, nunca como rota HTTP.
   // `signInEmail`: a rota pública `/sign-in/email` fica DESLIGADA; a senha de conta sem telefone é
   // conferida por esta chamada interna, a partir de `POST /autenticacao/entrar`.
-  api: Pick<InstanciaAutenticacao["api"], "getSession" | "setPassword" | "signInEmail">;
+  // `signInAnonymous`: a rota pública fica desligada; a sessão de visitante nasce por `POST /visitantes`.
+  api: Pick<InstanciaAutenticacao["api"], "getSession" | "setPassword" | "signInEmail" | "signInAnonymous">;
 };

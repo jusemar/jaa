@@ -24,6 +24,7 @@ import {
   listarIdentidadesOperaveis,
 } from "../lib/autorizacao-identidades.js";
 import { serializarIdentidadePessoal } from "../lib/serializar-identidade.js";
+import { ehSessaoAnonima } from "../../autenticacao/lib/sessao-anonima.js";
 
 export function registrarRotasIdentidades(
   servidor: FastifyInstance,
@@ -34,7 +35,13 @@ export function registrarRotasIdentidades(
     "/identidades/pessoal",
     { preHandler: exigirSessao(autenticacao) },
     async (requisicao, resposta) => {
-      const { user } = obterSessaoExigida(requisicao);
+      const sessao = obterSessaoExigida(requisicao);
+      const { user } = sessao;
+      // Visitante não cria identidade: ele CRIA A CONTA (código), e a conversa dele vai junto.
+      if (ehSessaoAnonima(sessao)) {
+        const erro: ErroApi = { codigo: "CONTA_NECESSARIA", mensagem: "Para continuar, crie sua conta ou entre no Jaaa." };
+        return resposta.code(403).send(erro);
+      }
       const nomeUsuarioInformado = obterNomeUsuarioInformado(requisicao.body);
       const entrada = criarIdentidadePessoalEntradaSchema.safeParse(
         requisicao.body,

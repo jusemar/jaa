@@ -39,6 +39,7 @@ import { registrarRotasPedidos } from "./features/pedidos/rotas/rotas-pedidos.js
 import { registrarRotasPedidosEmpresa } from "./features/pedidos/rotas/rotas-pedidos-empresa.js";
 import { registrarRotasCategorias } from "./features/produtos/rotas/rotas-categorias.js";
 import { registrarRotasPersonalizacao } from "./features/produtos/rotas/rotas-personalizacao.js";
+import { registrarRotasVisitantes } from "./features/visitantes/rotas/rotas-visitantes.js";
 import { registrarRotasProdutosAdministracao } from "./features/produtos/rotas/rotas-produtos-administracao.js";
 import { registrarRotasIdentidadePublica } from "./features/perfil/rotas/rotas-identidade-publica.js";
 import { registrarRotasPerfil } from "./features/perfil/rotas/rotas-perfil.js";
@@ -134,6 +135,7 @@ export async function criarAplicacao({
   });
   registrarRotaTesteProtegido(servidor, autenticacao);
   registrarRotasUsuarios(servidor, { banco, autenticacao, armazenamento });
+  registrarRotasVisitantes(servidor, { banco, autenticacao });
   registrarRotasIdentidades(servidor, { banco, autenticacao, armazenamento });
   registrarRotasEmpresas(servidor, { banco, autenticacao, maximoEmpresasCriadasPorConta });
   registrarRotasFuncionamento(servidor, { banco, autenticacao });

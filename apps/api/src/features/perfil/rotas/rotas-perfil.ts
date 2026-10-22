@@ -185,8 +185,10 @@ export function registrarRotasPerfil(
    * PERFIL DE OUTRA IDENTIDADE, filtrado pela privacidade DELA. O que ela esconde chega como `null`:
    * quem olha não distingue "não preencheu" de "não mostra para você", e isso é proposital.
    */
-  servidor.get("/identidades/:identidadeId/perfil", { preHandler }, async (requisicao, resposta) => {
-    const { identidadeId: observador } = obterIdentidadeExigida(requisicao);
+  // Ver o perfil (com a privacidade de quem é visto) é o que o visitante pode; editar o próprio, não.
+  const preHandlerLeitura = exigirIdentidadeAtuante(dependencias, { permitirVisitante: true });
+  servidor.get("/identidades/:identidadeId/perfil", { preHandler: preHandlerLeitura }, async (requisicao, resposta) => {
+    const { identidadeId: observador, visitante } = obterIdentidadeExigida(requisicao);
     const parametros = z.object({ identidadeId: z.uuid() }).safeParse(requisicao.params);
     if (!parametros.success) return responder(resposta, 400, { codigo: "DADOS_INVALIDOS", mensagem: "Identidade inválida." });
 
@@ -210,8 +212,10 @@ export function registrarRotasPerfil(
       nomeUsuario: alvo.nomeUsuario,
       fotoUrl: fotos.get(alvo.identidadeId) ?? null,
       fraseStatus: mostrarStatus ? alvo.fraseStatus : null,
-      cidade: alvo.cidade,
-      sobre: alvo.sobre,
+      // Visitante é um desconhecido sem conta: vê o mesmo que a página pública do Link (cidade nunca;
+      // "sobre" só de empresa). Conta comum continua vendo como sempre.
+      cidade: visitante ? null : alvo.cidade,
+      sobre: visitante && alvo.tipo !== "empresarial" ? null : alvo.sobre,
       status: mostrarStatus ? statusVisivel : null,
       ehContato: ehEuMesmo ? false : await ehContatoDe(banco, observador, alvo.identidadeId),
     };

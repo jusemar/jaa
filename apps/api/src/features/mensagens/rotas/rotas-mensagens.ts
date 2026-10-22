@@ -75,7 +75,8 @@ export function registrarRotasMensagens(
   servidor: FastifyInstance,
   dependencias: { banco: Banco; autenticacao: Autenticacao; eventosMensagens: CanalEventosMensagens; armazenamentoPrivado: ArmazenamentoPrivado },
 ) {
-  const preHandler = exigirIdentidadeAtuante(dependencias);
+  // O visitante do Link do Jaa conversa como qualquer pessoa: estas rotas o aceitam explicitamente.
+  const preHandler = exigirIdentidadeAtuante(dependencias, { permitirVisitante: true });
 
   servidor.get("/conversas/:conversaId/mensagens", { preHandler }, async (requisicao, resposta) => {
     const { identidadeId } = obterIdentidadeExigida(requisicao);

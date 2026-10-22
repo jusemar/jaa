@@ -27,7 +27,8 @@ export function registrarRotasBloqueios(
   servidor: FastifyInstance,
   dependencias: { banco: Banco; autenticacao: Autenticacao; eventosMensagens: CanalEventosMensagens },
 ) {
-  const preHandler = exigirIdentidadeAtuante(dependencias);
+  // Bloquear é proteção da conversa: vale para o visitante e, sobretudo, CONTRA ele.
+  const preHandler = exigirIdentidadeAtuante(dependencias, { permitirVisitante: true });
 
   servidor.get("/bloqueios/:identidadeId", { preHandler }, async (requisicao, resposta) => {
     const lidos = parametros.safeParse(requisicao.params);

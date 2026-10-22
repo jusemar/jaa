@@ -10,9 +10,11 @@ import {
   type MeuPerfil,
   type StatusEscolhido,
   type VisibilidadePerfil,
+  type VisitanteAtual,
 } from "@jaa/contratos";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
+import { RecursoComConta, useCapacidadesSessao } from "@/components/navegacao/capacidades-sessao";
 import { avisar } from "@/components/ui/avisos";
 import { Aviso, Botao, CampoSelecao, CampoTexto, CampoTextoLongo, Cartao, Carregando, Secao } from "@/components/ui/primitivos";
 import { executarComFeedback } from "@/features/profissional/lib/feedback";
@@ -34,6 +36,11 @@ import { ContaESeguranca } from "./conta-e-seguranca";
  *   Minhas empresas     → as empresas desta conta — só da pessoa;
  *   Horários            → quando a empresa recebe pedidos — só da empresa.
  * Nenhuma funcionalidade saiu: mudou só onde cada uma fica.
+ *
+ * VISITANTE (Link do Jaa): a MESMA tela e as mesmas abas, para ele conhecer o que o Jaaa oferece. Ele
+ * VÊ o que já é dele (o nome que deu, sem foto, sem @usuario); ALTERAR qualquer coisa pede
+ * "Criar conta / Entrar" — nada é gravado para uma identidade que expira em 24 h (e o servidor
+ * recusaria com CONTA_NECESSARIA).
  */
 
 type AbaPerfil = "perfil" | "privacidade" | "conta" | "profissional" | "empresas" | "horarios";
@@ -57,26 +64,32 @@ export function AreaPerfil({
   ehEmpresa,
   empresas,
   horarios,
+  visitante = null,
 }: {
   ehEmpresa: boolean;
+  // Sessão de visitante: o que ele é vem de `/usuarios/eu`; nada de perfil é pedido ao servidor.
+  visitante?: VisitanteAtual | null;
   /** "Minhas empresas" da conta (pessoa) e "Horários de funcionamento" (empresa): montados por quem conhece a conta/empresa. */
   empresas?: ReactNode;
   horarios?: ReactNode;
 }) {
   const [aba, setAba] = useState<AbaPerfil>("perfil");
-  const [perfil, setPerfil] = useState<MeuPerfil | null>(null);
+  const { exigirConta } = useCapacidadesSessao();
+  const [perfil, setPerfil] = useState<MeuPerfil | null>(() => (visitante ? perfilDoVisitante(visitante) : null));
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   /*
    * Campos do bloco "Meu perfil" como estão na tela. O botão Salvar compara isto com o ÚLTIMO estado
    * salvo (`perfil`): sem diferença fica desabilitado — a mesma regra do app (`perfilFoiAlterado`).
    */
-  const [campos, setCampos] = useState<CamposPerfilEditados | null>(null);
+  const [campos, setCampos] = useState<CamposPerfilEditados | null>(() => (visitante ? camposDe(perfilDoVisitante(visitante)) : null));
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
   // Perfil profissional abre DENTRO de Perfil (sem item novo no menu); só para a pessoa.
   const [profissionalAberto, setProfissionalAberto] = useState(false);
 
+  const ehVisitante = visitante !== null;
   useEffect(() => {
+    if (ehVisitante) return;
     let ativo = true;
     void buscarMeuPerfil().then((resposta) => {
       if (!ativo) return;
@@ -88,7 +101,7 @@ export function AreaPerfil({
     return () => {
       ativo = false;
     };
-  }, []);
+  }, [ehVisitante]);
 
   function aplicar(resposta: Awaited<ReturnType<typeof salvarPerfil>>, mensagem: string) {
     if (resposta.ok) {
@@ -103,6 +116,10 @@ export function AreaPerfil({
   // Toast (mesmo sistema do resto do Jaa) + o aviso inline de sempre, que continua na tela.
   function enviarDados(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
+    if (ehVisitante) {
+      exigirConta();
+      return;
+    }
     // Um envio por vez, e só quando algo mudou (Enter no campo não burla o botão desabilitado).
     if (salvandoPerfil || !perfil || !campos || !perfilFoiAlterado(perfil, campos)) return;
     setSalvandoPerfil(true);
@@ -123,6 +140,10 @@ export function AreaPerfil({
   };
 
   function mudarPrivacidade(campo: string, valor: string) {
+    if (ehVisitante) {
+      exigirConta();
+      return;
+    }
     void executarComFeedback(salvarPrivacidade({ [campo]: valor } as never), "Preferência salva", avisar)
       .then((resposta) => aplicar(resposta, "Preferência salva."));
   }
@@ -169,7 +190,11 @@ export function AreaPerfil({
 
           <form onSubmit={enviarDados} className="grid gap-4 sm:grid-cols-2 [&>*]:min-w-0">
             <CampoTexto id="perfil-nome" rotulo="Nome" name="nomeExibicao" value={campos.nome} onChange={editar("nome")} maxLength={50} required autoComplete="name" />
-            <CampoTexto id="perfil-usuario" rotulo="@usuario" value={`@${perfil.nomeUsuario}`} readOnly disabled dica="O @usuario é seu endereço no Jaaa e não muda por aqui." />
+            {ehVisitante ? (
+              <CampoTexto id="perfil-usuario" rotulo="@usuario" value="" placeholder="Escolhido ao criar sua conta" readOnly disabled dica="É o seu endereço no Jaaa. Você escolhe o seu ao criar a conta." />
+            ) : (
+              <CampoTexto id="perfil-usuario" rotulo="@usuario" value={`@${perfil.nomeUsuario}`} readOnly disabled dica="O @usuario é seu endereço no Jaaa e não muda por aqui." />
+            )}
             <CampoTexto
               id="perfil-frase"
               rotulo="Frase de status"
@@ -201,9 +226,13 @@ export function AreaPerfil({
             : "Envie este endereço para quem quiser falar com você: ele abre a conversa direto no navegador."
         }
       >
-        <Cartao className="p-4">
-          <LinkDoJaa nomeUsuario={perfil.nomeUsuario} />
-        </Cartao>
+        {ehVisitante ? (
+          <RecursoComConta titulo="Seu Link do Jaaa" descricao="Com sua conta você ganha um endereço próprio (/@seuusuario) para as pessoas falarem com você." />
+        ) : (
+          <Cartao className="p-4">
+            <LinkDoJaa nomeUsuario={perfil.nomeUsuario} />
+          </Cartao>
+        )}
       </Secao>
 
       <Secao titulo="Status" descricao="Você escolhe como aparece. É diferente de estar conectado agora — isso o Jaaa detecta sozinho.">
@@ -214,18 +243,18 @@ export function AreaPerfil({
                 key={status}
                 type="button"
                 role="radio"
-                aria-checked={perfil.statusEscolhido === status}
+                aria-checked={!ehVisitante && perfil.statusEscolhido === status}
                 data-status={status}
                 onClick={() => mudarPrivacidade("statusEscolhido", status)}
                 className={`min-h-11 rounded-jaa-compacto border px-4 text-sm font-medium sm:min-h-10 ${
-                  perfil.statusEscolhido === status ? "border-marca bg-marca-suave text-marca" : "border-borda bg-superficie text-conteudo-suave"
+                  !ehVisitante && perfil.statusEscolhido === status ? "border-marca bg-marca-suave text-marca" : "border-borda bg-superficie text-conteudo-suave"
                 }`}
               >
                 {ROTULO_STATUS[status]}
               </button>
             ))}
           </div>
-          {perfil.statusEscolhido === "invisivel" && (
+          {!ehVisitante && perfil.statusEscolhido === "invisivel" && (
             <Aviso tom="atencao">Invisível: ninguém vê seu status nem se você está conectado. Você continua conversando normalmente.</Aviso>
           )}
         </Cartao>
@@ -233,7 +262,11 @@ export function AreaPerfil({
       </>
       )}
 
-      {aba === "privacidade" && (
+      {aba === "privacidade" && (ehVisitante ? (
+        <Secao titulo="Privacidade" descricao="Quem pode ver cada coisa. Nada aqui muda quem pode falar com você.">
+          <RecursoComConta titulo="Quem vê o quê" descricao="Escolha quem vê sua foto, seu status e quando você está conectado, e se podem encontrar você pelo celular." />
+        </Secao>
+      ) : (
       <Secao titulo="Privacidade" descricao="Quem pode ver cada coisa. Nada aqui muda quem pode falar com você.">
         <Cartao className="flex flex-col gap-4 p-4">
           <SeletorVisibilidade id="visibilidadeFoto" rotulo="Quem vê minha foto" valor={perfil.privacidade.visibilidadeFoto} aoMudar={mudarPrivacidade} />
@@ -258,11 +291,12 @@ export function AreaPerfil({
           </label>
         </Cartao>
       </Secao>
-      )}
+      ))}
 
       {aba === "conta" && !ehEmpresa && <ContaESeguranca />}
 
       {aba === "profissional" && !ehEmpresa && <EntradaPerfilProfissional aoAbrir={() => setProfissionalAberto(true)} />}
+
 
       {aba === "empresas" && !ehEmpresa && empresas}
 
@@ -288,6 +322,7 @@ function SeletorVisibilidade({ id, rotulo, valor, aoMudar }: { id: string; rotul
 }
 
 function FotoDoPerfil({ perfil, aoTrocar, aoErrar }: { perfil: MeuPerfil; aoTrocar: (perfil: MeuPerfil) => void; aoErrar: (erro: string | null) => void }) {
+  const { visitante, exigirConta } = useCapacidadesSessao();
   const entrada = useRef<HTMLInputElement | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -320,7 +355,7 @@ function FotoDoPerfil({ perfil, aoTrocar, aoErrar }: { perfil: MeuPerfil; aoTroc
           }}
         />
         <div className="flex flex-wrap gap-2">
-          <Botao aparencia="secundario" disabled={enviando} onClick={() => entrada.current?.click()}>
+          <Botao aparencia="secundario" disabled={enviando} onClick={() => (visitante ? exigirConta() : entrada.current?.click())}>
             {enviando ? "Enviando…" : perfil.fotoUrl ? "Trocar foto" : "Adicionar foto"}
           </Botao>
           {perfil.fotoUrl && (
@@ -347,6 +382,27 @@ function FotoDoPerfil({ perfil, aoTrocar, aoErrar }: { perfil: MeuPerfil; aoTroc
       </div>
     </div>
   );
+}
+
+/*
+ * O perfil do VISITANTE é só o que ele já é: o nome que deu, sem foto, sem @usuario (o técnico nunca
+ * chega ao cliente), sem frase, cidade ou "sobre". Status e privacidade não existem para ele — a tela
+ * não os mostra como escolhidos; os valores abaixo só completam o tipo.
+ */
+function perfilDoVisitante(visitante: VisitanteAtual): MeuPerfil {
+  return {
+    identidadeId: visitante.identidadeId,
+    tipo: "pessoal",
+    nomeExibicao: visitante.nomeExibicao,
+    nomeUsuario: "",
+    fotoUrl: null,
+    fraseStatus: null,
+    cidade: null,
+    sobre: null,
+    status: null,
+    statusEscolhido: "disponivel",
+    privacidade: { buscavelPorTelefone: false, visibilidadeFoto: "todos", visibilidadeStatus: "contatos", visibilidadePresenca: "todos" },
+  };
 }
 
 // O que está salvo, na forma dos campos da tela (vazio no lugar de `null`).

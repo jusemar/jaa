@@ -15,6 +15,7 @@ import { criarCanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos
 import { NOMES_VARIAVEIS_ARMAZENAMENTO, carregarAmbiente, situacaoArmazenamentoPrivado, situacaoArmazenamentoPublico } from "./lib/ambiente.js";
 import { criarArmazenamento, criarArmazenamentoPrivado } from "./lib/armazenamento/criar-armazenamento.js";
 import { configurarRealtime } from "./realtime/configurar-realtime.js";
+import { iniciarRotinaVisitantes } from "./features/visitantes/lib/rotina-visitantes.js";
 
 const ambiente = carregarAmbiente();
 const conexao = criarConexaoBanco(ambiente.DATABASE_URL);
@@ -86,8 +87,20 @@ configurarRealtime(servidor, {
 const rotinaDespacho = iniciarRotinaDespacho({ banco: conexao.banco, eventosEntregas, motorRotas });
 void rotinaDespacho.executarAgora();
 
+/*
+ * Visitantes do Link do Jaa: 24 h sem atividade e a conta temporária expira (o histórico que outras
+ * pessoas já receberam fica). O prazo vive no banco; esta rotina só limpa o que venceu.
+ */
+const rotinaVisitantes = iniciarRotinaVisitantes({
+  banco: conexao.banco,
+  sessoesEncerradas,
+  aoFalhar: (erro) => servidor.log.error({ erro: erro instanceof Error ? erro.message : "desconhecido" }, "Falha ao expirar visitantes"),
+});
+void rotinaVisitantes.executarAgora();
+
 servidor.addHook("onClose", async () => {
   rotinaDespacho.encerrar();
+  rotinaVisitantes.encerrar();
   await conexao.encerrar();
 });
 

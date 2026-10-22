@@ -1,4 +1,5 @@
 import { arquivoEnviadoSchema, erroApiSchema, type ArquivoEnviado, type CodigoErroApi } from "@jaa/contratos";
+import { avisarSeExigirConta } from "@/lib/conta-necessaria";
 import { URL_API } from "@/lib/configuracao";
 
 export type ResultadoApi<T> =
@@ -22,12 +23,14 @@ export async function requisitarApi<T>(
 
     if (!resposta.ok) {
       const erro = erroApiSchema.safeParse(corpo);
-      return {
-        ok: false,
+      const falha = {
+        ok: false as const,
         status: resposta.status,
         codigo: erro.success ? erro.data.codigo : null,
         mensagem: erro.success ? erro.data.mensagem : "Não foi possível concluir a operação.",
       };
+      avisarSeExigirConta(init?.method, falha.codigo, falha.mensagem);
+      return falha;
     }
 
     return { ok: true, status: resposta.status, dados: schema.parse(corpo) };
@@ -68,12 +71,14 @@ export async function enviarMultipart<T>(
     const dados: unknown = await resposta.json().catch(() => null);
     if (!resposta.ok) {
       const erro = erroApiSchema.safeParse(dados);
-      return {
-        ok: false,
+      const falha = {
+        ok: false as const,
         status: resposta.status,
         codigo: erro.success ? erro.data.codigo : null,
         mensagem: erro.success ? erro.data.mensagem : (envio.mensagemFalha ?? "Não foi possível enviar o arquivo."),
       };
+      avisarSeExigirConta("POST", falha.codigo, falha.mensagem);
+      return falha;
     }
     return { ok: true, status: resposta.status, dados: schema.parse(dados) };
   } catch {

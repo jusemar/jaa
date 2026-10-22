@@ -155,7 +155,8 @@ function Grupo({
             <AvatarIdentidade identidade={identidade} tamanho="pequeno" />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate font-medium">{identidade.nomeExibicao}</span>
-              <span className="truncate text-xs text-conteudo-suave">@{identidade.nomeUsuario}</span>
+              {/* Sem @usuario = visitante do Link do Jaa: o técnico dele nunca aparece. */}
+              <span className="truncate text-xs text-conteudo-suave">{identidade.nomeUsuario ? `@${identidade.nomeUsuario}` : "Visitante · sem conta"}</span>
             </span>
             {selecionada && <Selo tom="marca">Ativa</Selo>}
           </button>

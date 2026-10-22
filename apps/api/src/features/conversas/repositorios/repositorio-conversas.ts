@@ -13,7 +13,7 @@ export interface ParticipanteRegistro {
 }
 
 // Mesma chave para A↔B e B↔A.
-function chaveConversaDireta(identidadeA: string, identidadeB: string): string {
+export function chaveConversaDireta(identidadeA: string, identidadeB: string): string {
   return identidadeA < identidadeB ? `${identidadeA}:${identidadeB}` : `${identidadeB}:${identidadeA}`;
 }
 
@@ -27,10 +27,25 @@ export async function obterOuCriarConversaDireta(
   banco: Banco,
   identidadeA: string,
   identidadeB: string,
-): Promise<{ conversaId: string; criada: boolean }> {
+  /*
+   * Teto de conversas da identidade A (visitante do Link do Jaa). Só uma conversa NOVA conta: reabrir
+   * uma que já existe nunca é recusado. A trava por identidade impede que aberturas simultâneas
+   * passem juntas do teto.
+   */
+  limiteDeConversas?: number,
+): Promise<{ conversaId: string; criada: boolean } | { limiteAtingido: true }> {
   const chaveDireta = chaveConversaDireta(identidadeA, identidadeB);
 
   const criada = await banco.transaction(async (transacao) => {
+    if (limiteDeConversas !== undefined) {
+      await transacao.execute(sql`select pg_advisory_xact_lock(hashtext(${`jaa:conversas:${identidadeA}`}))`);
+      const [existe] = await transacao.select({ id: conversas.id }).from(conversas).where(eq(conversas.chaveDireta, chaveDireta)).limit(1);
+      if (!existe) {
+        const [linha] = await transacao.select({ total: sql<number>`count(*)::int` }).from(participantesConversa).where(eq(participantesConversa.identidadeId, identidadeA));
+        if ((linha?.total ?? 0) >= limiteDeConversas) return "limite" as const;
+      }
+    }
+
     const [nova] = await transacao
       .insert(conversas)
       .values({ tipo: "direta", chaveDireta })
@@ -48,6 +63,10 @@ export async function obterOuCriarConversaDireta(
 
     return nova.id;
   });
+
+  if (criada === "limite") {
+    return { limiteAtingido: true };
+  }
 
   if (criada) {
     return { conversaId: criada, criada: true };

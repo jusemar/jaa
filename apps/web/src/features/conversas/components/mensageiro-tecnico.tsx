@@ -7,6 +7,8 @@ import type {
   TipoIdentidade,
 } from "@jaa/contratos";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
+import { useCapacidadesSessao } from "@/components/navegacao/capacidades-sessao";
+import { exigeConta } from "@/lib/conta-necessaria";
 import { IconeConversa } from "@/components/ui/icones";
 import { PesquisaJaa } from "@/features/contatos/components/pesquisa-jaa";
 import { useEffect, useState, type ReactNode } from "react";
@@ -89,6 +91,7 @@ export function MensageiroTecnico({
   abrirConversaCom?: string | null | undefined;
   aoAbrirConversaSolicitada?: (() => void) | undefined;
 }) {
+  const capacidades = useCapacidadesSessao();
   const lista = useListaConversas();
   const documentoVisivel = useDocumentoVisivel();
   useConfirmacaoRecebimento(identidadeId);
@@ -209,7 +212,8 @@ export function MensageiroTecnico({
     try {
       const aberta = await abrirConversaDireta(nomeUsuario);
       if (!aberta.ok) {
-        setErro(aberta.mensagem);
+        // Visitante na 6ª conversa nova: quem explica é a janela de "Criar conta / Entrar" do app.
+        if (!exigeConta(aberta.codigo)) setErro(aberta.mensagem);
         return;
       }
       const outra: IdentidadeVisivel | undefined =
@@ -253,7 +257,7 @@ export function MensageiroTecnico({
               <span data-identidade-em-uso className="block truncate text-sm font-bold">
                 {pessoa.nomeExibicao}
               </span>
-              <span className="block truncate text-xs text-conteudo-suave">@{pessoa.nomeUsuario}</span>
+              <span className="block truncate text-xs text-conteudo-suave">{pessoa.nomeUsuario ? `@${pessoa.nomeUsuario}` : "Visitante · sem conta"}</span>
             </span>
           </>
         )}
@@ -270,7 +274,8 @@ export function MensageiroTecnico({
         <>
           <div className="flex shrink-0 flex-col gap-3 border-b border-borda p-4">
             {/* Uma busca só: pessoas e empresas, contatos primeiro. Tocar no resultado abre a conversa. */}
-            <PesquisaJaa comProfissionais aoAbrirConversa={(nomeUsuario) => void abrirCom(nomeUsuario)} />
+            {/* Profissionais (busca geográfica) é recurso de conta: o visitante pesquisa pessoas e empresas. */}
+            <PesquisaJaa comProfissionais={!capacidades.visitante} aoAbrirConversa={(nomeUsuario) => void abrirCom(nomeUsuario)} />
 
             <div role="tablist" aria-label="Filtrar conversas" className="flex gap-2">
               {FILTROS_CONVERSAS.map((opcao) => {
@@ -338,6 +343,7 @@ export function MensageiroTecnico({
       aoMensagemExcluidaParaMim={lista.registrarExclusaoParaMim}
       aoConversarCom={(nomeUsuario) => void abrirCom(nomeUsuario)}
       aoAcaoConversa={executarAcaoConversa}
+      {...(capacidades.visitante ? { aoExigirConta: capacidades.exigirConta } : {})}
     />
   ) : (
     <ConversaNaoEscolhida painel={painel} inicio={abrirPainel} />

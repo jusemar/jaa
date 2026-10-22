@@ -7,6 +7,7 @@ import {
 } from "@jaa/contratos";
 import { useEffect, useRef, useState } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
+import { useCapacidadesSessao } from "@/components/navegacao/capacidades-sessao";
 import { IconeBusca, IconeSeta } from "@/components/ui/icones";
 import { BuscaProfissionais } from "@/features/busca-profissionais/components/busca-profissionais";
 import { listarIntencoesProfissionais } from "@/features/busca-profissionais/lib/api-busca-profissionais";
@@ -42,6 +43,8 @@ export function PesquisaJaa({
   aoSalvarContato?: () => void;
   comProfissionais?: boolean;
 }) {
+  // Visitante pesquisa e conversa; SALVAR na agenda é da conta (o servidor recusaria).
+  const { visitante, exigirConta } = useCapacidadesSessao();
   const [termo, setTermo] = useState("");
   const [resultado, setResultado] = useState<{
     contatos: ResultadoBusca[];
@@ -97,6 +100,10 @@ export function PesquisaJaa({
   }, [termoProcurado, termoValido, procurarProfissionais]);
 
   async function salvar(item: ResultadoBusca) {
+    if (visitante) {
+      exigirConta("Para salvar contatos, você precisa de uma conta no Jaaa.");
+      return;
+    }
     setSalvando(item.identidade.identidadeId);
     try {
       const resposta = await salvarContato(item.identidade.identidadeId);

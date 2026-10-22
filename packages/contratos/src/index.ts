@@ -30,6 +30,7 @@ export * from "./profissionais/horarios-atendimento.ts";
 export * from "./profissionais/busca-profissionais.ts";
 export * from "./usuarios/conta-atual.ts";
 export * from "./usuarios/contexto-conta.ts";
+export * from "./visitantes/visitante.ts";
 export * from "./realtime/erros-conexao.ts";
 export * from "./contatos/contato.ts";
 export * from "./conversas/conversa.ts";

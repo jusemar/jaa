@@ -2,6 +2,7 @@
 
 import { AVISO_LIMITE_DE_EMPRESAS, podeCriarEmpresa, type Empresa } from "@jaa/contratos";
 import { useEffect, useState, type FormEvent } from "react";
+import { useCapacidadesSessao } from "@/components/navegacao/capacidades-sessao";
 import { criarEmpresa, listarMinhasEmpresas, obterEmpresa } from "../lib/api-empresas";
 import { sugerirSlug } from "../lib/sugerir-slug";
 import { ListaEmpresas } from "./lista-empresas";
@@ -12,11 +13,15 @@ import { ListaEmpresas } from "./lista-empresas";
  * A administração de cada empresa (produtos, pedidos, logística) não mora mais aqui: ela aparece
  * quando a pessoa passa a AGIR COMO aquela empresa, no seletor de identidade. Empilhar tudo numa
  * tela só era exatamente o que deixava a interface ilegível.
+ *
+ * Visitante (Link do Jaa) vê esta mesma área, sem empresas; "Criar empresa" pede conta.
  */
 
 export function AreaEmpresas({ aoEmpresaCriada }: { aoEmpresaCriada: () => void }) {
+  const { visitante, exigirConta } = useCapacidadesSessao();
   // null = a lista ainda não chegou: antes disso não se sabe se a conta já criou a empresa dela.
-  const [empresas, setEmpresas] = useState<Empresa[] | null>(null);
+  // Visitante não tem empresa (nem pode ter): a lista nem é pedida.
+  const [empresas, setEmpresas] = useState<Empresa[] | null>(() => (visitante ? [] : null));
   const podeCriar = empresas !== null && podeCriarEmpresa(empresas);
   // Já criou a dela: o botão continua à vista, DESATIVADO, com o motivo ao lado (a API recusaria).
   const limiteAtingido = empresas !== null && !podeCriar;
@@ -37,6 +42,7 @@ export function AreaEmpresas({ aoEmpresaCriada }: { aoEmpresaCriada: () => void 
   }
 
   useEffect(() => {
+    if (visitante) return;
     let ativo = true;
     void listarMinhasEmpresas().then((resultado) => {
       if (!ativo) return;
@@ -46,7 +52,7 @@ export function AreaEmpresas({ aoEmpresaCriada }: { aoEmpresaCriada: () => void 
     return () => {
       ativo = false;
     };
-  }, []);
+  }, [visitante]);
 
   async function abrir(empresa: Empresa) {
     // Sempre relê do servidor: a lista local não é autorização.
@@ -93,7 +99,10 @@ export function AreaEmpresas({ aoEmpresaCriada }: { aoEmpresaCriada: () => void 
             data-criar-empresa
             disabled={!podeCriar}
             aria-describedby={limiteAtingido ? "limite-de-empresas" : undefined}
-            onClick={() => podeCriar && setCriando((atual) => !atual)}
+            onClick={() => {
+              if (visitante) exigirConta("Para criar uma empresa, você precisa de uma conta no Jaaa.");
+              else if (podeCriar) setCriando((atual) => !atual);
+            }}
             className="rounded-jaa border px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
             {podeCriar && criando ? "Cancelar" : "+ Criar empresa"}

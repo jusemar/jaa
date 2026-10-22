@@ -6,6 +6,9 @@ export const codigoErroApiSchema = z.enum([
   "NOME_USUARIO_INDISPONIVEL",
   "IDENTIDADE_PESSOAL_JA_EXISTE",
   "CADASTRO_INCOMPLETO",
+  // Visitante (conta temporária) tentando algo que depende de conta permanente.
+  "CONTA_NECESSARIA",
+  "LIMITE_DE_CONVERSAS_ATINGIDO",
   "IDENTIDADE_NAO_ENCONTRADA",
   "IDENTIDADE_NAO_AUTORIZADA",
   "EMPRESA_NAO_ENCONTRADA",

@@ -392,6 +392,13 @@ export function criarAmbienteIntegracao({
       await conexao.encerrar();
     },
 
+    // Código de verificação capturado pelo testUtils (nenhum SMS sai em teste).
+    async obterCodigo(telefone: string): Promise<string> {
+      const codigo = (await autenticacao.$context).test.getOTP?.(telefone);
+      assert.ok(codigo, "código não capturado");
+      return codigo;
+    },
+
     async criarPessoa(
       indice: number,
       nomeUsuario: string,

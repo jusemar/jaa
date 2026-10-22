@@ -16,8 +16,9 @@ import { PaginaDoVisitante } from "./pagina-do-visitante";
  * 2. Entrega ao fluxo de autenticação de sempre o DESTINO (a conversa com aquela identidade, com o
  *    cardápio se houver) e a página do visitante:
  *    - já autenticado → o app abre direto na conversa;
- *    - sem sessão → página pública JÁ com a entrada/cadastro de sempre à vista (sem botão no meio do
- *      caminho); ao concluir, o app abre no mesmo destino.
+ *    - sem sessão → vira VISITANTE sozinho e recebe o MESMO app, já na conversa (ver FluxoAutenticacao);
+ *    - se a sessão de visitante não abrir (limite por IP, servidor, rede) → aviso de falha com "Tentar
+ *      novamente"; entrar com a conta continua sendo uma escolha, e ao concluir o app abre no mesmo destino.
  */
 type Estado = { fase: "carregando" } | { fase: "inexistente" } | { fase: "erro"; mensagem: string } | { fase: "pronta"; identidade: IdentidadePublica };
 

@@ -25,7 +25,8 @@ describe("criar empresa: uma por conta", () => {
     assert.equal(AVISO_LIMITE_DE_EMPRESAS, "Limite: 1 empresa por usuário.");
     const tela = readFileSync(new URL("../components/area-empresas.tsx", import.meta.url), "utf8");
     assert.ok(tela.includes("disabled={!podeCriar}"));
-    assert.ok(tela.includes("onClick={() => podeCriar && setCriando((atual) => !atual)}"));
+    // Visitante recebe "Criar conta / Entrar"; com conta, só abre o formulário quem pode criar.
+    assert.ok(tela.includes("else if (podeCriar) setCriando((atual) => !atual);"));
     assert.ok(tela.includes("{limiteAtingido && (") && tela.includes("{AVISO_LIMITE_DE_EMPRESAS}"));
     assert.ok(tela.includes("{podeCriar && criando && ("), "o formulário só existe para quem pode criar");
     // A lista das empresas existentes continua sendo mostrada sempre.

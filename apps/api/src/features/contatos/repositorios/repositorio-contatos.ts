@@ -2,6 +2,7 @@ import type { Banco } from "@jaa/banco";
 import { contatos, empresas, identidades, preferenciasIdentidade, users } from "@jaa/banco/schema";
 import { LIMITE_RESULTADOS_EXTERNOS } from "@jaa/contratos";
 import { and, asc, eq, ilike, inArray, ne, notInArray, or, sql } from "drizzle-orm";
+import { naoEhVisitante } from "../../visitantes/repositorios/repositorio-visitantes.js";
 
 /*
  * AGENDA e BUSCA. Tudo escopado pela identidade ATUANTE: a agenda pessoal e a da empresa que a mesma
@@ -130,6 +131,8 @@ export async function buscarNoJaa(
   const filtros = [
     or(...condicoes),
     ne(identidades.id, identidadeAtual),
+    // Visitante (conta temporária do Link do Jaa) nunca aparece em pesquisa.
+    naoEhVisitante(identidades.id),
     // Empresa só aparece quando está ativa (a identidade empresarial é a loja).
     sql`(${identidades.tipo} = 'pessoal' or exists (select 1 from ${empresas} where ${empresas.id} = ${identidades.empresaId} and ${empresas.status} = 'ativa'))`,
   ];

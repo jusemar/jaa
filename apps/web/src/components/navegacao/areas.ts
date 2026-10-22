@@ -45,8 +45,13 @@ export const AREAS_EMPRESARIAIS: AreaApp[] = [
   { id: "perfil", rotulo: "Perfil", Icone: IconePerfil, descricao: "Perfil público da empresa e configurações" },
 ];
 
-export function areasDaIdentidade(identidade: IdentidadeOperavel | null): AreaApp[] {
-  return identidade?.tipo === "empresarial" ? AREAS_EMPRESARIAIS : AREAS_PESSOAIS;
+/*
+ * VISITANTE do Link do Jaa (sem conta): Conversas, Contatos (com a pesquisa) e Perfil. Entregas é
+ * capacidade de conta — o servidor recusaria de qualquer forma; aqui ela só não ocupa a navegação.
+ */
+export function areasDaIdentidade(identidade: IdentidadeOperavel | null, { visitante = false }: { visitante?: boolean } = {}): AreaApp[] {
+  if (identidade?.tipo === "empresarial") return AREAS_EMPRESARIAIS;
+  return visitante ? AREAS_PESSOAIS.filter((area) => area.id !== "entregas") : AREAS_PESSOAIS;
 }
 
 /** Área pedida no endereço, aceita só se existir para a identidade atual (cair em "conversas" é o certo). */

@@ -1,6 +1,7 @@
 import type { Banco } from "@jaa/banco";
 import { empresas, identidades } from "@jaa/banco/schema";
 import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { naoEhVisitante } from "../../visitantes/repositorios/repositorio-visitantes.js";
 
 export type IdentidadeRegistro = typeof identidades.$inferSelect;
 
@@ -18,6 +19,11 @@ export class ErroViolacaoUnicaIdentidade extends Error {
   }
 }
 
+/*
+ * A identidade pessoal PERMANENTE da conta. A de um visitante (conta temporária, ou convertida que
+ * ainda não escolheu o @usuario) não conta: por isso toda rota que depende de conta de verdade a recusa
+ * sem precisar saber que visitantes existem.
+ */
 export async function buscarIdentidadePessoalDoUsuario(
   banco: Banco,
   usuarioId: string,
@@ -25,7 +31,7 @@ export async function buscarIdentidadePessoalDoUsuario(
   const [identidade] = await banco
     .select()
     .from(identidades)
-    .where(and(eq(identidades.usuarioId, usuarioId), eq(identidades.tipo, "pessoal")))
+    .where(and(eq(identidades.usuarioId, usuarioId), eq(identidades.tipo, "pessoal"), naoEhVisitante(identidades.id)))
     .limit(1);
 
   return identidade ?? null;
@@ -56,7 +62,7 @@ export async function inserirIdentidadePessoal(
 }
 
 // O Drizzle encapsula o erro do driver `pg` em `cause`; 23505 = unique_violation.
-function identificarViolacaoUnica(erro: unknown): ViolacaoUnicaIdentidade | null {
+export function identificarViolacaoUnica(erro: unknown): ViolacaoUnicaIdentidade | null {
   const candidatos = [erro, erro instanceof Error ? erro.cause : undefined];
 
   for (const candidato of candidatos) {
@@ -83,7 +89,7 @@ export async function buscarIdentidadePessoalPorNomeUsuario(
   const [identidade] = await banco
     .select()
     .from(identidades)
-    .where(and(eq(identidades.nomeUsuario, nomeUsuario), eq(identidades.tipo, "pessoal")))
+    .where(and(eq(identidades.nomeUsuario, nomeUsuario), eq(identidades.tipo, "pessoal"), naoEhVisitante(identidades.id)))
     .limit(1);
 
   return identidade ?? null;
@@ -112,7 +118,8 @@ export async function buscarIdentidadeContatavelPorNomeUsuario(banco: Banco, nom
     .select({ identidade: identidades })
     .from(identidades)
     .leftJoin(empresas, eq(empresas.id, identidades.empresaId))
-    .where(and(eq(identidades.nomeUsuario, nomeUsuario), or(isNull(identidades.empresaId), eq(empresas.status, "ativa"))))
+    // Visitante nunca é contatável: o @usuario técnico dele não abre conversa nem página pública.
+    .where(and(eq(identidades.nomeUsuario, nomeUsuario), or(isNull(identidades.empresaId), eq(empresas.status, "ativa")), naoEhVisitante(identidades.id)))
     .limit(1);
   return linha?.identidade ?? null;
 }

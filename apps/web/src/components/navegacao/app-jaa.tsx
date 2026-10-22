@@ -1,7 +1,7 @@
 "use client";
 
 import type { ContaAtual } from "@jaa/contratos";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MensageiroTecnico } from "@/features/conversas/components/mensageiro-tecnico";
 import { useAvisosMensagens } from "@/features/conversas/hooks/use-avisos-mensagens";
 import { AreaEmpresas } from "@/features/empresas/components/area-empresas";
@@ -16,9 +16,12 @@ import { HorariosDeFuncionamento } from "@/features/empresas/components/horarios
 import { AreaProdutos } from "@/features/produtos/components/area-produtos";
 import { AvisosDeAcao } from "@/components/ui/avisos";
 import { Botao, Carregando, Secao } from "@/components/ui/primitivos";
+import { Janela } from "@/components/ui/janela";
+import { ouvirContaNecessaria } from "@/lib/conta-necessaria";
 import type { DestinoDoLink } from "@/features/link/lib/link-do-jaa";
 import { areaValida, areasDaIdentidade } from "./areas";
 import { NavegacaoApp } from "./navegacao-app";
+import { ProvedorCapacidades, TITULO_CONTA_NECESSARIA, type CapacidadesSessao } from "./capacidades-sessao";
 
 /*
  * O APLICATIVO depois de entrar.
@@ -32,6 +35,11 @@ import { NavegacaoApp } from "./navegacao-app";
  *
  * A área aberta vive no ENDEREÇO (#pedidos). Assim o F5 volta para onde a pessoa estava, o botão
  * "voltar" do navegador funciona e um link leva direto à tela certa.
+ *
+ * VISITANTE do Link do Jaa: é ESTE mesmo app (mesma navegação, conversas, pesquisa, Perfil), não uma
+ * tela à parte. O que muda são as CAPACIDADES (`capacidades-sessao`): o que exige conta continua à
+ * vista e, ao ser usado, pede "Criar conta / Entrar". Quem garante é o servidor (CONTA_NECESSARIA);
+ * toda AÇÃO recusada assim também abre a mesma janela.
  */
 
 function areaDoEndereco(): string | null {
@@ -44,6 +52,8 @@ export function AppJaa({
   aoSair,
   saindo,
   destinoInicial,
+  aoCriarConta,
+  aoEntrar,
 }: {
   /*
    * A pessoa chegou por um Link do Jaa (`/@usuario`): o app abre direto na conversa com aquela
@@ -54,9 +64,35 @@ export function AppJaa({
   conta: ContaAtual;
   aoSair: () => void;
   saindo: boolean;
+  // Visitante: levam à criação de conta / entrada (a conversa vai junto, decisão do servidor).
+  aoCriarConta?: (() => void) | undefined;
+  aoEntrar?: (() => void) | undefined;
 }) {
   const identidadePessoalId = conta.identidadePessoal?.id ?? "";
-  const identidades = useIdentidadeAtiva(identidadePessoalId);
+  const visitante = conta.visitante ?? null;
+  const identidades = useIdentidadeAtiva(identidadePessoalId, visitante);
+
+  /*
+   * "Crie sua conta para usar este recurso." — aberta por uma tela (antes de tentar) ou por QUALQUER
+   * ação que o servidor recusou com CONTA_NECESSARIA. `undefined` = fechada; o texto é o motivo.
+   */
+  const [contaPedida, setContaPedida] = useState<string | null | undefined>(undefined);
+  useEffect(() => ouvirContaNecessaria((motivo) => setContaPedida(motivo)), []);
+  const capacidades = useMemo<CapacidadesSessao>(
+    () => ({
+      visitante: visitante !== null,
+      exigirConta: (motivo?: string) => setContaPedida(motivo ?? null),
+      criarConta: () => {
+        setContaPedida(undefined);
+        aoCriarConta?.();
+      },
+      entrar: () => {
+        setContaPedida(undefined);
+        aoEntrar?.();
+      },
+    }),
+    [visitante, aoCriarConta, aoEntrar],
+  );
   const [areaPedida, setAreaPedida] = useState<string | null>(null);
   const [conversaAberta, setConversaAberta] = useState(false);
 
@@ -76,7 +112,7 @@ export function AppJaa({
     return () => window.removeEventListener("hashchange", aoMudar);
   }, []);
 
-  const areas = areasDaIdentidade(identidades.ativa);
+  const areas = areasDaIdentidade(identidades.ativa, { visitante: visitante !== null });
   const areaAtiva = areaValida(areas, areaPedida);
 
   function abrir(id: string) {
@@ -119,7 +155,8 @@ export function AppJaa({
     [],
   );
 
-  const sair = (
+  // Visitante não "sai" de uma conta que não tem: no lugar, Entrar e Criar conta.
+  const sair = visitante ? null : (
     <Botao
       aparencia="discreto"
       disabled={saindo}
@@ -137,140 +174,205 @@ export function AppJaa({
      * UI/UX aprovada: em telas muito largas a interface não se esparrama, e as colunas (navegação,
      * conversas, conversa, pedido) mantêm proporção legível.
      */
-    <div className="mx-auto flex h-dvh w-full max-w-[100rem] overflow-hidden border-borda bg-fundo shadow-suave lg:border-x">
-      <AvisosDeAcao />
-      <NavegacaoApp
-        areas={areas}
-        areaAtiva={areaAtiva}
-        aoAbrir={abrir}
-        ocultarNoCelular={ehConversas && conversaAberta}
-        naoLidasConversas={naoLidasConversas}
-        pedidosAguardando={pedidosAguardando}
-        rodape={
-          <>
-            <SeletorIdentidade
-              compacto
-              operaveis={identidades.operaveis}
-              ativa={ativa}
-              erro={identidades.erro}
-              aoSelecionar={(identidadeId) =>
-                void identidades.selecionar(identidadeId)
-              }
-            />
-            {sair}
-          </>
-        }
-      />
+    <ProvedorCapacidades value={capacidades}>
+      <div className="mx-auto flex h-dvh w-full max-w-[100rem] overflow-hidden border-borda bg-fundo shadow-suave lg:border-x">
+        <AvisosDeAcao />
+        <NavegacaoApp
+          areas={areas}
+          areaAtiva={areaAtiva}
+          aoAbrir={abrir}
+          ocultarNoCelular={ehConversas && conversaAberta}
+          naoLidasConversas={naoLidasConversas}
+          pedidosAguardando={pedidosAguardando}
+          rodape={
+            <>
+              <SeletorIdentidade
+                compacto
+                operaveis={identidades.operaveis}
+                ativa={ativa}
+                erro={identidades.erro}
+                aoSelecionar={(identidadeId) =>
+                  void identidades.selecionar(identidadeId)
+                }
+              />
+              {sair}
+            </>
+          }
+        />
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {/* Celular: a marca e a identidade atuante no topo. Some quando a conversa toma a tela. */}
-        <div
-          className={`shrink-0 items-center gap-2.5 border-b border-borda bg-superficie px-4 py-3 md:hidden ${ehConversas && conversaAberta ? "hidden" : "flex"}`}
-          style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
-        >
-          {/* Só a identidade, limpa. "Sair da conta" fica no fim do menu dela. */}
-          <div className="min-w-0 flex-1">
-            <SeletorIdentidade
-              operaveis={identidades.operaveis}
-              ativa={ativa}
-              erro={identidades.erro}
-              aoSelecionar={(identidadeId) =>
-                void identidades.selecionar(identidadeId)
-              }
-              rodapeDoMenu={
-                <button type="button" role="menuitem" data-sair-da-conta disabled={saindo} onClick={aoSair} className="flex min-h-12 items-center px-3 text-left text-sm text-conteudo-suave hover:bg-superficie-suave disabled:opacity-50">
-                  {saindo ? "Saindo…" : "Sair da conta"}
-                </button>
-              }
-            />
-          </div>
-        </div>
-
-        {!ativa && <Carregando texto="Carregando suas identidades…" />}
-
-        {ativa && ehConversas && (
-          // `key`: trocar de identidade recomeça inbox, conversa aberta, confirmações e avisos do zero.
-          <MensageiroTecnico
-            key={ativa.identidadeId}
-            identidadeId={ativa.identidadeId}
-            painel={areaAtiva === "contatos" ? "contatos" : "conversas"}
-            tipoIdentidade={ativa.tipo}
-            pessoa={pessoal}
-            aoAlterarConversaAberta={registrarConversaAberta}
-            abrirConversaCom={conversaSolicitada}
-            abrirCardapioDaSolicitada={cardapioDaSolicitada}
-            aoAbrirConversaSolicitada={conversaAtendida}
-            /*
-             * "Meus pedidos" no cabeçalho da conversa leva para a área que JÁ existe — e só aparece
-             * quando ela existe para a identidade atual. Nada de destino inventado.
-             */
-            {...(areas.some((area) => area.id === "pedidos")
-              ? { aoAbrirPedidos: () => abrir("pedidos") }
-              : {})}
-          />
-        )}
-
-        {ativa && !ehConversas && (
-          // pb-24 no celular: a barra de navegação inferior não pode cobrir o fim do conteúdo.
-          /*
-           * MESMA superfície do painel de Conversas (`bg-superficie`), e não o cinza do fundo: Produtos,
-           * Pedidos, Logística e Perfil são a mesma aplicação que a lista de conversas. Quem separa os
-           * blocos aqui dentro são as bordas (`border-borda`) e a superfície suave, como lá.
-           */
-          <div data-area-de-trabalho className="min-h-0 flex-1 overflow-y-auto bg-superficie px-4 pb-24 pt-4 md:px-8 md:pb-10">
-            {/* Produtos tem tela de duas colunas (formulário + prévia do cliente): precisa de mais largura. */}
-            <div className={`mx-auto flex w-full flex-col gap-6 ${areaAtiva === "produtos" ? "max-w-6xl" : "max-w-3xl"}`}>
-              {areaAtiva === "entregas" && <AreaMinhasEntregas aoAbrirConversa={abrirConversaCom} />}
-
-              {areaAtiva === "perfil" && (
-                /* O Perfil é organizado por abas; "Horários" (da empresa) e "Minhas empresas" (da conta) são abas dele. */
-                <AreaPerfil
-                  key={ativa.identidadeId}
-                  ehEmpresa={ehEmpresa}
-                  {...(ativa.tipo === "empresarial"
-                    ? { horarios: <HorariosDeFuncionamento key={ativa.empresa.id} empresaId={ativa.empresa.id} /> }
-                    : {
-                        empresas: (
-                          <Secao
-                            titulo="Minhas empresas"
-                            descricao="Crie uma empresa para vender pelo Jaaa. Para administrá-la, toque no seu nome (no topo) e escolha a empresa."
-                          >
-                            <AreaEmpresas aoEmpresaCriada={() => void identidades.recarregar()} />
-                          </Secao>
-                        ),
-                      })}
-                />
-              )}
-
-              {ativa.tipo === "empresarial" && areaAtiva === "pedidos" && (
-                <AreaPedidosEmpresa
-                  key={ativa.empresa.id}
-                  empresaId={ativa.empresa.id}
-                  nomeEmpresa={ativa.nomeExibicao}
-                  aoAbrirConversa={abrirConversaCom}
-                />
-              )}
-
-              {ativa.tipo === "empresarial" && areaAtiva === "produtos" && (
-                <AreaProdutos
-                  key={ativa.empresa.id}
-                  empresaId={ativa.empresa.id}
-                  nomeEmpresa={ativa.nomeExibicao}
-                />
-              )}
-
-              {ativa.tipo === "empresarial" && areaAtiva === "logistica" && (
-                <AreaLogisticaEmpresa
-                  key={ativa.empresa.id}
-                  empresaId={ativa.empresa.id}
-                  nomeEmpresa={ativa.nomeExibicao}
-                  aoAbrirConversa={abrirConversaCom}
-                />
-              )}
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Celular: a marca e a identidade atuante no topo. Some quando a conversa toma a tela. */}
+          <div
+            className={`shrink-0 items-center gap-2.5 border-b border-borda bg-superficie px-4 py-3 md:hidden ${ehConversas && conversaAberta ? "hidden" : "flex"}`}
+            style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+          >
+            {/* Só a identidade, limpa. "Sair da conta" fica no fim do menu dela. */}
+            <div className="min-w-0 flex-1">
+              <SeletorIdentidade
+                operaveis={identidades.operaveis}
+                ativa={ativa}
+                erro={identidades.erro}
+                aoSelecionar={(identidadeId) =>
+                  void identidades.selecionar(identidadeId)
+                }
+                rodapeDoMenu={
+                  visitante ? (
+                    <>
+                      <button type="button" role="menuitem" data-menu-criar-conta onClick={capacidades.criarConta} className="flex min-h-12 items-center px-3 text-left text-sm font-medium text-marca hover:bg-superficie-suave">
+                        Criar conta
+                      </button>
+                      <button type="button" role="menuitem" data-menu-entrar onClick={capacidades.entrar} className="flex min-h-12 items-center px-3 text-left text-sm text-conteudo-suave hover:bg-superficie-suave">
+                        Entrar
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" role="menuitem" data-sair-da-conta disabled={saindo} onClick={aoSair} className="flex min-h-12 items-center px-3 text-left text-sm text-conteudo-suave hover:bg-superficie-suave disabled:opacity-50">
+                      {saindo ? "Saindo…" : "Sair da conta"}
+                    </button>
+                  )
+                }
+              />
             </div>
           </div>
+
+          {visitante && (
+            /*
+             * Visitante: quem ele é agora e o caminho para a conta, sempre à vista (no celular, some quando
+             * a conversa toma a tela, como a barra do topo).
+             */
+            <div
+              data-faixa-visitante
+              className={`shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-borda bg-marca-suave px-4 py-2 ${ehConversas && conversaAberta ? "hidden md:flex" : "flex"}`}
+            >
+              <p className="min-w-0 flex-1 text-xs text-conteudo-suave">
+                <span className="font-semibold text-conteudo">Você está como visitante.</span> Sem conta, suas conversas expiram após 24 h sem uso.
+              </p>
+              <div className="flex gap-2">
+                <Botao aparencia="secundario" data-visitante-entrar onClick={capacidades.entrar} className="!min-h-9">
+                  Entrar
+                </Botao>
+                <Botao data-visitante-criar-conta onClick={capacidades.criarConta} className="!min-h-9">
+                  Criar conta
+                </Botao>
+              </div>
+            </div>
+          )}
+
+          {!ativa && <Carregando texto="Carregando suas identidades…" />}
+
+          {ativa && ehConversas && (
+            // `key`: trocar de identidade recomeça inbox, conversa aberta, confirmações e avisos do zero.
+            <MensageiroTecnico
+              key={ativa.identidadeId}
+              identidadeId={ativa.identidadeId}
+              painel={areaAtiva === "contatos" ? "contatos" : "conversas"}
+              tipoIdentidade={ativa.tipo}
+              pessoa={pessoal}
+              aoAlterarConversaAberta={registrarConversaAberta}
+              abrirConversaCom={conversaSolicitada}
+              abrirCardapioDaSolicitada={cardapioDaSolicitada}
+              aoAbrirConversaSolicitada={conversaAtendida}
+              /*
+               * "Meus pedidos" no cabeçalho da conversa leva para a área que JÁ existe — e só aparece
+               * quando ela existe para a identidade atual. Nada de destino inventado.
+               */
+              {...(areas.some((area) => area.id === "pedidos")
+                ? { aoAbrirPedidos: () => abrir("pedidos") }
+                : {})}
+            />
+          )}
+
+          {ativa && !ehConversas && (
+            // pb-24 no celular: a barra de navegação inferior não pode cobrir o fim do conteúdo.
+            /*
+             * MESMA superfície do painel de Conversas (`bg-superficie`), e não o cinza do fundo: Produtos,
+             * Pedidos, Logística e Perfil são a mesma aplicação que a lista de conversas. Quem separa os
+             * blocos aqui dentro são as bordas (`border-borda`) e a superfície suave, como lá.
+             */
+            <div data-area-de-trabalho className="min-h-0 flex-1 overflow-y-auto bg-superficie px-4 pb-24 pt-4 md:px-8 md:pb-10">
+              {/* Produtos tem tela de duas colunas (formulário + prévia do cliente): precisa de mais largura. */}
+              <div className={`mx-auto flex w-full flex-col gap-6 ${areaAtiva === "produtos" ? "max-w-6xl" : "max-w-3xl"}`}>
+                {areaAtiva === "entregas" && !visitante && <AreaMinhasEntregas aoAbrirConversa={abrirConversaCom} />}
+
+                {areaAtiva === "perfil" && (
+                  /* O Perfil é organizado por abas; "Horários" (da empresa) e "Minhas empresas" (da conta) são abas dele. */
+                  <AreaPerfil
+                    // Visitante que acabou de criar a conta mantém a identidade: a chave muda para reler o perfil de verdade.
+                    key={`${ativa.identidadeId}:${visitante ? "visitante" : "conta"}`}
+                    ehEmpresa={ehEmpresa}
+                    visitante={visitante}
+                    {...(ativa.tipo === "empresarial"
+                      ? { horarios: <HorariosDeFuncionamento key={ativa.empresa.id} empresaId={ativa.empresa.id} /> }
+                      : {
+                          empresas: (
+                            <Secao
+                              titulo="Minhas empresas"
+                              descricao="Crie uma empresa para vender pelo Jaaa. Para administrá-la, toque no seu nome (no topo) e escolha a empresa."
+                            >
+                              <AreaEmpresas aoEmpresaCriada={() => void identidades.recarregar()} />
+                            </Secao>
+                          ),
+                        })}
+                  />
+                )}
+
+                {ativa.tipo === "empresarial" && areaAtiva === "pedidos" && (
+                  <AreaPedidosEmpresa
+                    key={ativa.empresa.id}
+                    empresaId={ativa.empresa.id}
+                    nomeEmpresa={ativa.nomeExibicao}
+                    aoAbrirConversa={abrirConversaCom}
+                  />
+                )}
+
+                {ativa.tipo === "empresarial" && areaAtiva === "produtos" && (
+                  <AreaProdutos
+                    key={ativa.empresa.id}
+                    empresaId={ativa.empresa.id}
+                    nomeEmpresa={ativa.nomeExibicao}
+                  />
+                )}
+
+                {ativa.tipo === "empresarial" && areaAtiva === "logistica" && (
+                  <AreaLogisticaEmpresa
+                    key={ativa.empresa.id}
+                    empresaId={ativa.empresa.id}
+                    nomeEmpresa={ativa.nomeExibicao}
+                    aoAbrirConversa={abrirConversaCom}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+
+        {contaPedida !== undefined && (
+          <Janela
+            rotulo="Conta necessária"
+            titulo={TITULO_CONTA_NECESSARIA}
+            largura="estreita"
+            aoFechar={() => setContaPedida(undefined)}
+            rodape={
+              <div className="flex flex-wrap justify-end gap-2">
+                <Botao aparencia="discreto" onClick={() => setContaPedida(undefined)}>
+                  Agora não
+                </Botao>
+                <Botao aparencia="secundario" data-conta-pedida-entrar onClick={capacidades.entrar}>
+                  Entrar
+                </Botao>
+                <Botao data-conta-pedida-criar onClick={capacidades.criarConta}>
+                  Criar conta
+                </Botao>
+              </div>
+            }
+          >
+            <div data-conta-necessaria className="flex flex-col gap-2 text-sm">
+              {contaPedida && <p>{contaPedida}</p>}
+              <p className="text-conteudo-suave">Suas conversas não se perdem: ao criar sua conta ou entrar, elas continuam com você, aqui mesmo.</p>
+            </div>
+          </Janela>
         )}
-      </main>
-    </div>
+      </div>
+    </ProvedorCapacidades>
   );
 }

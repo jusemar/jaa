@@ -10,7 +10,8 @@ import {
 type ResultadoAbrirConversaDireta =
   | { tipo: "criada" | "existente"; conversaId: string; participantes: ParticipanteRegistro[] }
   | { tipo: "identidade-nao-encontrada" }
-  | { tipo: "consigo-mesmo" };
+  | { tipo: "consigo-mesmo" }
+  | { tipo: "limite-de-conversas" };
 
 /**
  * A identidade de origem é a ATUANTE autorizada (pessoa ou empresa operada); a de destino é localizada
@@ -21,6 +22,8 @@ export async function abrirConversaDireta(
   banco: Banco,
   identidadeOrigemId: string,
   nomeUsuarioDestino: string,
+  // Visitante do Link do Jaa: teto de conversas diferentes (anti-spam). Ausente = sem teto.
+  limiteDeConversas?: number,
 ): Promise<ResultadoAbrirConversaDireta> {
   const destino = await buscarIdentidadeContatavelPorNomeUsuario(banco, nomeUsuarioDestino);
 
@@ -32,7 +35,9 @@ export async function abrirConversaDireta(
     return { tipo: "consigo-mesmo" };
   }
 
-  const { conversaId, criada } = await obterOuCriarConversaDireta(banco, identidadeOrigemId, destino.id);
+  const resultado = await obterOuCriarConversaDireta(banco, identidadeOrigemId, destino.id, limiteDeConversas);
+  if ("limiteAtingido" in resultado) return { tipo: "limite-de-conversas" };
+  const { conversaId, criada } = resultado;
   // Iniciar de novo uma conversa APAGADA a traz de volta para a lista de quem abriu (só dela).
   if (!criada) await reabrirConversaPara(banco, conversaId, identidadeOrigemId);
   const participantes = await listarParticipantesDaConversa(banco, conversaId);

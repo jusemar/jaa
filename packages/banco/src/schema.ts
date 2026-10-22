@@ -45,6 +45,7 @@ export * from "./tabelas/identidades/identidades.js";
 export * from "./tabelas/identidades/preferencias-identidade.js";
 export * from "./tabelas/identidades/excecoes-privacidade.js";
 export * from "./tabelas/identidades/bloqueios-identidade.js";
+export * from "./tabelas/identidades/identidades-visitantes.js";
 export * from "./tabelas/contatos/contatos.js";
 export * from "./tabelas/contatos/relacoes.js";
 export * from "./tabelas/identidades/relacoes.js";

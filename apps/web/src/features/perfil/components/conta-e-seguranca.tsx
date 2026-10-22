@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { RecursoComConta, useCapacidadesSessao } from "@/components/navegacao/capacidades-sessao";
 import { Botao, Cartao, Secao } from "@/components/ui/primitivos";
 import { buscarSituacaoPin, removerPin } from "@/features/autenticacao/lib/api-pin";
 import { FormularioEmail } from "./formulario-email";
@@ -14,8 +15,18 @@ import { LinhaDaConta } from "./linha-da-conta";
  * dentro da própria linha quando a pessoa toca em "Alterar…".
  *
  * Telefone e e-mail novos são sempre confirmados por um código enviado ao PRÓPRIO número/endereço novo.
+ *
+ * Visitante (Link do Jaa) ainda não tem como entrar — é exatamente isso que a conta resolve.
  */
 export function ContaESeguranca() {
+  const { visitante } = useCapacidadesSessao();
+  if (visitante) {
+    return (
+      <Secao titulo="Conta e segurança" descricao="Como você entra no Jaaa.">
+        <RecursoComConta titulo="Sua conta no Jaaa" descricao="Celular, e-mail, senha e PIN deste dispositivo. Com a conta, suas conversas ficam guardadas e não expiram." />
+      </Secao>
+    );
+  }
   return (
     <Secao titulo="Conta e segurança" descricao="Como você entra no Jaaa.">
       <Cartao className="divide-y divide-borda px-4 py-4">

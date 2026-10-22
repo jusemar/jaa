@@ -3,6 +3,7 @@
 import type { Contato } from "@jaa/contratos";
 import { useEffect, useState } from "react";
 import { AvatarIdentidade } from "@/components/avatar-identidade";
+import { RecursoComConta, useCapacidadesSessao } from "@/components/navegacao/capacidades-sessao";
 import { Aviso, Botao, Cartao, Carregando, EstadoVazio, Secao, Selo } from "@/components/ui/primitivos";
 import { listarContatos, removerContato } from "../lib/api-contatos";
 import { PesquisaJaa } from "./pesquisa-jaa";
@@ -14,6 +15,8 @@ import { PesquisaJaa } from "./pesquisa-jaa";
  * A pesquisa fica no topo porque é assim que se usa uma agenda: procura-se antes de rolar.
  */
 export function AreaContatos({ aoAbrirConversa }: { aoAbrirConversa: (nomeUsuario: string) => void }) {
+  // Visitante pesquisa e conversa, mas AGENDA é da conta: a lista nem é pedida (o servidor recusaria).
+  const { visitante } = useCapacidadesSessao();
   const [contatos, setContatos] = useState<Contato[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -26,6 +29,7 @@ export function AreaContatos({ aoAbrirConversa }: { aoAbrirConversa: (nomeUsuari
   }
 
   useEffect(() => {
+    if (visitante) return;
     let ativo = true;
     void listarContatos().then((resposta) => {
       if (!ativo) return;
@@ -35,7 +39,7 @@ export function AreaContatos({ aoAbrirConversa }: { aoAbrirConversa: (nomeUsuari
     return () => {
       ativo = false;
     };
-  }, []);
+  }, [visitante]);
 
   async function remover(contato: Contato) {
     const resposta = await removerContato(contato.identidade.identidadeId);
@@ -57,48 +61,54 @@ export function AreaContatos({ aoAbrirConversa }: { aoAbrirConversa: (nomeUsuari
         />
       </Secao>
 
-      <Secao titulo="Meus contatos" descricao={contatos ? `${contatos.length} salvo${contatos.length === 1 ? "" : "s"}` : undefined}>
-        {erro && <Aviso tom="erro">{erro}</Aviso>}
-        {contatos === null && !erro && <Carregando texto="Carregando contatos…" />}
-        {contatos?.length === 0 && (
-          <EstadoVazio
-            titulo="Sua agenda está vazia"
-            descricao="Procure alguém pelo nome ou @usuario na busca acima e toque em Salvar. Você pode conversar com qualquer pessoa mesmo sem salvá-la."
-          />
-        )}
-        {contatos && contatos.length > 0 && (
-          <Cartao>
-            <ul aria-label="Meus contatos" className="flex flex-col divide-y divide-borda">
-              {contatos.map((contato) => (
-                <li key={contato.identidade.identidadeId} data-contato={contato.identidade.identidadeId} className="flex items-center gap-2 px-2">
-                  <button
-                    type="button"
-                    onClick={() => aoAbrirConversa(contato.identidade.nomeUsuario)}
-                    className="flex min-h-16 min-w-0 flex-1 items-center gap-3 px-1 text-left hover:bg-superficie-suave"
-                  >
-                    <AvatarIdentidade identidade={contato.identidade} />
-                    <span className="flex min-w-0 flex-col">
-                      <span className="flex items-center gap-1.5 truncate text-sm font-medium">
-                        {contato.apelido ?? contato.identidade.nomeExibicao}
-                        {contato.identidade.tipo === "empresarial" && <Selo>Empresa</Selo>}
+      {visitante ? (
+        <Secao titulo="Meus contatos">
+          <RecursoComConta titulo="Sua agenda no Jaaa" descricao="Salve pessoas e empresas para encontrá-las rápido. Você já pode conversar com qualquer pessoa mesmo sem salvá-la." />
+        </Secao>
+      ) : (
+        <Secao titulo="Meus contatos" descricao={contatos ? `${contatos.length} salvo${contatos.length === 1 ? "" : "s"}` : undefined}>
+          {erro && <Aviso tom="erro">{erro}</Aviso>}
+          {contatos === null && !erro && <Carregando texto="Carregando contatos…" />}
+          {contatos?.length === 0 && (
+            <EstadoVazio
+              titulo="Sua agenda está vazia"
+              descricao="Procure alguém pelo nome ou @usuario na busca acima e toque em Salvar. Você pode conversar com qualquer pessoa mesmo sem salvá-la."
+            />
+          )}
+          {contatos && contatos.length > 0 && (
+            <Cartao>
+              <ul aria-label="Meus contatos" className="flex flex-col divide-y divide-borda">
+                {contatos.map((contato) => (
+                  <li key={contato.identidade.identidadeId} data-contato={contato.identidade.identidadeId} className="flex items-center gap-2 px-2">
+                    <button
+                      type="button"
+                      onClick={() => aoAbrirConversa(contato.identidade.nomeUsuario)}
+                      className="flex min-h-16 min-w-0 flex-1 items-center gap-3 px-1 text-left hover:bg-superficie-suave"
+                    >
+                      <AvatarIdentidade identidade={contato.identidade} />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="flex items-center gap-1.5 truncate text-sm font-medium">
+                          {contato.apelido ?? contato.identidade.nomeExibicao}
+                          {contato.identidade.tipo === "empresarial" && <Selo>Empresa</Selo>}
+                        </span>
+                        <span className="truncate text-xs text-conteudo-suave">@{contato.identidade.nomeUsuario}</span>
                       </span>
-                      <span className="truncate text-xs text-conteudo-suave">@{contato.identidade.nomeUsuario}</span>
-                    </span>
-                  </button>
-                  <Botao
-                    aparencia="discreto"
-                    data-remover-contato={contato.identidade.identidadeId}
-                    aria-label={`Remover ${contato.identidade.nomeExibicao} dos contatos`}
-                    onClick={() => void remover(contato)}
-                  >
-                    Remover
-                  </Botao>
-                </li>
-              ))}
-            </ul>
-          </Cartao>
-        )}
-      </Secao>
+                    </button>
+                    <Botao
+                      aparencia="discreto"
+                      data-remover-contato={contato.identidade.identidadeId}
+                      aria-label={`Remover ${contato.identidade.nomeExibicao} dos contatos`}
+                      onClick={() => void remover(contato)}
+                    >
+                      Remover
+                    </Botao>
+                  </li>
+                ))}
+              </ul>
+            </Cartao>
+          )}
+        </Secao>
+      )}
     </div>
   );
 }

@@ -1,7 +1,11 @@
 import type { Banco } from "@jaa/banco";
+import { identidades, identidadesVisitantes } from "@jaa/banco/schema";
+import { eq } from "drizzle-orm";
+import { buscarVisitanteDoUsuario } from "../../visitantes/repositorios/repositorio-visitantes.js";
 import {
   buscarIdentidadePessoalDoUsuario,
   ErroViolacaoUnicaIdentidade,
+  identificarViolacaoUnica,
   inserirIdentidadePessoal,
   type IdentidadeRegistro,
 } from "../repositorios/repositorio-identidades.js";
@@ -25,6 +29,33 @@ export async function criarIdentidadePessoal(
   const existente = await buscarIdentidadePessoalDoUsuario(banco, usuarioId);
   if (existente) {
     return compararComExistente(existente, entrada);
+  }
+
+  /*
+   * Ex-VISITANTE que acabou de criar a conta: a identidade dele já existe (é a que conversou). Ela
+   * ganha o nome e o @usuario definitivos e deixa de ser visitante — a marca some e, com ela, a
+   * expiração. Mesmo id: as conversas continuam exatamente onde estavam.
+   */
+  const visitante = await buscarVisitanteDoUsuario(banco, usuarioId);
+  if (visitante) {
+    if (!visitante.convertidaEm) return { tipo: "identidade-pessoal-ja-existe" };
+    try {
+      const identidade = await banco.transaction(async (transacao) => {
+        const [atualizada] = await transacao
+          .update(identidades)
+          .set({ nomeExibicao: entrada.nomeExibicao, nomeUsuario: entrada.nomeUsuario })
+          .where(eq(identidades.id, visitante.identidadeId))
+          .returning();
+        await transacao.delete(identidadesVisitantes).where(eq(identidadesVisitantes.identidadeId, visitante.identidadeId));
+        return atualizada;
+      });
+      if (!identidade) throw new Error("Identidade convertida não encontrada.");
+      return { tipo: "criada", identidade };
+    } catch (erro) {
+      const violacao = identificarViolacaoUnica(erro);
+      if (violacao === "nomeUsuario") return { tipo: "nome-usuario-indisponivel" };
+      throw erro;
+    }
   }
 
   try {

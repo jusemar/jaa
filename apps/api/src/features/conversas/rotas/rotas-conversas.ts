@@ -1,5 +1,6 @@
 import type { Banco } from "@jaa/banco";
 import {
+  LIMITE_CONVERSAS_VISITANTE,
   type ResumoNaoLidas,
   abrirConversaDiretaEntradaSchema,
   listarConversasConsultaSchema,
@@ -26,7 +27,8 @@ export function registrarRotasConversas(
   servidor: FastifyInstance,
   dependencias: { banco: Banco; autenticacao: Autenticacao; armazenamento: ArmazenamentoDeArquivos; eventosMensagens?: CanalEventosMensagens },
 ) {
-  const preHandler = exigirIdentidadeAtuante(dependencias);
+  // O visitante do Link do Jaa conversa como qualquer pessoa: estas rotas o aceitam explicitamente.
+  const preHandler = exigirIdentidadeAtuante(dependencias, { permitirVisitante: true });
 
   /*
    * LIMPAR / APAGAR conversa: estado SÓ da identidade atuante (a da sessão, nunca um id do corpo).
@@ -89,7 +91,7 @@ export function registrarRotasConversas(
     "/conversas/diretas",
     { preHandler },
     async (requisicao, resposta) => {
-      const { identidadeId } = obterIdentidadeExigida(requisicao);
+      const { identidadeId, visitante } = obterIdentidadeExigida(requisicao);
       const entrada = abrirConversaDiretaEntradaSchema.safeParse(requisicao.body);
 
       if (!entrada.success) {
@@ -97,7 +99,7 @@ export function registrarRotasConversas(
         return resposta.code(400).send(erro);
       }
 
-      const resultado = await abrirConversaDireta(dependencias.banco, identidadeId, entrada.data.nomeUsuario);
+      const resultado = await abrirConversaDireta(dependencias.banco, identidadeId, entrada.data.nomeUsuario, visitante ? LIMITE_CONVERSAS_VISITANTE : undefined);
 
       switch (resultado.tipo) {
         case "identidade-nao-encontrada": {
@@ -107,6 +109,10 @@ export function registrarRotasConversas(
         case "consigo-mesmo": {
           const erro: ErroApi = { codigo: "CONVERSA_CONSIGO_MESMO", mensagem: "Não é possível iniciar uma conversa consigo mesmo." };
           return resposta.code(400).send(erro);
+        }
+        case "limite-de-conversas": {
+          const erro: ErroApi = { codigo: "LIMITE_DE_CONVERSAS_ATINGIDO", mensagem: "Para conversar com mais pessoas, crie sua conta no Jaaa." };
+          return resposta.code(429).send(erro);
         }
         case "criada":
         case "existente": {

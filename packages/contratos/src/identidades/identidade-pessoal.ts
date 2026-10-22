@@ -50,7 +50,9 @@ export const nomeUsuarioSchema = z
         NOME_USUARIO_FORMATO,
         "Use letras sem acento, números ou _, começando com uma letra.",
       )
-      .refine((valor) => !NOMES_USUARIO_RESERVADOS.has(valor), "Este @usuario não está disponível."),
+      .refine((valor) => !NOMES_USUARIO_RESERVADOS.has(valor), "Este @usuario não está disponível.")
+      // Prefixo do @usuario técnico de visitantes (visitantes/visitante.ts): ninguém se passa por um.
+      .refine((valor) => !valor.startsWith("visitante_"), "Este @usuario não está disponível."),
   );
 
 export const nomeExibicaoSchema = z

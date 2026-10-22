@@ -204,6 +204,7 @@ export function ConversaTecnica({
   aoMensagemExcluidaParaMim,
   aoConversarCom,
   aoAcaoConversa,
+  aoExigirConta,
 }: {
   identidadeId: string;
   // Só identidade PESSOAL compra; a empresa participa da conversa, não faz pedido de si mesma.
@@ -227,6 +228,12 @@ export function ConversaTecnica({
   aoConversarCom?: ((nomeUsuario: string) => void) | undefined;
   // O MESMO executor de ações do menu da lista (limpar, apagar, bloquear/desbloquear).
   aoAcaoConversa?: ((acao: AcaoConversa, alvo: AlvoAcaoConversa) => Promise<string | null>) | undefined;
+  /*
+   * VISITANTE do Link do Jaa (sem conta): o cardápio continua à vista, mas pedir exige conta. Com esta
+   * função, "adicionar" não monta carrinho — explica e oferece criar conta/entrar. O servidor recusa
+   * pedido de visitante de qualquer forma (CONTA_NECESSARIA); isto só evita a tentativa inútil.
+   */
+  aoExigirConta?: ((motivo: string) => void) | undefined;
 }) {
   const [reconciliada, setReconciliada] = useState(conversaVazia);
   const mensagens = reconciliada.mensagens;
@@ -304,6 +311,7 @@ export function ConversaTecnica({
   // Carrinho + pedido: só existem quando uma pessoa conversa com uma empresa.
   const podeComprar =
     tipoIdentidade === "pessoal" &&
+    !aoExigirConta &&
     conversa.outraIdentidade.tipo === "empresarial";
   const {
     carrinho,
@@ -1228,7 +1236,9 @@ export function ConversaTecnica({
                 aoCarregarCatalogo={sincronizarImagens}
                 {...(podeComprar
                   ? { aoAdicionarAoCarrinho: adicionarProduto }
-                  : {})}
+                  : aoExigirConta
+                    ? { aoAdicionarAoCarrinho: () => aoExigirConta("Para fazer um pedido, você precisa de uma conta no Jaaa.") }
+                    : {})}
               />
             </div>
           ) : (
