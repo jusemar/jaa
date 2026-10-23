@@ -1,4 +1,5 @@
-import { visitanteAtualSchema, type VisitanteAtual } from "@jaa/contratos";
+import { visitanteAtualSchema, type ContaAtual, type VisitanteAtual } from "@jaa/contratos";
+import { buscarContaAtual } from "@/features/autenticacao/lib/api-conta";
 import { requisitarApi, type ResultadoApi } from "@/lib/api";
 
 /*
@@ -15,4 +16,16 @@ export function entrarComoVisitante(): Promise<ResultadoApi<VisitanteAtual>> {
     emAndamento = null;
   });
   return emAndamento;
+}
+
+/**
+ * Sessão para AGIR agora (pesquisar na Home, por exemplo): a que já existe — de conta ou de visitante —
+ * é reaproveitada; sem nenhuma (401), abre a de visitante. Qualquer outra falha volta como falha:
+ * não é motivo para mandar a pessoa entrar.
+ */
+export async function garantirSessaoDeVisitante(): Promise<ResultadoApi<ContaAtual>> {
+  const conta = await buscarContaAtual();
+  if (conta.ok || conta.status !== 401) return conta;
+  const visitante = await entrarComoVisitante();
+  return visitante.ok ? buscarContaAtual() : visitante;
 }

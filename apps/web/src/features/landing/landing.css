@@ -1372,3 +1372,379 @@
 @media (prefers-reduced-motion: reduce) {
   .lp-cursor-demo { display: none; }
 }
+
+/*
+ * "COM QUEM VOCÊ QUER FALAR?" — a entrada real da Home (comecar-conversa.tsx). O movimento tem
+ * propósito: o símbolo "digita" (a marca está pronta para conversar) e o campo respira até receber
+ * foco, para o olhar chegar nele. Tudo some com movimento reduzido.
+ */
+.lp-comecar {
+  position: relative;
+  max-width: 560px;
+  /* Respiro acima: o símbolo sobe para fora do cartão sem encostar no texto do hero. */
+  margin: 62px auto 28px;
+  padding: 24px 24px 18px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 24px;
+  background: var(--cor-superficie);
+  box-shadow: 0 18px 50px color-mix(in oklab, var(--cor-marca), transparent 88%);
+  text-align: left;
+}
+.lp-comecar-mascote {
+  position: relative;
+  width: 64px;
+  margin: -54px auto 6px;
+  animation: lp-comecar-flutuar 4.5s ease-in-out infinite;
+}
+.lp-comecar-mascote img {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  box-shadow: 0 10px 24px color-mix(in oklab, var(--cor-marca), transparent 75%);
+}
+.lp-comecar-digitando {
+  position: absolute;
+  left: 58px;
+  top: 6px;
+  display: flex;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: 12px 12px 12px 4px;
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  box-shadow: 0 4px 12px color-mix(in oklab, var(--cor-conteudo), transparent 90%);
+}
+.lp-comecar-digitando i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--cor-ouro);
+  animation: lp-comecar-ponto 1.2s ease-in-out infinite;
+}
+.lp-comecar-digitando i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.lp-comecar-digitando i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.lp .lp-comecar-titulo {
+  text-align: center;
+  font-size: clamp(1.35rem, 2.4vw, 1.65rem);
+  line-height: 1.2;
+}
+.lp-comecar-apoio {
+  text-align: center;
+  font-size: 13px;
+  color: var(--cor-conteudo-suave);
+  margin: 6px 0 16px;
+}
+.lp-comecar-campo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in oklab, var(--cor-marca), transparent 70%);
+  background: var(--cor-superficie-suave);
+  cursor: text;
+  animation: lp-comecar-respirar 3.2s ease-in-out infinite;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    background 0.2s;
+}
+/* Foco visível no CAMPO inteiro (o input usa `campo-sem-contorno`: o contorno é este). */
+.lp-comecar-campo:focus-within {
+  animation: none;
+  border-color: var(--cor-marca);
+  background: var(--cor-superficie);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--cor-marca), transparent 80%);
+}
+.lp-comecar-icone {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--cor-marca);
+}
+.lp-comecar-campo input {
+  min-width: 0;
+  flex: 1;
+  height: 52px;
+  border: 0;
+  background: transparent;
+  /* 16px: abaixo disso o navegador do celular amplia a página ao focar. */
+  font-size: 16px;
+  color: var(--cor-conteudo);
+  outline: none;
+}
+.lp-comecar-campo input::placeholder {
+  color: var(--cor-conteudo-suave);
+}
+.lp-comecar-status {
+  min-height: 18px;
+  margin: 8px 6px 0;
+  font-size: 12px;
+  color: var(--cor-conteudo-suave);
+}
+.lp-comecar-falha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 4px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--cor-perigo), transparent 92%);
+  color: var(--cor-perigo);
+  font-size: 13px;
+}
+.lp-comecar-falha button {
+  font-weight: 700;
+  text-decoration: underline;
+}
+.lp-comecar-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+/* ATALHOS por intenção: linhas leves (ícone + pergunta + chips), nunca cartões pesados. */
+.lp-comecar-atalhos-legenda {
+  margin: 6px 6px 4px;
+  font-size: 12px;
+  color: var(--cor-conteudo-suave);
+}
+.lp-comecar-atalhos ul {
+  display: flex;
+  flex-direction: column;
+}
+.lp-comecar-intencao {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 11rem) 1fr;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 6px;
+  border-top: 1px solid var(--cor-borda);
+}
+.lp-comecar-intencao:first-child {
+  border-top: 0;
+}
+.lp-comecar-intencao-icone {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--cor-marca-suave);
+  color: var(--cor-marca-suave-conteudo);
+}
+.lp-comecar-intencao-icone svg {
+  width: 16px;
+  height: 16px;
+}
+.lp-comecar-intencao-pergunta {
+  font-size: 13px;
+  font-weight: 700;
+}
+.lp-comecar-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lp-comecar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 4px 12px 4px 5px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 999px;
+  background: var(--cor-superficie);
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.15s;
+}
+.lp-comecar-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lp-comecar-chip em {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--cor-ouro), transparent 70%);
+  font-size: 10px;
+  font-weight: 700;
+}
+.lp-comecar-chip:hover:not(:disabled) {
+  border-color: var(--cor-marca);
+  background: var(--cor-marca-suave);
+}
+.lp-comecar-chip:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.lp-comecar-chip:disabled {
+  opacity: 0.6;
+}
+.lp-comecar-chip[aria-busy="true"] {
+  opacity: 1;
+  border-color: var(--cor-marca);
+}
+.lp-comecar-servico {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--cor-conteudo-suave);
+}
+.lp-comecar-servico a {
+  color: var(--cor-marca);
+  font-weight: 700;
+  text-decoration: underline;
+}
+.lp-comecar-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  text-align: left;
+  transition:
+    background 0.15s,
+    transform 0.15s;
+}
+.lp-comecar-item:hover:not(:disabled) {
+  background: var(--cor-marca-suave);
+}
+.lp-comecar-item:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.lp-comecar-item:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.lp-comecar-item[aria-busy="true"] {
+  opacity: 1;
+  background: var(--cor-marca-suave);
+}
+.lp-comecar-item-texto {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.lp-comecar-item-texto strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.lp-comecar-item-texto > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--cor-conteudo-suave);
+}
+.lp-comecar-item-texto em {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--cor-ouro), transparent 70%);
+  color: var(--cor-conteudo);
+  font-size: 10px;
+  font-weight: 700;
+}
+.lp-comecar-item-acao {
+  flex-shrink: 0;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: var(--lp-verde-escuro);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+}
+/* A landing dá lugar ao app escolhido: um esmaecer curto, sem salto. */
+.lp-entrar-no-jaa {
+  animation: lp-comecar-surgir 0.35s ease-out both;
+}
+@keyframes lp-comecar-flutuar {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(-2deg);
+  }
+}
+@keyframes lp-comecar-ponto {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+@keyframes lp-comecar-respirar {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--cor-marca), transparent 85%);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--cor-marca), transparent 92%);
+  }
+}
+@keyframes lp-comecar-surgir {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (max-width: 700px) {
+  .lp-comecar {
+    margin: 64px 0 22px;
+    padding: 22px 14px 14px;
+    border-radius: 20px;
+  }
+  .lp-comecar-item-acao {
+    padding: 6px 10px;
+  }
+  /* Celular: pergunta ao lado do ícone; chips e texto na linha de baixo, ocupando a largura. */
+  .lp-comecar-intencao {
+    grid-template-columns: 30px 1fr;
+  }
+  .lp-comecar-chips,
+  .lp-comecar-servico {
+    grid-column: 1 / -1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-comecar-mascote,
+  .lp-comecar-digitando i,
+  .lp-comecar-campo,
+  .lp-entrar-no-jaa {
+    animation: none;
+  }
+  .lp-comecar-item,
+  .lp-comecar-chip {
+    transition: none;
+  }
+}

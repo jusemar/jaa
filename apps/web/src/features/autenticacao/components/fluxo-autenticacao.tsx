@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   SENHA_TAMANHO_MAXIMO,
   SENHA_TAMANHO_MINIMO,
@@ -103,6 +104,7 @@ export function FluxoAutenticacao({
     secao.scrollIntoView({ behavior: "smooth", block: "start" });
     secao.querySelector<HTMLInputElement>("input:not([disabled])")?.focus({ preventScroll: true });
   }
+  const router = useRouter();
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   // O e-mail só aparece como opção quando o servidor diz que o tem ligado; na dúvida, só o telefone.
@@ -384,9 +386,12 @@ export function FluxoAutenticacao({
         return;
       }
       // Sair encerra a sessão; o PIN deste dispositivo continua valendo para a próxima entrada.
+      const eraVisitante = etapa.nome === "visitante";
       setContaVisitante(null);
       setEtapa(pinDisponivel ? { nome: "pin" } : { nome: "entrar" });
-      aoSairParaPaginaPublica?.();
+      if (aoSairParaPaginaPublica) aoSairParaPaginaPublica();
+      // Visitante que sai não está indo entrar numa conta: volta para a Home pública, sem sessão.
+      else if (eraVisitante) router.replace("/");
     });
   }
 

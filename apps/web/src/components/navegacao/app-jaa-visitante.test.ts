@@ -65,11 +65,17 @@ describe("visitante no shell principal do Jaaa", () => {
     assert.ok(app.includes("areasDaIdentidade(identidades.ativa, { visitante: visitante !== null })"));
   });
 
-  it("Criar conta / Entrar à vista, sem 'Sair' de uma conta que não existe", () => {
+  it("Criar conta / Entrar à vista; 'Sair' encerra a sessão de visitante, com confirmação", () => {
     assert.ok(app.includes("data-faixa-visitante") && app.includes("data-visitante-criar-conta") && app.includes("data-visitante-entrar"));
     assert.ok(app.includes("Sem conta, suas conversas expiram após 24 h sem uso."));
-    assert.ok(app.includes("const sair = visitante ? null : ("));
-    assert.ok(app.includes("data-menu-criar-conta") && app.includes("data-menu-entrar"));
+    assert.ok(app.includes("data-menu-criar-conta") && app.includes("data-menu-entrar") && app.includes("data-menu-sair-visitante"));
+    // Conta sai direto; visitante confirma antes, e confirmar é o MESMO logout (aoSair → Better Auth).
+    assert.ok(app.includes("const pedirSaida = visitante ? () => setConfirmandoSaida(true) : aoSair;"));
+    assert.ok(/data-confirmar-saida-visitante[\s\S]*aoConfirmar=\{aoSair\}/.test(app));
+    const fluxo = fonte("../../features/autenticacao/components/fluxo-autenticacao.tsx");
+    assert.ok(fluxo.includes("await clienteAutenticacao.signOut()"));
+    // Visitante que sai volta para a Home pública (na Home, a própria landing; fora dela, "/").
+    assert.ok(fluxo.includes('else if (eraVisitante) router.replace("/");'));
   });
 
   it("nenhum @usuario técnico do visitante aparece", () => {

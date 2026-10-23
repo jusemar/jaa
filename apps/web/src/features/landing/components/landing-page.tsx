@@ -10,6 +10,7 @@ import {
 } from "./demonstracoes";
 import { urlOficialDoApk } from "../lib/download-do-app";
 import { MovimentoLanding } from "./movimento-landing";
+import { ComecarConversa } from "./comecar-conversa";
 import "../landing.css";
 
 function CriarConta({ texto = "Criar conta grátis" }: { texto?: string }) {
@@ -67,6 +68,7 @@ export function LandingPage() {
               <br className="lp-desktop" /> Pessoas, empresas e entregas se
               encontram no Jaaa.
             </p>
+            <ComecarConversa />
             <div className="lp-hero-acoes">
               <CriarConta />
               <a className="lp-link" href="#como-funciona">

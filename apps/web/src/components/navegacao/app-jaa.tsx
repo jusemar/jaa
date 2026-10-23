@@ -16,10 +16,12 @@ import { HorariosDeFuncionamento } from "@/features/empresas/components/horarios
 import { AreaProdutos } from "@/features/produtos/components/area-produtos";
 import { AvisosDeAcao } from "@/components/ui/avisos";
 import { Botao, Carregando, Secao } from "@/components/ui/primitivos";
+import { DialogoConfirmacao } from "@/components/ui/confirmacao";
 import { Janela } from "@/components/ui/janela";
 import { ouvirContaNecessaria } from "@/lib/conta-necessaria";
+import { preferenciaPainel } from "@/lib/preferencia-painel";
 import type { DestinoDoLink } from "@/features/link/lib/link-do-jaa";
-import { areaValida, areasDaIdentidade } from "./areas";
+import { areaComPainelLateral, areaValida, areasDaIdentidade } from "./areas";
 import { NavegacaoApp } from "./navegacao-app";
 import { ProvedorCapacidades, TITULO_CONTA_NECESSARIA, type CapacidadesSessao } from "./capacidades-sessao";
 
@@ -77,6 +79,11 @@ export function AppJaa({
    * ação que o servidor recusou com CONTA_NECESSARIA. `undefined` = fechada; o texto é o motivo.
    */
   const [contaPedida, setContaPedida] = useState<string | null | undefined>(undefined);
+  /*
+   * SAIR DA SESSÃO DE VISITANTE: o mesmo logout da conta (Better Auth), com uma confirmação antes —
+   * depois de sair, aquela sessão não volta (não há conta para entrar nela de novo).
+   */
+  const [confirmandoSaida, setConfirmandoSaida] = useState(false);
   useEffect(() => ouvirContaNecessaria((motivo) => setContaPedida(motivo)), []);
   const capacidades = useMemo<CapacidadesSessao>(
     () => ({
@@ -114,6 +121,16 @@ export function AppJaa({
 
   const areas = areasDaIdentidade(identidades.ativa, { visitante: visitante !== null });
   const areaAtiva = areaValida(areas, areaPedida);
+
+  /*
+   * Tocar em Conversas/Contatos NA NAVEGAÇÃO é pedir a lista: o painel lateral abre, mesmo que tenha sido
+   * recolhido antes. Recolher continua sendo do botão próprio do painel; aberturas por código ("Conversar
+   * com…") não mexem na preferência.
+   */
+  function abrirPelaNavegacao(id: string) {
+    if (areaComPainelLateral(id)) preferenciaPainel.definir(false);
+    abrir(id);
+  }
 
   function abrir(id: string) {
     setAreaPedida(id);
@@ -155,13 +172,15 @@ export function AppJaa({
     [],
   );
 
-  // Visitante não "sai" de uma conta que não tem: no lugar, Entrar e Criar conta.
-  const sair = visitante ? null : (
+  // Conta: sai direto. Visitante: confirma antes (a sessão dele não pode ser retomada).
+  const pedirSaida = visitante ? () => setConfirmandoSaida(true) : aoSair;
+  const sair = (
     <Botao
       aparencia="discreto"
       disabled={saindo}
-      onClick={aoSair}
-      aria-label="Sair da conta"
+      onClick={pedirSaida}
+      aria-label={visitante ? "Sair da sessão de visitante" : "Sair da conta"}
+      data-sair-visitante={visitante ? true : undefined}
       className="!min-h-10 !px-2 text-[0.62rem]"
     >
       {saindo ? "Saindo…" : "Sair"}
@@ -180,7 +199,7 @@ export function AppJaa({
         <NavegacaoApp
           areas={areas}
           areaAtiva={areaAtiva}
-          aoAbrir={abrir}
+          aoAbrir={abrirPelaNavegacao}
           ocultarNoCelular={ehConversas && conversaAberta}
           naoLidasConversas={naoLidasConversas}
           pedidosAguardando={pedidosAguardando}
@@ -223,6 +242,9 @@ export function AppJaa({
                       </button>
                       <button type="button" role="menuitem" data-menu-entrar onClick={capacidades.entrar} className="flex min-h-12 items-center px-3 text-left text-sm text-conteudo-suave hover:bg-superficie-suave">
                         Entrar
+                      </button>
+                      <button type="button" role="menuitem" data-menu-sair-visitante disabled={saindo} onClick={pedirSaida} className="flex min-h-12 items-center px-3 text-left text-sm text-conteudo-suave hover:bg-superficie-suave disabled:opacity-50">
+                        {saindo ? "Saindo…" : "Sair"}
                       </button>
                     </>
                   ) : (
@@ -345,6 +367,20 @@ export function AppJaa({
             </div>
           )}
         </main>
+
+        {confirmandoSaida && (
+          <DialogoConfirmacao
+            titulo="Sair da sessão de visitante?"
+            texto="Suas conversas deixam de aparecer aqui e esta sessão não poderá ser retomada. Para guardá-las, crie uma conta antes de sair."
+            rotuloConfirmar="Sair"
+            rotuloCancelar="Continuar aqui"
+            ocupado={saindo}
+            dados={{ "data-confirmar-saida-visitante": true }}
+            idTitulo="titulo-sair-visitante"
+            aoCancelar={() => setConfirmandoSaida(false)}
+            aoConfirmar={aoSair}
+          />
+        )}
 
         {contaPedida !== undefined && (
           <Janela

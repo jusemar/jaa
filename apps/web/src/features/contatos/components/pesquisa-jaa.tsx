@@ -145,7 +145,11 @@ export function PesquisaJaa({
     <search className="flex flex-col gap-2">
       {/* Campo suave com o ícone à esquerda, como na referência de UI/UX aprovada. */}
       {/* Mesma superfície clara da navegação; a borda desenha o campo, sem um cinza só daqui. */}
-      <label className="flex min-h-11 items-center gap-2 rounded-jaa-compacto border border-borda bg-superficie px-3 text-conteudo-suave focus-within:ring-2 focus-within:ring-marca/30 sm:min-h-10">
+      {/*
+        Focado, o campo fica IGUAL: sem anel nem contorno verde. É campo de TEXTO, então o cursor
+        piscando já mostra o foco (mesma exceção do compositor: `campo-sem-contorno`, em globals.css).
+      */}
+      <label className="flex min-h-11 items-center gap-2 rounded-jaa-compacto border border-borda bg-superficie px-3 text-conteudo-suave sm:min-h-10">
         <span className="sr-only">Pesquisar no Jaaa</span>
         <IconeBusca className="h-4 w-4 shrink-0" />
         <input
@@ -156,7 +160,7 @@ export function PesquisaJaa({
           placeholder="Pesquisar no Jaaa"
           aria-label="Pesquisar no Jaaa"
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent text-sm text-conteudo outline-none placeholder:text-conteudo-suave"
+          className="campo-sem-contorno min-w-0 flex-1 bg-transparent text-sm text-conteudo outline-none placeholder:text-conteudo-suave"
         />
       </label>
 

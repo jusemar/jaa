@@ -4,6 +4,12 @@ Abra `http://localhost:3334/` com `npm run dev -w web`. Uma sessão válida mant
 
 A página e seus textos são pré-renderizados. O aplicativo autenticado é carregado separadamente. Os componentes de conversas usam os horários locais do navegador e entram após a hidratação, com espaço reservado para evitar diferenças de fuso.
 
+## Começar a conversar (entrada real de visitante)
+
+"Com quem você quer falar?" (`comecar-conversa.tsx`, no hero) NÃO é demonstração: as sugestões são perfis reais (consulta pública `/publico/identidades/:usuario`, sem sessão; lista em `NEXT_PUBLIC_JAA_SUGESTOES_HOME`), e a pesquisa é a mesma do mensageiro (`/busca`, pessoas e empresas). A sessão de visitante só nasce quando a pessoa pesquisa (2+ caracteres) ou escolhe alguém (`garantirSessaoDeVisitante`, que reaproveita a que existir). Escolher passa o destino para `EntradaPublica`, que troca a landing pelo MESMO `FluxoAutenticacao` do Link do Jaa (`/@usuario`) — sem nova página e sem login. Falha ao abrir a sessão aparece como falha, com "Tentar novamente". Os atalhos ("Ou comece por um destes") agrupam as sugestões por intenção a partir do dado público (`agruparPorIntencao`); "Precisa de um serviço?" é só texto, porque profissionais ainda exigem conta (o perfil público não diz o serviço e `/profissionais/busca` recusa visitante).
+
+Sair (visitante): o mesmo `signOut` do Better Auth da conta, com confirmação antes; na Home volta à landing, fora dela vai para `/`.
+
 ## Demonstrações
 
 A landing reutiliza `ListaConversas`, `BalaoMensagem`, `Cardapio`, `DetalheProdutoCatalogo` (incluindo `MontagemProduto`), `TimelinePedido`, `EntregadorDaEntrega` e `AvisoDaEntrega` e `SequenciaDaSaida`. Dados de demonstração são locais, sinalizados como exemplos, e não acionam APIs de mensagens, pedidos ou logística. O mapa SVG ilustra a sequência da rota; não é um mapa operacional nem screenshot. Na segunda rodada, os prints reais orientam cabeçalhos de conversa, cardápio/montagem, acompanhamento e zonas. Nenhum screenshot, nome, endereço, conversa ou foto de pessoa dos prints foi copiado para a página; o avatar usa as iniciais oficiais quando não há foto demonstrativa autorizada.

@@ -54,6 +54,11 @@ export function areasDaIdentidade(identidade: IdentidadeOperavel | null, { visit
   return visitante ? AREAS_PESSOAIS.filter((area) => area.id !== "entregas") : AREAS_PESSOAIS;
 }
 
+/** Conversas e Contatos são o mensageiro em mestre-detalhe: as únicas áreas com painel lateral. */
+export function areaComPainelLateral(id: string): boolean {
+  return id === "conversas" || id === "contatos";
+}
+
 /** Área pedida no endereço, aceita só se existir para a identidade atual (cair em "conversas" é o certo). */
 export function areaValida(areas: AreaApp[], pedida: string | null): string {
   return areas.some((area) => area.id === pedida) ? (pedida as string) : (areas[0]?.id ?? "conversas");
