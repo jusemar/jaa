@@ -6,6 +6,7 @@ import { Texto } from "@/components/ui/texto";
 import { Cores, Espaco } from "@/constants/theme";
 import { TelaEntrar } from "@/features/autenticacao/components/tela-entrar";
 import { ProvedorIdentidadeAtiva } from "@/features/identidades/components/provedor-identidade-ativa";
+import { ProvedorPush } from "@/features/push/components/provedor-push";
 import { conectarRealtime, desconectarRealtime } from "@/lib/realtime/cliente-realtime";
 import { useContextoConta } from "./provedor-contexto-conta";
 
@@ -54,7 +55,11 @@ function SessaoAtiva({ children }: { children: ReactNode }) {
     return () => desconectarRealtime();
   }, []);
 
-  return <ProvedorIdentidadeAtiva>{children}</ProvedorIdentidadeAtiva>;
+  return (
+    <ProvedorIdentidadeAtiva>
+      <ProvedorPush>{children}</ProvedorPush>
+    </ProvedorIdentidadeAtiva>
+  );
 }
 
 const estilos = StyleSheet.create({

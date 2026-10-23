@@ -3,6 +3,7 @@ import { Alert } from "react-native";
 import { sair } from "@/features/autenticacao/lib/api-conta";
 import { encerrarPresenca } from "@/features/entregas/lib/presenca-segundo-plano";
 import { pararRastreamento } from "@/features/entregas/lib/rastreamento";
+import { removerEsteAparelho } from "@/features/push/lib/registro-push";
 import { useContextoConta } from "../components/provedor-contexto-conta";
 
 /** "Sair" do app: confirma, para o rastreamento (fora da conta não há operação), encerra a sessão e volta à entrada. */
@@ -15,6 +16,8 @@ export function useSairDaConta() {
     // Antes do rastreamento: fora da conta nada é confirmado por este aparelho (nem em segundo plano).
     await encerrarPresenca();
     await pararRastreamento();
+    // Push: com a sessão ainda válida (depois dela a API não saberia de quem é o aparelho). Nunca trava o sair.
+    await removerEsteAparelho();
     await sair();
     await recarregar();
     setSaindo(false);

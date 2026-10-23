@@ -1,6 +1,9 @@
 // Permite importar TypeScript do projeto na configuração (forma documentada pelo Expo).
 import "tsx/cjs";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ExpoConfig } from "expo/config";
+import { escolherGoogleServices, pacotesDoGoogleServices } from "./src/lib/firebase-da-variante";
 import { IDENTIDADE_DA_VARIANTE, lerVariante } from "./src/lib/variante";
 
 /*
@@ -9,6 +12,18 @@ import { IDENTIDADE_DA_VARIANTE, lerVariante } from "./src/lib/variante";
  */
 const variante = lerVariante(process.env.APP_VARIANT);
 const identidade = IDENTIDADE_DA_VARIANTE[variante];
+
+/*
+ * Firebase (FCM) do PUSH: só o `google-services.json` do pacote desta variante (regras em
+ * `src/lib/firebase-da-variante.ts`). O arquivo local fica na raiz do repositório, fora do Git; no EAS,
+ * vem da variável de ambiente do tipo arquivo `GOOGLE_SERVICES_JSON`. Mudar isto = novo build nativo.
+ */
+const googleServices = escolherGoogleServices({
+  variante,
+  caminhoDoEas: process.env.GOOGLE_SERVICES_JSON,
+  caminhoLocal: resolve(__dirname, "../../google-services.json"),
+  pacotesDoArquivo: (caminho) => (existsSync(caminho) ? pacotesDoGoogleServices(JSON.parse(readFileSync(caminho, "utf8"))) : null),
+});
 
 /*
  * Projeto do EAS (um só para as duas variantes): dele saem `extra.eas.projectId` e `updates.url`.
@@ -26,7 +41,7 @@ const config: ExpoConfig = {
   slug: "jaa",
   owner: "jaa-app",
   // Versão do PRODUTO. O runtime dos updates segue ela: update só chega a binário da mesma versão.
-  version: "0.6.0",
+  version: "0.7.0",
   runtimeVersion: { policy: "appVersion" },
   updates: {
     // Verifica ao abrir, baixa em segundo plano e aplica na abertura seguinte: nunca segura a tela.
@@ -51,6 +66,7 @@ const config: ExpoConfig = {
   android: {
     // Sem versionCode aqui: o número do binário é do EAS (`appVersionSource: remote` no eas.json).
     package: identidade.pacote,
+    ...(googleServices ? { googleServicesFile: googleServices } : {}),
     /*
      * Ícone adaptativo: a MESMA arte a 82% sobre o verde da própria borda, para o recorte do Android
      * (círculo, squircle) não cortar o desenho. Sem versão monocromática: ela exigiria redesenhar a
@@ -121,6 +137,12 @@ const config: ExpoConfig = {
     // token PÚBLICO (`EXPO_PUBLIC_MAPBOX_TOKEN`). O token secreto de rotas fica na API.
     "@rnmapbox/maps",
     ["expo-audio", { microphonePermission: USO_DO_MICROFONE, recordAudioAndroid: true, enableBackgroundRecording: false, enableBackgroundPlayback: false }],
+    /*
+     * PUSH de nova mensagem (expo-notifications). Ícone da barra de status: o Android pinta só a silhueta,
+     * então é o balão do Jaaa em branco sobre transparente (derivado do ícone oficial), na cor da marca.
+     * O canal "Mensagens" é criado pelo app em tempo de execução.
+     */
+    ["expo-notifications", { icon: "./assets/images/jaaa-icone-notificacao.png", color: "#009D72" }],
   ],
   experiments: {
     typedRoutes: true,

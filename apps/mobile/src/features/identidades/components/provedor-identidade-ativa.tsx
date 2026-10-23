@@ -15,7 +15,8 @@ interface ValorIdentidadeAtiva {
   pessoal: IdentidadeOperavelRecebida | null;
   ativa: IdentidadeOperavelRecebida | null;
   erro: string | null;
-  selecionar: (identidadeId: string) => Promise<void>;
+  // true = o servidor confirmou e a troca foi feita (o toque de um push depende disso para navegar).
+  selecionar: (identidadeId: string) => Promise<boolean>;
 }
 
 const ContextoIdentidadeAtiva = createContext<ValorIdentidadeAtiva | null>(null);
@@ -63,18 +64,19 @@ export function ProvedorIdentidadeAtiva({ children }: { children: ReactNode }) {
 
   const selecionar = useCallback(
     async (identidadeId: string) => {
-      if (!pessoalId) return;
+      if (!pessoalId) return false;
       // Confirma no servidor antes de trocar, como a Web (`GET /identidades/operaveis/:id`).
       const verificada = await requisitarApi(`/identidades/operaveis/${encodeURIComponent(identidadeId)}`, identidadeOperavelRecebidaSchema);
       if (!verificada.ok) {
         setErro("Você não pode agir como esta identidade.");
         await recarregar();
-        return;
+        return false;
       }
       setErro(null);
       await gravarPreferenciaIdentidade(pessoalId, verificada.dados.identidadeId);
       definirIdentidadeAtuante(intencaoDe(verificada.dados));
       setPreferidaId(verificada.dados.identidadeId);
+      return true;
     },
     [pessoalId, recarregar],
   );

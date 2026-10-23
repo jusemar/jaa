@@ -27,3 +27,7 @@ npm-debug.log*
 
 # Binários do aplicativo Android: o APK oficial fica no armazenamento de arquivos, nunca no Git
 *.[aA][pP][kK]
+
+# Firebase (FCM do push): configuração e CHAVE PRIVADA da conta de serviço. Nunca no Git nem no upload do EAS.
+google-services.json
+*firebase-adminsdk*.json

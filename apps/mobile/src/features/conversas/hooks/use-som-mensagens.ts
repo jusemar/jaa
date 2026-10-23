@@ -22,6 +22,7 @@ function conversaVisivelAgora(): string | null {
  * SOM de mensagem RECEBIDA em qualquer área do app, como o `useAvisosMensagens` da Web — exceto da
  * conversa que está na tela. Não é push: só existe com o app aberto e conectado. A conexão age como
  * UMA identidade, então o evento já chega só para a identidade atuante.
+ * Só com o app em PRIMEIRO PLANO: em segundo plano, o push (`features/push`) avisa com o som do sistema.
  */
 export function useSomMensagens(identidadeAtivaId: string | null, agindoComoEmpresa = false): void {
   useEffect(() => {
@@ -40,6 +41,11 @@ export function useSomMensagens(identidadeAtivaId: string | null, agindoComoEmpr
     const aoReceberMensagem = (evento: unknown) => {
       const lido = eventoNotificacaoNovaMensagemSchema.safeParse(evento);
       if (!lido.success) return;
+      // App em segundo plano (socket ainda vivo): quem avisa é o PUSH, com o som do sistema — nunca os dois.
+      if (AppState.currentState !== "active") {
+        aviso.silenciar(lido.data.mensagemId);
+        return;
+      }
       const tocar = deveTocarSomDeMensagem({
         remetenteIdentidadeId: lido.data.remetente.identidadeId,
         conversaId: lido.data.conversaId,

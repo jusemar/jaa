@@ -51,6 +51,7 @@ const SIMBOLOS = {
   camadas: { ios: "square.stack.3d.up", android: "layers", web: "layers" },
   informacao: { ios: "info.circle", android: "info", web: "info" },
   sair: { ios: "rectangle.portrait.and.arrow.right", android: "logout", web: "logout" },
+  sino: { ios: "bell", android: "notifications", web: "notifications" },
   /*
    * LOGÍSTICA — os três papéis de uma entrega, sempre com o MESMO desenho (mapa, rota, pedido):
    * a BASE de onde a rota sai, o ENTREGADOR (moto) e o CLIENTE (destino).

@@ -17,6 +17,7 @@ import { assinarConversaEmLeitura, obterConversaEmLeitura } from "../lib/convers
 import { FILTROS_CONVERSAS, ROTULO_FILTRO_CONVERSAS, contarConversasNaoLidas, filtrarConversas, type FiltroConversas } from "../lib/lista-conversas";
 import { AcoesDaConversa, type AcaoConversa, type AlvoAcaoConversa } from "./acoes-conversa";
 import { ListaConversas } from "./lista-conversas";
+import { CartaoAvisosNoCelular } from "@/features/push/components/avisos-no-celular";
 
 /*
  * CONVERSAS — a tela principal do Jaa, porta do `MensageiroTecnico` da Web no formato de celular: a
@@ -107,6 +108,8 @@ export function TelaConversas({ identidadeId }: { identidadeId: string; tipoIden
             {erro}
           </Texto>
         )}
+        {/* Onde a pessoa espera mensagens: o convite para receber avisos com o app fechado. */}
+        <CartaoAvisosNoCelular />
       </View>
 
       <ListaConversas

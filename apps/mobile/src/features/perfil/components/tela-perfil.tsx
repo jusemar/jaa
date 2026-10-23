@@ -24,6 +24,7 @@ import { FormularioEmail } from "./formulario-email";
 import { FormularioSenha } from "./formulario-senha";
 import { FormularioTelefone } from "./formulario-telefone";
 import { LinkPublico } from "./link-publico";
+import { SecaoAvisosNoCelular } from "@/features/push/components/avisos-no-celular";
 
 /*
  * PERFIL da identidade ATUANTE — pessoa ou empresa, a mesma tela da Web (`AreaPerfil`).
@@ -373,6 +374,8 @@ export function TelaPerfil({ ehEmpresa, empresaId }: { ehEmpresa: boolean; empre
         </Secao>
       )}
 
+
+      <SecaoAvisosNoCelular />
 
       {__DEV__ && <Botao aparencia="secundario" rotulo="Diagnóstico do contexto (desenvolvimento)" onPress={() => router.push("/diagnostico")} />}
 
