@@ -65,3 +65,6 @@ export * from "./tabelas/territorio/municipios.js";
 export * from "./tabelas/profissionais/taxonomia.js";
 export * from "./tabelas/profissionais/perfis-profissionais.js";
 export * from "./tabelas/profissionais/areas-atuacao.js";
+
+// Push no celular: instalações do app que recebem avisos de nova mensagem.
+export * from "./tabelas/notificacoes/dispositivos-push.js";

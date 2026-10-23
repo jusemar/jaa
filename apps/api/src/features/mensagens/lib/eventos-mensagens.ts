@@ -36,6 +36,12 @@ export interface NotificacaoNovaMensagem extends Destinatarios {
   previaConteudo: string;
   conteudoTruncado: boolean;
   criadoEm: Date;
+  /*
+   * Só para assinantes do SERVIDOR (o push); o realtime não repassa. Conta que enviou (inclusive a de um
+   * visitante; null em mensagens antigas): ela não recebe push do próprio envio, nem quando opera a
+   * identidade destinatária.
+   */
+  operadorUsuarioId: string | null;
 }
 
 // Contagem atual de não lidas de uma conversa para UMA identidade (recalculada após o commit).

@@ -1,5 +1,5 @@
 import type { Banco } from "@jaa/banco";
-import type { PapelMembroEmpresa } from "@jaa/contratos";
+import { papelMembroEmpresaSchema, type PapelMembroEmpresa } from "@jaa/contratos";
 import { buscarEmpresaDaIdentidade, buscarPapelDoUsuarioNaEmpresa } from "../repositorios/repositorio-empresas.js";
 
 /**
@@ -46,6 +46,11 @@ const PERMISSOES_POR_PAPEL: Record<PapelMembroEmpresa, ReadonlySet<PermissaoEmpr
 
 export function papelPermite(papel: PapelMembroEmpresa, permissao: PermissaoEmpresa): boolean {
   return PERMISSOES_POR_PAPEL[papel].has(permissao);
+}
+
+// Papéis que concedem a permissão (para filtros no banco, ex.: quem recebe push da empresa).
+export function papeisComPermissao(permissao: PermissaoEmpresa): PapelMembroEmpresa[] {
+  return papelMembroEmpresaSchema.options.filter((papel) => papelPermite(papel, permissao));
 }
 
 export type AcessoEmpresa = { empresaId: string; papel: PapelMembroEmpresa };

@@ -37,6 +37,14 @@ const ambienteSchema = z
      * - "comtele": SMS real pela Comtele; exige COMTELE_API_KEY e COMTELE_ROTA.
      */
     OTP_ENTREGA: z.enum(["desenvolvimento", "comtele"]),
+    /*
+     * PUSH de nova mensagem no celular (API → Expo Push Service → FCM/APNs):
+     * - "desativado" (padrão): nenhuma chamada externa; o aviso continua só no realtime;
+     * - "expo": envia pelo Expo Push Service aos aparelhos registrados.
+     */
+    PUSH_ENTREGA: z.enum(["desativado", "expo"]).default("desativado"),
+    // Token de acesso do Expo: só exigido se o projeto ligar "Enhanced Push Security". OPCIONAL; SEGREDO DE SERVIDOR.
+    EXPO_ACCESS_TOKEN: opcional(z.string().min(1)),
     // Chave da API da Comtele (Painel Novo). SEGREDO DE SERVIDOR: nunca vai ao Web, ao Mobile nem a log.
     COMTELE_API_KEY: opcional(z.string().min(1)),
     // Id da rota de envio contratada na conta Comtele (consultável em GET /routes da API deles).

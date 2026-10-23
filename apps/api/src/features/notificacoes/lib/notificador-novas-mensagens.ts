@@ -9,9 +9,9 @@ import type { CanalEventosMensagens } from "../../mensagens/lib/eventos-mensagen
  * para o remetente. Retry idempotente não recria a mensagem, logo não notifica de novo; edição e
  * exclusão não são mensagem nova. O estado persistente continua sendo lista + não lidas.
  *
- * Canais: publica `notificacao-nova-mensagem` no canal interno. Hoje o realtime entrega às conexões
- * do destinatário (aviso in-app); push Web/mobile futuro será outro assinante deste mesmo fato,
- * decidindo por conta própria (ex.: só quando não houver conexão ativa), sem mudar esta regra.
+ * Canais: publica `notificacao-nova-mensagem` no canal interno. O realtime entrega às conexões do
+ * destinatário (aviso in-app) e o PUSH (features/push) é outro assinante deste mesmo fato — nenhum
+ * dos dois refaz esta regra.
  */
 export function criarNotificadorNovasMensagens({
   banco,
@@ -45,6 +45,7 @@ export function criarNotificadorNovasMensagens({
           conteudoTruncado: caracteres.length > PREVIA_MENSAGEM_RESPONDIDA_TAMANHO_MAXIMO,
           criadoEm: mensagem.criadoEm,
           destinatariosIdentidadeIds: destinatarios,
+          operadorUsuarioId: mensagem.operadorUsuarioId ?? null,
         });
       } catch (erro) {
         aoFalhar(erro);

@@ -15,6 +15,8 @@ import { criarCanalEventosPedidos } from "./features/pedidos/lib/eventos-pedidos
 import { NOMES_VARIAVEIS_ARMAZENAMENTO, carregarAmbiente, situacaoArmazenamentoPrivado, situacaoArmazenamentoPublico } from "./lib/ambiente.js";
 import { criarArmazenamento, criarArmazenamentoPrivado } from "./lib/armazenamento/criar-armazenamento.js";
 import { configurarRealtime } from "./realtime/configurar-realtime.js";
+import { criarProvedorExpo } from "./features/push/lib/provedor-expo.js";
+import { criarServicoPush } from "./features/push/lib/servico-push.js";
 import { iniciarRotinaVisitantes } from "./features/visitantes/lib/rotina-visitantes.js";
 
 const ambiente = carregarAmbiente();
@@ -98,9 +100,25 @@ const rotinaVisitantes = iniciarRotinaVisitantes({
 });
 void rotinaVisitantes.executarAgora();
 
+/*
+ * PUSH de nova mensagem no celular: outro assinante do mesmo aviso que o realtime entrega.
+ * Desligado por padrão (PUSH_ENTREGA=desativado): nenhuma chamada externa até ser configurado.
+ */
+const servicoPush =
+  ambiente.PUSH_ENTREGA === "expo"
+    ? criarServicoPush({
+        banco: conexao.banco,
+        eventosMensagens,
+        provedor: criarProvedorExpo({ tokenDeAcesso: ambiente.EXPO_ACCESS_TOKEN }),
+        aoFalhar: (erro) => servidor.log.error({ erro: erro instanceof Error ? erro.message : "desconhecido" }, "Falha ao enviar push"),
+      })
+    : null;
+servidor.log.info(`Push no celular: ${servicoPush ? "Expo Push Service" : "desativado (PUSH_ENTREGA)"}.`);
+
 servidor.addHook("onClose", async () => {
   rotinaDespacho.encerrar();
   rotinaVisitantes.encerrar();
+  await servicoPush?.encerrar();
   await conexao.encerrar();
 });
 

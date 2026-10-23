@@ -43,6 +43,7 @@ import { registrarRotasVisitantes } from "./features/visitantes/rotas/rotas-visi
 import { registrarRotasProdutosAdministracao } from "./features/produtos/rotas/rotas-produtos-administracao.js";
 import { registrarRotasIdentidadePublica } from "./features/perfil/rotas/rotas-identidade-publica.js";
 import { registrarRotasPerfil } from "./features/perfil/rotas/rotas-perfil.js";
+import { registrarRotasDispositivosPush } from "./features/push/rotas/rotas-dispositivos-push.js";
 import { registrarRotasBuscaProfissionais } from "./features/profissionais/rotas/rotas-busca-profissionais.js";
 import { registrarRotasPerfilProfissional } from "./features/profissionais/rotas/rotas-perfil-profissional.js";
 import { registrarRotasIdentidades } from "./features/identidades/rotas/rotas-identidades.js";
@@ -152,6 +153,7 @@ export async function criarAplicacao({
   registrarRotasEnderecos(servidor, { banco, autenticacao, geocodificador });
   registrarRotasPerfilProfissional(servidor, { banco, autenticacao, geocodificador });
   registrarRotasBuscaProfissionais(servidor, { banco, autenticacao, geocodificador });
+  registrarRotasDispositivosPush(servidor, { banco, autenticacao });
   registrarRotasPedidos(servidor, {
     banco,
     autenticacao,
