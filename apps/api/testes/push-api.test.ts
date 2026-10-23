@@ -13,6 +13,7 @@ import {
 } from "@jaa/contratos";
 import { and, eq, inArray } from "drizzle-orm";
 import type { EventoDominioMensagens } from "../src/features/mensagens/lib/eventos-mensagens.js";
+import { LIMITE_REGISTRO_DISPOSITIVO_PUSH } from "../src/features/push/rotas/rotas-dispositivos-push.js";
 import { ERRO_DISPOSITIVO_NAO_REGISTRADO, type MensagemPush, type ProvedorPush, type ReciboPush, type TicketPush } from "../src/features/push/lib/provedor-push.js";
 import { criarServicoPush } from "../src/features/push/lib/servico-push.js";
 import { aguardarAte, coletar, criarAmbienteIntegracao, type Pessoa } from "./apoio/integracao.js";
@@ -23,7 +24,7 @@ import { aguardarAte, coletar, criarAmbienteIntegracao, type Pessoa } from "./ap
  * Caio é quem NÃO deveria receber nada alheio. V: visitante do Link do Jaa (remetente, nunca registra).
  */
 
-const TELEFONES = Array.from({ length: 4 }, (_, i) => `+553198712500${i}`);
+const TELEFONES = Array.from({ length: 5 }, (_, i) => `+553198712500${i}`);
 const ctx = criarAmbienteIntegracao({ telefones: TELEFONES, prefixoIp: "198.18.125." });
 let ana: Pessoa;
 let beto: Pessoa;
@@ -230,6 +231,24 @@ describe("registro do dispositivo (conta da sessão)", () => {
     await registrar(caioOutroAparelho, instalacaoDois, token("caio-sign-out"));
     assert.equal((await chamar(caioOutroAparelho, "POST", "/api/auth/sign-out", {})).status, 200);
     assert.equal(await dispositivo(instalacaoDois), undefined, "sessão apagada no sign-out leva o dispositivo");
+  });
+
+  it("limite por conta: um cliente em loop recebe 429 depois do teto; outra conta segue registrando", async () => {
+    // Conta só deste teste: o teto é por conta e não pode atrapalhar os demais casos.
+    const dani = await ctx.criarPessoa(4, "pu_dani", "Dani");
+    const instalacao = randomUUID();
+    for (let i = 0; i < LIMITE_REGISTRO_DISPOSITIVO_PUSH.maximo; i += 1) {
+      assert.equal((await registrar(dani, instalacao, token(`dani-${i}`))).status, 204, `registro ${i + 1}`);
+    }
+    const excedente = await ctx.api(dani, "PUT", "/dispositivos-push", { instalacaoId: instalacao, token: token("dani-excedente"), plataforma: "android" });
+    assert.equal(excedente.statusCode, 429);
+    assert.equal(excedente.json().codigo, "LIMITE_DE_TENTATIVAS_ATINGIDO");
+    assert.ok(Number(excedente.headers["retry-after"]) > 0);
+    assert.equal((await dispositivo(instalacao))?.token, token(`dani-${LIMITE_REGISTRO_DISPOSITIVO_PUSH.maximo - 1}`), "o excedente não grava");
+
+    const outra = randomUUID();
+    assert.equal((await registrar(ana, outra, token("ana-outra"))).status, 204, "o teto de uma conta não alcança outra");
+    await ctx.banco.delete(dispositivosPush).where(inArray(dispositivosPush.instalacaoId, [instalacao, outra]));
   });
 });
 

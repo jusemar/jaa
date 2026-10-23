@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import { Cores } from "@/constants/theme";
 import { requisitarApi } from "@/lib/api";
 import { gerarIdCliente } from "@/lib/id-cliente";
+import { criarRegistradorPush, removerInstalacaoDaConta, type RegistradorPush } from "./registrador-push";
 import { apresentacaoEmPrimeiroPlano, canalAndroidDeMensagens, type SituacaoPermissao } from "./regras-push";
 
 /*
@@ -59,27 +60,42 @@ export async function pedirPermissao(): Promise<SituacaoPermissao> {
 }
 
 /**
- * Registra (ou atualiza) este aparelho na conta da sessão — só com a permissão já concedida. Chamado ao
- * entrar, ao voltar para o app e quando o sistema renova o token. Falhar não atrapalha nada: o app
- * continua com o realtime; tenta de novo na próxima vez.
- *
- * Sem Firebase no binário, o token não existe: devolve false e segue sem push.
+ * Registrador DESTA conta na sessão (`registrador-push.ts`: sem loop, sem PUT repetido, um por vez).
+ * Sem Firebase no binário ou sem `projectId`, pedir o token falha: o registro devolve false e o app
+ * segue sem push.
  */
-export async function registrarEsteAparelho(): Promise<boolean> {
+export function criarRegistradorDoAparelho(contaId: string): RegistradorPush {
+  return criarRegistradorPush(contaId, {
+    tokenDoAparelho: async () => {
+      const { data } = await Notifications.getDevicePushTokenAsync();
+      if (typeof data !== "string") throw new Error("Token do aparelho em formato inesperado.");
+      return data;
+    },
+    tokenExpo: async (tokenDoAparelho) => {
+      const projectId: unknown = Constants.expoConfig?.extra?.eas?.projectId;
+      if (typeof projectId !== "string") throw new Error("Projeto EAS ausente na configuração.");
+      // Com `devicePushToken`, a biblioteca NÃO pede outro token ao sistema (que dispararia outro evento).
+      const { data } = await Notifications.getExpoPushTokenAsync({ projectId, devicePushToken: { type: "android", data: tokenDoAparelho } });
+      return data;
+    },
+    instalacaoId,
+    enviar: async ({ instalacaoId: id, token }) => {
+      const resposta = await requisitarApi("/dispositivos-push", sem, { method: "PUT", body: JSON.stringify({ instalacaoId: id, token, plataforma: "android" }) });
+      return resposta.ok;
+    },
+  });
+}
+
+/**
+ * Registra (ou atualiza) este aparelho na conta da sessão — só no Android e com a permissão já
+ * concedida. `tokenDoEvento` = o token que o evento "token novo" trouxe (usado direto). O token nunca
+ * vai para log.
+ */
+export async function registrarEsteAparelho(registrador: RegistradorPush, tokenDoEvento?: string): Promise<boolean> {
   if (Platform.OS !== "android") return false;
-  try {
-    if ((await Notifications.getPermissionsAsync()).status !== "granted") return false;
-    const projectId: unknown = Constants.expoConfig?.extra?.eas?.projectId;
-    if (typeof projectId !== "string") return false;
-    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
-    const resposta = await requisitarApi("/dispositivos-push", sem, {
-      method: "PUT",
-      body: JSON.stringify({ instalacaoId: await instalacaoId(), token, plataforma: "android" }),
-    });
-    return resposta.ok;
-  } catch {
-    return false;
-  }
+  const permissao = await Notifications.getPermissionsAsync().catch(() => null);
+  if (permissao?.status !== "granted") return false;
+  return registrador.registrar(tokenDoEvento);
 }
 
 /**
@@ -87,16 +103,10 @@ export async function registrarEsteAparelho(): Promise<boolean> {
  * quem é). Tempo curto e qualquer falha só é registrada — sair nunca fica preso nisto. Se não deu (sem
  * rede), o servidor ainda corta pela sessão: apagada no sign-out, o aparelho deixa de receber.
  */
-export async function removerEsteAparelho(): Promise<void> {
-  try {
-    const guardado = await SecureStore.getItemAsync(CHAVE_INSTALACAO);
-    if (!guardado) return;
-    const resultado = await Promise.race([
-      requisitarApi(`/dispositivos-push/${encodeURIComponent(guardado)}`, sem, { method: "DELETE" }),
-      new Promise<null>((pronto) => setTimeout(() => pronto(null), 3000)),
-    ]);
-    if (!resultado?.ok) console.warn("Push: não foi possível tirar este aparelho da conta antes de sair (o servidor corta pela sessão).");
-  } catch {
-    console.warn("Push: falha ao tirar este aparelho da conta antes de sair (o servidor corta pela sessão).");
-  }
+export function removerEsteAparelho(): Promise<void> {
+  return removerInstalacaoDaConta({
+    instalacaoGuardada: () => SecureStore.getItemAsync(CHAVE_INSTALACAO),
+    apagar: async (id) => (await requisitarApi(`/dispositivos-push/${encodeURIComponent(id)}`, sem, { method: "DELETE" })).ok,
+    avisar: (texto) => console.warn(texto),
+  });
 }

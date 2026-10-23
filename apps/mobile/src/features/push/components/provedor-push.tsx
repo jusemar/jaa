@@ -6,7 +6,7 @@ import { AppState, Linking } from "react-native";
 import { listarConversas } from "@/features/conversas/lib/api-conversas";
 import { rotaDaConversa } from "@/features/conversas/lib/abrir-conversa";
 import { useIdentidadeAtiva } from "@/features/identidades/components/provedor-identidade-ativa";
-import { lerPermissao, pedirPermissao, prepararCanal, registrarEsteAparelho } from "../lib/registro-push";
+import { criarRegistradorDoAparelho, lerPermissao, pedirPermissao, prepararCanal, registrarEsteAparelho } from "../lib/registro-push";
 import { destinoDoToque, ofertaDeAvisos, type OfertaDeAvisos, type SituacaoPermissao } from "../lib/regras-push";
 
 /*
@@ -29,7 +29,7 @@ const CHAVE_DISPENSADO = "jaa.push.oferta-dispensada";
 
 export function ProvedorPush({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { operaveis, ativa, selecionar } = useIdentidadeAtiva();
+  const { operaveis, pessoal, ativa, selecionar } = useIdentidadeAtiva();
   const [permissao, setPermissao] = useState<SituacaoPermissao | null>(null);
   const [dispensado, setDispensado] = useState(true);
   // Toque que chegou antes de as identidades estarem prontas: espera por elas.
@@ -39,21 +39,42 @@ export function ProvedorPush({ children }: { children: ReactNode }) {
   // Cada notificação abre uma vez só (o ouvinte e a resposta guardada podem trazer o mesmo toque).
   const tratados = useRef(new Set<string>());
 
+  /*
+   * Um registrador por CONTA (a pessoal identifica a conta, como no cofre do aparelho): registra uma
+   * vez por sessão, não repete PUT com o mesmo token e nunca roda dois ao mesmo tempo. Sem a conta
+   * carregada ainda, nada é registrado.
+   */
+  const contaId = pessoal?.identidadeId ?? null;
+  const registrador = useMemo(() => (contaId ? criarRegistradorDoAparelho(contaId) : null), [contaId]);
+  const registrar = useCallback(async (tokenDoEvento?: string) => {
+    if (registrador) await registrarEsteAparelho(registrador, tokenDoEvento);
+  }, [registrador]);
+
   const atualizar = useCallback(async () => {
     const atual = await lerPermissao().catch(() => null);
     setPermissao(atual);
-    if (atual?.status === "granted") await registrarEsteAparelho();
-  }, []);
+    if (atual?.status === "granted") await registrar();
+  }, [registrar]);
 
-  // Ao entrar: canal primeiro (o Android 13+ exige para perguntar), depois permissão e registro.
+  // Canal primeiro (o Android 13+ exige um para perguntar) e a escolha de "Agora não".
   useEffect(() => {
     void (async () => {
       await prepararCanal().catch(() => undefined);
       setDispensado((await SecureStore.getItemAsync(CHAVE_DISPENSADO).catch(() => null)) === "1");
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
       await atualizar();
     })();
-    // O sistema renovou o token: registra o novo.
-    const token = Notifications.addPushTokenListener(() => void registrarEsteAparelho());
+    /*
+     * Token novo (renovado pelo sistema — e TAMBÉM a cada pedido de token do próprio app): usa o token
+     * do evento, nunca pede outro (pedir dispararia outro evento: foi o loop do versionCode 3).
+     */
+    const token = Notifications.addPushTokenListener(({ data }) => {
+      if (typeof data === "string") void registrar(data);
+    });
     // Voltou das configurações (ou de outro app): a permissão pode ter mudado.
     const estado = AppState.addEventListener("change", (situacao) => {
       if (situacao === "active") void atualizar();
@@ -62,7 +83,7 @@ export function ProvedorPush({ children }: { children: ReactNode }) {
       token.remove();
       estado.remove();
     };
-  }, [atualizar]);
+  }, [atualizar, registrar]);
 
   const abrir = useCallback(
     async (bruto: unknown) => {
@@ -110,8 +131,8 @@ export function ProvedorPush({ children }: { children: ReactNode }) {
   const ativar = useCallback(async () => {
     const resposta = await pedirPermissao().catch(() => null);
     setPermissao(resposta);
-    if (resposta?.status === "granted") await registrarEsteAparelho();
-  }, []);
+    if (resposta?.status === "granted") await registrar();
+  }, [registrar]);
 
   const dispensar = useCallback(() => {
     setDispensado(true);
