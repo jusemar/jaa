@@ -542,6 +542,33 @@
 .lp-operacao > span {
   color: var(--cor-marca);
 }
+/* Dois caminhos da mesma conversa: empresa e profissional, um por linha, com rótulo discreto. */
+.lp-fluxos {
+  display: grid;
+  gap: 10px;
+  margin: 35px 0;
+}
+.lp-fluxos .lp-operacao {
+  align-items: flex-start;
+  margin: 0;
+  padding: 18px 10px;
+  border-radius: 16px;
+  background: var(--cor-superficie);
+}
+/* Subtítulos de uma ou duas linhas: os itens alinham pelo topo e a seta fica na altura do nome. */
+.lp-fluxos .lp-operacao > span {
+  margin-top: 40px;
+}
+.lp-fluxos .lp-operacao + .lp-fluxo-rotulo {
+  margin-top: 12px;
+}
+.lp-fluxo-rotulo {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lp-verde-escuro);
+}
 .lp-empresa-visual > p {
   font-size: 14px;
   line-height: 1.8;
@@ -955,7 +982,8 @@
   .lp-empresa-visual {
     padding: 30px 16px;
   }
-  .lp-operacao {
+  .lp-operacao,
+  .lp-fluxos {
     margin-block: 27px;
   }
   .lp-entregadores .lp-historia-texto {
@@ -1281,6 +1309,11 @@
 .lp-beneficio-empresa h3 strong {
   display: block;
   font-weight: 800;
+}
+.lp-custo-zero {
+  padding: 0 2px;
+  border-radius: 6px;
+  background: linear-gradient(transparent 58%, var(--cor-ouro) 58%);
 }
 .lp-beneficio-empresa > p {
   margin: 0 0 23px;

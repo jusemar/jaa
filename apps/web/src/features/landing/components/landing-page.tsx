@@ -1,6 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
-import { IconeConversa, IconeLoja, IconeCesta } from "@/components/ui/icones";
+import {
+  IconeCalendario,
+  IconeCesta,
+  IconeConversa,
+  IconeLoja,
+  IconePerfil,
+} from "@/components/ui/icones";
 import {
   ConversaPedidoDemo,
   ConversaDemo,
@@ -215,34 +221,61 @@ export function LandingPage() {
               className="lp-beneficio-empresa"
               aria-labelledby="beneficio-empresa-titulo"
             >
-              <span className="lp-beneficio-selo">SEM MENSALIDADE</span>
+              <span className="lp-beneficio-selo">
+                SEM MENSALIDADE • SEM COMISSÃO
+              </span>
               <h3 id="beneficio-empresa-titulo">
-                Entre no Jaaa e comece a vender{" "}
-                <strong>sem mensalidade.</strong>
+                Entre no Jaaa e comece{" "}
+                <strong>
+                  a vender com custo <span className="lp-custo-zero">ZERO</span>.
+                </strong>
               </h3>
-              <p>Comece agora, sem custo mensal.</p>
+              <p>Sem mensalidade e sem comissão. Comece agora sem pagar nada.</p>
               <CriarConta />
             </div>
           </div>
           <div className="lp-empresa-visual" data-revelar>
             <span className="lp-eyebrow">Uma conversa conecta a operação</span>
-            <div className="lp-operacao">
-              <div>
-                <IconeConversa />
-                <strong>Cliente</strong>
-                <span>Conversa</span>
+            <div className="lp-fluxos">
+              <span className="lp-fluxo-rotulo">Empresas</span>
+              <div className="lp-operacao" aria-label="Empresas: cliente, sua empresa, entrega">
+                <div>
+                  <IconeConversa />
+                  <strong>Cliente</strong>
+                  <span>Conversa</span>
+                </div>
+                <span aria-hidden="true">→</span>
+                <div>
+                  <IconeLoja />
+                  <strong>Sua empresa</strong>
+                  <span>Cardápio → pedido</span>
+                </div>
+                <span aria-hidden="true">→</span>
+                <div>
+                  <IconeCesta />
+                  <strong>Entrega</strong>
+                  <span>Organização da saída</span>
+                </div>
               </div>
-              <span aria-hidden="true">→</span>
-              <div>
-                <IconeLoja />
-                <strong>Sua empresa</strong>
-                <span>Cardápio → pedido</span>
-              </div>
-              <span aria-hidden="true">→</span>
-              <div>
-                <IconeCesta />
-                <strong>Entrega</strong>
-                <span>Organização da saída</span>
+              <span className="lp-fluxo-rotulo">Profissionais</span>
+              <div className="lp-operacao" aria-label="Profissionais: cliente, profissional, contratado">
+                <div>
+                  <IconeConversa />
+                  <strong>Cliente</strong>
+                  <span>Conversa</span>
+                </div>
+                <span aria-hidden="true">→</span>
+                <div>
+                  <IconePerfil />
+                  <strong>Profissional</strong>
+                  <span>Serviço e horários</span>
+                </div>
+                <span aria-hidden="true">→</span>
+                <div>
+                  <IconeCalendario />
+                  <strong>Contratado</strong>
+                  <span>Horário combinado</span>
+                </div>
               </div>
             </div>
             <p>
